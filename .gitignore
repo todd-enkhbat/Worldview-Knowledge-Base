@@ -1,0 +1,8 @@
+node_modules
+dist
+*.log
+.DS_Store
+# downloaded CC-BY splat fixtures (fetched by scripts/fetch-fixtures.sh)
+public/fixtures/*
+!public/fixtures/.gitkeep
+bench-results/
