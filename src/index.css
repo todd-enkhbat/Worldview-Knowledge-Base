@@ -1,0 +1,40 @@
+@import 'tailwindcss';
+@import '@fontsource/inter/400.css';
+@import '@fontsource/inter/600.css';
+@import '@fontsource/jetbrains-mono/400.css';
+@import '@fontsource/jetbrains-mono/700.css';
+
+@theme {
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --color-void: #0b0b0c;
+  --color-concrete: #8d8a84;
+  --color-bone: #d6d3cc;
+  --color-brass: #c9973f;
+  --color-ember: #e8b04a;
+  --color-signal: #ff4a1c;
+  --color-glass: #9fd3e6;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: var(--color-void);
+}
+
+/* Brutalist HUD primitives. In the components layer so utilities on the same element
+   (e.g. a different padding or text size) override them instead of losing to them. */
+@layer components {
+  .hud-panel {
+    @apply border border-bone/20 bg-void/85 backdrop-blur-sm font-mono text-[12px] text-bone;
+  }
+  .hud-label {
+    @apply uppercase tracking-[0.14em] text-[10px] text-concrete;
+  }
+  .hud-btn {
+    @apply border border-bone/30 px-2 py-1 font-mono text-[11px] uppercase tracking-wider text-bone hover:bg-bone hover:text-void disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-bone;
+  }
+}
