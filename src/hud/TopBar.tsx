@@ -1,5 +1,6 @@
 import { useApp, useWorld } from '../app/store.ts'
 import { useRepoStatus } from '../data/repo.ts'
+import { openSceneFilePicker } from './SceneDrop.tsx'
 import { StorageBadge } from './StorageBadge.tsx'
 import { MOD_KEY, openPalette, openPicker } from './shortcuts.ts'
 
@@ -45,11 +46,30 @@ export function TopBar() {
           type="button"
           className={BTN}
           disabled={!writer}
+          aria-keyshortcuts="/"
+          title={writer ? 'Type anything: it becomes a node, refined by Claude (/)' : 'Read-only: another tab is the writer'}
+          onClick={() => useApp.getState().togglePanel('omnibox', true)}
+        >
+          / Add
+        </button>
+        <button
+          type="button"
+          className={BTN}
+          disabled={!writer}
           title={writer ? 'New node (N)' : 'Read-only: another tab is the writer'}
           aria-keyshortcuts="N"
           onClick={openPicker}
         >
           + New
+        </button>
+        <button
+          type="button"
+          className={BTN}
+          disabled={!writer}
+          title={writer ? 'New memory from a splat capture (or drop the file on the world)' : 'Read-only: another tab is the writer'}
+          onClick={openSceneFilePicker}
+        >
+          + Scene
         </button>
         <button
           type="button"

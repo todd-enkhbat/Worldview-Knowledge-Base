@@ -4,6 +4,7 @@ import type { PathGraph } from '../paths.ts'
 import { Architecture } from './Architecture.tsx'
 import { Catwalk } from './Catwalk.tsx'
 import { Floor } from './Floor.tsx'
+import { Terrain } from './Terrain.tsx'
 import { EmptyWorldPlinth, PresentLabels, YearNumerals } from './Labels.tsx'
 import { Manifold } from './Manifold.tsx'
 import { EnvironmentLighting, EnvironmentLights, SkyDome, Stars } from './Sky.tsx'
@@ -12,9 +13,9 @@ import { PALETTE, createConcreteMaterial, createEmissiveMaterial, createMetalMat
 import { usePathGraph } from './usePathGraph.ts'
 
 // The brutalist world shell: void sky and stars, PMREM environment, floor (reflective in third
-// person), fluted core, a ground colonnade with a few pylons, monoliths and cantilevers, the
-// helical catwalk with year landings, memory spurs and the Present landing, and the torus
-// manifold. Everything but the core and catwalk stays outside the node rings: it frames them.
+// person), terraced land and horizon ranges around it, fluted core, a ground colonnade with a
+// few pylons, monoliths and cantilevers, the helical catwalk with year landings, memory spurs
+// and the Present landing, and the torus manifold. Everything but the core and catwalk stays outside the node rings: it frames them.
 //
 // Draw calls (independent of span and memory count): sky 1, stars 1, floor 1, core 1, shafts 1,
 // drums 1, boxes 1, emitters 2, deck 1, rails 1, spur boxes 1, metal 1, manifold 2, plus
@@ -67,6 +68,7 @@ export function EnvironmentScene({ graph: external, lights = true, environment =
       {environment && <EnvironmentLighting />}
       {lights && <EnvironmentLights />}
       <Floor reflective={reflective} resolution={reflectorRes} />
+      <Terrain yMax={graph.helix.yMax} />
       <Architecture layout={arch} materials={materials} />
       <Catwalk graph={graph} materials={materials} emptyWorld={emptyWorld} />
       <Suspense fallback={null}>

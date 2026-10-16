@@ -46,3 +46,14 @@ Browser storage is the only copy of the world, so every path below is written to
 The interior hides the top-level groups named in `WORLD_GROUP_NAMES`: environment, node-layer, links, dust and overlays. The worldline hides itself.
 
 `#/lab/perf` composes the same scene without the HUD or camera rig. For the run it swaps the repo onto a private in-memory fixture world (`lab/perf/fixtureWorld.ts`) and swaps the IndexedDB world back afterwards.
+
+## Phase 4: engine and semantics
+- **Server** (`server/`): node:sqlite + sqlite-vec behind `/api` on the Vite dev/preview server (`vitePlugin.ts`). `worldDb.ts` runs `src/domain/schema.sql`; `api.ts` serves the WorldStore contract, the vector index and `/api/refine` (`refine.ts`, Claude Haiku 5.5; the key is read from `.env.local` and stays server-side). The static build has no server and stays on IndexedDB.
+- **Engine choice** (`data/engine.ts`): per-browser preference. `openRepo` opens `httpStore` when it is set and the engine answers `/api/health`; otherwise it opens IndexedDB (read-only if SQLite was chosen). `migrateWorld` moves the world through the archive, checking the records hash.
+- **AI** (`src/ai/`):
+  - `embed.worker.ts`: EmbeddingGemma 2 in a worker.
+  - `semanticIndex.ts`: opt-in, incremental via `subscribeRepo`.
+  - `vectorStore.ts`: sqlite-vec or local IndexedDB.
+  - `layout.ts`: neighbour-bearing hints, UMAP + Kabsch re-crystallise.
+  - `provisional.ts` + `omnibox.ts`: spawn, then refine.
+  - `refineSchema.ts`: the zod contract shared with the server.

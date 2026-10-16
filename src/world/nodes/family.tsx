@@ -123,7 +123,7 @@ export function Family({ name, records, parts, animated = false, children }: Fam
     const t = state.clock.elapsedTime
     if (moved || animated) {
       for (let i = 0; i < n; i++) {
-        const far = nodeFarScale(table, ids[i], _cam)
+        const far = nodeFarScale(table, ids[i], _cam, records[i].splat != null)
         const born = nodeMatrix(table, ids[i], basis.yaw[i], basis.scale[i] * far, _basis)
         for (let k = 0; k < parts.length; k++) {
           const part = parts[k]

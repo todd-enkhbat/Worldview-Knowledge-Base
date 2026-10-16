@@ -1,4 +1,7 @@
-# Roadmap (after the Phase 3 review — not built yet)
+# Roadmap
+
+Phase 4 (built 2026-10-16; see DECISIONS.md): **Engine**, **Embeddings**, **Omnibox**, **Layout** below. Still to build: **Capture**, **Desktop**, **Publish**, and semantic (embedding) demon matching.
+
 
 - **Engine**: `node:sqlite` on Node 26 with sqlite-vec 0.1.9 (`vec0 float[512] cosine`), behind a WorldStore HTTP adapter and a Vite proxy. The existing store migrates through the export zip. Target DDL: `src/domain/schema.sql`.
 - **Embeddings**: EmbeddingGemma 2 q4 in a worker via transformers.js 4.3.1, using the text-only AutoModel path and local wasm paths.

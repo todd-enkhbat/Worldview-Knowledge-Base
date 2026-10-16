@@ -422,3 +422,39 @@ Sizes:
 - G and S2 in Safari;
 - S1 in Safari + Chrome, which also picks the primary browser;
 - a Scaniverse upload.
+
+### Pre-Phase-4 world-building pass (2026-10-16)
+User review after Phase 3: the world read as "boxes and 3D renders"; splats were invisible from orbit.
+- **Terrariums.** Splat scenes were fitted to the 1.1 u inner cube and proxies loaded only within 60 u, so from orbit a memory was an empty glass box. Now `DIORAMA_HALF = TESSERACT.shell − 0.08` (the scene fills the glass), memories with a scene use `terrariumFarScale` (true size within 24 u, so spurs and the catwalk are unchanged; up to 9× far away against 4× for other nodes), and the proxy tier band is 180 / 220 u (still ≤ 6 proxies × 100k).
+- **Land.** `environment/Terrain.tsx`: a terraced basin outside the peristyle, hills, and a ring of ridged ranges (peak ≥ 260 u, ~0.55 × column height) with ember survey contours every 24 u. Decorative only: no collision or walking. Nodes anchored far out (r > 800 u) at low Y could sit inside a range.
+- **New memory from a splat file.** Use TopBar **+ Scene**, or drop a capture anywhere on the world. This creates a memory titled after the file and dated by its modification day, selects it so the Inspector shows ingest progress, and enters the terrarium when done. A failed ingest sends the empty memory to the trash.
+- Debug finding: fog/DOF post reads depth behind splats (they write none). The shells' depth proxies cover this at close range; it is why tiny far scenes were washed to black.
+
+### Phase 4 — engine, embeddings, omnibox, semantic layout (2026-10-16)
+User choices at the gate: SQLite as an **opt-in** engine (IndexedDB stays the default and the static build keeps working), the user supplies `ANTHROPIC_API_KEY` in `.env.local`, and the embedding model loads **from Hugging Face on first use** (no vendored weights).
+
+**Dependencies added** (exact pins): `sqlite-vec` 0.1.9, `@huggingface/transformers` 4.3.1, `@anthropic-ai/sdk` 0.135.0, `zod` 4.6.7, `umap-js` 1.4.0. `onnxruntime-node` arrives transitively with transformers.js, but its postinstall is blocked and nothing on the Node side uses it.
+
+**Engine.** `server/` holds the engine: `worldDb.ts` (node:sqlite + sqlite-vec, executing `src/domain/schema.sql`), `api.ts` (`/api/world`, `/api/embeddings`, `/api/refine`, `/api/health`) and `vitePlugin.ts`. The plugin mounts the API on the dev and preview servers, so the app and engine share the localhost:5173 origin. `src/data/httpStore.ts` implements `WorldStore` over that API and passes the same contract suite as memoryStore and idbStore (`tests/data/store.test.ts`). Data lives in `data/world.sqlite` and `data/blobs/` (gitignored).
+- Schema changes now that `schema.sql` executes: three FKs were dropped (`links.target_id`, `attachments.blob_id`, `assets.node_id`), because import and scene ingest write in an order those FKs reject. Two columns were added: `nodes.provenance` and `nodes.extra` (unknown NodeRecord keys, so records round-trip byte-for-byte under canonical JSON). `embedding_meta` was added for change detection.
+- Switching engines goes through Settings → Engine (`src/data/engine.ts`). The whole world is exported to an archive and imported into the target, and the records hash is checked; the target's previous contents go to a pre-import backup first. The engine you leave keeps its copy. If the SQLite engine is selected but not running, the app opens the IndexedDB copy **read-only** with a banner rather than letting the two diverge.
+- Device-local kv keys (`DEVICE_KV_KEYS`, e.g. the backup folder handle) stay in the browser (`hyperspace-device` IndexedDB), since they cannot be serialised to the server.
+- Verified: demo world + every optional field + an unknown future key → archive → SQLite → archive → memory gives the same records hash (`tests/server/engine.test.ts`). The pane world (11 nodes, 30 MB of splats) moved to SQLite with an identical hash, and its interiors stream from the server.
+
+**Embeddings.** EmbeddingGemma 2 (`onnx-community/embeddinggemma-2-ONNX`) runs in a module worker (`src/ai/embed.worker.ts`) with document/query prompt formats. Vectors are truncated to 512 dimensions (Matryoshka) and re-normalised.
+- **Deviation:** PLAN said q4 on local wasm paths. q4's `GatherBlockQuantized` op has no WASM kernel in onnxruntime-web, so the worker uses WebGPU + q4 (~175 MB) and falls back to WASM + q8 (~315 MB). The runtime config is part of each embedding's text hash, so vectors from the two never mix. The pane runs `webgpu/q4`.
+- Vectors live in the SQLite engine's `vec0` table (KNN in SQL) or, on IndexedDB, in a separate `hyperspace-embeddings` database (brute-force KNN). Either way they are derived data: not exported and not hashed. Indexing is opt-in per browser (Settings → Semantic engine) because of the download, then incremental through the repo change feed.
+
+**Omnibox** (`/` or TopBar "/ Add"; `src/ai/omnibox.ts`, `src/hud/Omnibox.tsx`):
+1. A provisional record is spawned from heuristics (`provisional.ts`: archetype, #tags, dates clamped to [T0, now]). It is placed semantically when the index answers within 700 ms. Measured spawn time: 21 ms with tag placement, 59 ms with semantic placement (budget 1500 ms).
+2. `claude-haiku-5-5` refines the record through `messages.create` with an `output_config.format` json_schema, effort `low` and thinking `disabled`. The reply is parsed by hand and checked with zod (`refineSchema.ts`, shared by client and server). Link targets are limited to the candidates sent. A refusal, truncation, invalid reply or missing key keeps the provisional record, marked `provenance.state = 'fallback'`. A refinement is one undoable step; it may change the archetype (`retypeNode`) but never re-places the node (`updateNode(…, { keepAnchor })`).
+- `NodeRecord.provenance` was added (optional) in `domain/types.ts`.
+- **Not verified live:** no API key was configured, so the Haiku call ran only against a stubbed client (`tests/server/refine.test.ts`). The no-key path was checked in the pane.
+
+**Semantic layout** (`src/ai/layout.ts`):
+- New nodes take the similarity-weighted circular-mean bearing of their neighbours, on their archetype's ring.
+- **Re-crystallise** (Settings) is an explicit, undoable event. Seeded UMAP lays every embedded node out in 2D. A Kabsch/Umeyama similarity (reflection allowed) aligns that layout to the current anchors. Each node then takes its aligned bearing and keeps its own radius; `reanchorNodes` writes all moves atomically and nudges for σ.
+- In the pane, re-crystallise grouped the 11 nodes into scene memories (−36°…27°), thermodynamics (81°…137°) and information theory (173°…−83°). Mean turn on this first run: 52°, expected after the arbitrary tag-hash layout.
+- **Kept:** tag-hash placement remains the fallback when the index is off.
+
+**Not in Phase 4:** demons still match with BM25 rather than embeddings. The capture pipeline, desktop shell and publishing stay in ROADMAP.

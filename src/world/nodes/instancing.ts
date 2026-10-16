@@ -66,12 +66,29 @@ export function farScale(distance: number): number {
   return distance <= FAR_SCALE.near ? 1 : Math.min(FAR_SCALE.max, 1 + (distance - FAR_SCALE.near) / FAR_SCALE.per)
 }
 
+/**
+ * Memories with a volumetric scene are the world's landmarks ("glass terrariums"): the same
+ * true size up close (spurs and the catwalk are laid out for a 2.4 u cube), but a steeper,
+ * higher boost so the scene inside still reads from the orbit view.
+ */
+export const TERRARIUM_FAR_SCALE = { near: 24, per: 18, max: 9 } as const
+
+export function terrariumFarScale(distance: number): number {
+  const f = TERRARIUM_FAR_SCALE
+  return distance <= f.near ? 1 : Math.min(f.max, 1 + (distance - f.near) / f.per)
+}
+
+/** The distance boost for a record: terrariums get theirs, everything else farScale. */
+export function recordFarScale(rec: Pick<NodeRecord, 'splat'>, distance: number): number {
+  return rec.splat ? terrariumFarScale(distance) : farScale(distance)
+}
+
 /** farScale() of a node's pose seen from `cam` (world position); 1 when it has no pose. */
-export function nodeFarScale(table: PoseTable, id: string, cam: Vector3): number {
+export function nodeFarScale(table: PoseTable, id: string, cam: Vector3, terrarium = false): number {
   const row = table.index.get(id)
   if (row === undefined) return 1
   const o = row * 3
-  return farScale(Math.hypot(table.pos[o] - cam.x, table.pos[o + 1] - cam.y, table.pos[o + 2] - cam.z))
+  return (terrarium ? terrariumFarScale : farScale)(Math.hypot(table.pos[o] - cam.x, table.pos[o + 1] - cam.y, table.pos[o + 2] - cam.z))
 }
 
 /** Collapses an instance (unborn, missing pose, or the other state of a ghost pair). */

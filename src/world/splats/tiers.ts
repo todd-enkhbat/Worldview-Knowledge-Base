@@ -33,8 +33,10 @@ export interface TierLimits {
 
 export const TIER_LIMITS: TierLimits = {
   maxProxies: 6,
-  enterDistance: 60,
-  exitDistance: 75,
+  // Wide enough that the orbit view shows real splats in the nearest terrariums, not just
+  // thumbnails; maxProxies × 100k still bounds the cost.
+  enterDistance: 180,
+  exitDistance: 220,
   incumbentBonus: 0.15,
   splatBudget: 2_000_000,
   minLodSplats: 250_000,

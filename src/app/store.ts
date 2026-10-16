@@ -37,7 +37,7 @@ export function canTransition(from: CameraMode, to: CameraMode): boolean {
 
 export const SPEEDS = [-10, -5, -2, -1, -0.5, -0.1, 0.1, 0.5, 1, 2, 5, 10] as const
 
-export type PanelId = 'inspector' | 'library' | 'palette' | 'settings' | 'trash' | 'demons' | 'stats' | 'picker'
+export type PanelId = 'inspector' | 'library' | 'palette' | 'settings' | 'trash' | 'demons' | 'stats' | 'picker' | 'omnibox'
 
 export interface EditorState {
   open: boolean
@@ -110,6 +110,7 @@ const closedPanels: Record<PanelId, boolean> = {
   demons: false,
   stats: false,
   picker: false,
+  omnibox: false,
 }
 
 let toastSeq = 0
@@ -148,10 +149,10 @@ export const useApp = create<AppState>()((set, get) => ({
   setQuality: (patch) => set((s) => ({ quality: { ...s.quality, ...patch } })),
   escape: () => {
     const s = get()
-    const modalOpen = s.panels.palette || s.panels.picker || s.panels.settings || s.panels.trash || s.editor.open
+    const modalOpen = s.panels.palette || s.panels.picker || s.panels.settings || s.panels.trash || s.panels.omnibox || s.editor.open
     if (modalOpen) {
       set({
-        panels: { ...s.panels, palette: false, picker: false, settings: false, trash: false },
+        panels: { ...s.panels, palette: false, picker: false, settings: false, trash: false, omnibox: false },
         editor: { open: false, nodeId: null, archetype: null },
       })
       return

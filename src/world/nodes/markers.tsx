@@ -5,7 +5,7 @@ import { useApp } from '../../app/store.ts'
 import type { Archetype, NodeRecord } from '../../domain/types.ts'
 import { LAYER } from '../layers.ts'
 import { readPose } from '../poses.ts'
-import { farScale, nodeScale } from './instancing.ts'
+import { nodeScale, recordFarScale } from './instancing.ts'
 import type { NodeKit } from './kit.ts'
 
 // Selection reticle (signal-orange ring with ticks) and the thinner ember hover ring,
@@ -31,7 +31,7 @@ function place(m: Mesh | null, rec: NodeRecord | undefined, angle: number): void
   m.visible = true
   m.rotation.y = angle
   // Same distance boost as the node mesh, so the ring keeps circling it.
-  m.scale.setScalar(RETICLE_RADIUS[rec.archetype] * nodeScale(rec) * farScale(m.position.distanceTo(_cam)))
+  m.scale.setScalar(RETICLE_RADIUS[rec.archetype] * nodeScale(rec) * recordFarScale(rec, m.position.distanceTo(_cam)))
 }
 
 export function SelectionMarkers({ byId, kit }: { byId: ReadonlyMap<string, NodeRecord>; kit: NodeKit }) {

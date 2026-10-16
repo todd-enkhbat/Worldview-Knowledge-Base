@@ -29,7 +29,7 @@ import {
 import type { Quat, SplatBlock } from '../../domain/types.ts'
 import { LAYER, RENDER_ORDER } from '../layers.ts'
 import { TESSERACT } from '../nodes/geometry.ts'
-import { farScale } from '../nodes/instancing.ts'
+import { terrariumFarScale } from '../nodes/instancing.ts'
 import { readPose } from '../poses.ts'
 import { loadSplatBytes } from './assets.ts'
 import { FLIGHT, fitBox, isWorldHidden, type Box, type DioramaFit } from './flyIn.ts'
@@ -41,7 +41,7 @@ import { crystalProgress, publishCrystal, type CrystalPhase, type SplatTier } fr
 //   anchor (R3F group in the slot, on the memory's basis)
 //   └ content          far-boost scale; lifted into the splat stage for flights and framing
 //     ├ impostor       thumbnail sprite (tier 'impostor', or while the proxy loads)
-//     └ fit            upFix rotation + uniform scale + offset: crop box → tesseract inner cube
+//     └ fit            upFix rotation + uniform scale + offset: crop box → the glass shell
 //       ├ proxy        ≤ 100k non-LoD SplatMesh, clipped by its own SplatEdit BOX
 //       ├ interior     lod:true SplatMesh (tier 'focused' only), clipped likewise
 //       └ crop lines   framing only: the draft crop as a wireframe
@@ -53,8 +53,12 @@ import { crystalProgress, publishCrystal, type CrystalPhase, type SplatTier } fr
 // A SplatEdit is applied to the SplatMesh it is a descendant of; one that is NOT under a
 // SplatMesh is global and would clip every splat in the world, so each mesh gets its own.
 
-/** Half-size of the cube a diorama is fitted into: the tesseract's inner cube, inset. */
-export const DIORAMA_HALF = TESSERACT.inner - 0.03
+/**
+ * Half-size of the cube a diorama is fitted into: the whole glass shell, inset (a terrarium
+ * is mostly scene). The inner cube's glow edges and struts read as the case's frame; fitted
+ * to the inner cube alone the scene was a 1.1 u speck that vanished from orbit.
+ */
+export const DIORAMA_HALF = TESSERACT.shell - 0.08
 /** Framing: the full (unclipped) scene is fitted into a cube of this half-size (world units). */
 export const FRAMING_HALF = 4
 
@@ -326,7 +330,7 @@ export class DioramaInstance {
     this.updateVisibility()
   }
 
-  /** Fit the crop (or the loaded bounds) into the tesseract's inner cube. */
+  /** Fit the crop (or the loaded bounds) into the glass shell (DIORAMA_HALF). */
   private refit(): void {
     const box = this.block.crop ?? this.loadedBounds
     if (!box) {
@@ -555,9 +559,9 @@ export class DioramaInstance {
   frame(camera: Camera, dt: number): void {
     if (this.disposed) return
     if (!this.lifted && readPose(this.id, _p)) {
-      // Match the tesseract's distance boost (nodes/instancing.ts farScale) so the diorama
-      // stays inside its inner cube when the node is drawn larger far away.
-      this.content.scale.setScalar(farScale(camera.position.distanceTo(_p)))
+      // Match the tesseract's distance boost (nodes/instancing.ts terrariumFarScale) so the
+      // diorama stays inside its glass when the node is drawn larger far away.
+      this.content.scale.setScalar(terrariumFarScale(camera.position.distanceTo(_p)))
     }
     if (this.interiorPhase === 'growing' && this.interior) {
       const spark = getSpark()

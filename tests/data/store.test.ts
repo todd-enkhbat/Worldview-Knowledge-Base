@@ -17,6 +17,8 @@ import {
   writeBackup,
 } from '../../src/data/opfs.ts'
 import type { StoreInfo, WorldStore } from '../../src/data/WorldStore.ts'
+import { createHttpStore } from '../../src/data/httpStore.ts'
+import { startTestEngine } from '../helpers/engine.ts'
 
 // ─── in-memory FileSystemDirectoryHandle mock ────────────────────────────────────────
 // Just enough of the OPFS surface for opfs.ts: directories, files, createWritable with
@@ -226,6 +228,12 @@ const adapters: Adapter[] = [
     info: { kind: 'idb', blobBackend: 'opfs' },
     make: () => openIdbStore({ name: `hs-test-${crypto.randomUUID()}`, opfsRoot: asRoot((currentRoot = new MockDir())) }),
     root: () => currentRoot,
+  },
+  {
+    // The Phase-4 SQLite engine: a real server (node:sqlite + sqlite-vec, :memory:) over HTTP.
+    name: 'httpStore (SQLite engine)',
+    info: { kind: 'sqlite', blobBackend: 'server' },
+    make: async () => createHttpStore({ base: (await startTestEngine()).base }),
   },
 ]
 

@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { useApp, useWorld } from '../app/store.ts'
-import { STEPS_PER_YEAR, TRASH_RETENTION_MS, Y_PER_YEAR } from '../domain/constants.ts'
+import { SIGMA, STEPS_PER_YEAR, TRASH_RETENTION_MS, Y_PER_YEAR } from '../domain/constants.ts'
 import { fnv1a32, minRadiusFor, nudgeAnchor, placeAnchor, quantize, replaceOnTagChange, toPlacedAnchors, anchorY } from '../domain/placement.ts'
 import type { PlacedAnchor, PlacementOptions } from '../domain/placement.ts'
 import { SCHEMA_VERSION } from '../domain/types.ts'
@@ -22,6 +22,7 @@ import { MAX_ATTACHMENT_BYTES, cleanFileName, makeThumbnail, sniffBlob } from '.
 import { createAutoBackup } from './autoBackup.ts'
 import { defaultBackupTarget, readAnyBackup } from './backupTargets.ts'
 import type { AutoBackupController } from './autoBackup.ts'
+import { getEnginePreference, openSqliteStore, probeEngine, readOnlyLock } from './engine.ts'
 import { openWorldStore } from './idbStore.ts'
 import { ReadOnlyError, createSync, initWriterLock, withSync } from './locks.ts'
 import type { Sync, WriterLock } from './locks.ts'
@@ -153,8 +154,17 @@ async function openRepo(opts: InitRepoOptions): Promise<RepoStatus> {
   let raw: WorldStore
   let fallback = false
   let error: string | null = null
+  let lockOverride: WriterLock | null | undefined
   if (opts.store) raw = opts.store
-  else {
+  else if (getEnginePreference() === 'sqlite' && (await probeEngine())) {
+    raw = await openSqliteStore()
+  } else {
+    if (getEnginePreference() === 'sqlite') {
+      // The world lives in SQLite but the engine is not running (static build, server
+      // stopped). Show the last IndexedDB copy read-only rather than letting it diverge.
+      error = 'The SQLite engine is not running, so this is the older browser copy, read-only. Start the app with `npm run dev`.'
+      lockOverride = readOnlyLock()
+    }
     // A closed connection cannot write, so hand the writer lock to the next tab in line.
     const lost = (error: string) => {
       state?.lock?.release()
@@ -172,6 +182,7 @@ async function openRepo(opts: InitRepoOptions): Promise<RepoStatus> {
     fallback = opened.fallback
     if (opened.fallback) error = 'Browser storage is unavailable (private window?). Changes will be lost on reload; export to keep them.'
   }
+  if (lockOverride !== undefined && opts.lock === undefined) opts = { ...opts, lock: lockOverride }
 
   // A memory fallback is private to this tab: there is nothing shared to lock or announce,
   // and waiting for another tab's lock would leave this one read-only over an empty world.
@@ -474,7 +485,17 @@ export type NodeDraftInput = Partial<NodeRecord> & { archetype: Archetype; title
  * Create a node: fill defaults, give it a unique slug, place its anchor (frozen from now on),
  * validate, persist, select it and toast "Created <title>" with Undo. The caller flies to it.
  */
-export function createNode(draft: NodeDraftInput): Promise<NodeRecord> {
+export interface CreateNodeOptions {
+  /**
+   * Where the node should go (semantic placement, Phase 4): nudged to the nearest free spot
+   * instead of the tag-hash sector. Ignored when nothing free is within SNAP range.
+   */
+  anchorHint?: readonly [number, number]
+  /** Toast and select as usual (default true). */
+  announce?: boolean
+}
+
+export function createNode(draft: NodeDraftInput, opts: CreateNodeOptions = {}): Promise<NodeRecord> {
   return run(async () => {
     requireWriter()
     const settings = requireSettings()
@@ -496,15 +517,99 @@ export function createNode(draft: NodeDraftInput): Promise<NodeRecord> {
     if (useWorld.getState().nodes.has(record.id) || useWorld.getState().trash.has(record.id)) {
       throw new Error(`A node with id ${record.id} already exists`)
     }
-    record.anchorXZ = placeAnchor(record, liveAnchors(settings), placementOpts(settings))
+    const hinted = opts.anchorHint
+      ? nudgeAnchor(opts.anchorHint, anchorY(record, placementOpts(settings)), liveAnchors(settings), {
+          selfId: record.id,
+          seed: fnv1a32(record.id),
+          minRadius: minRadiusFor(record.archetype),
+          maxDistance: 4 * SIGMA,
+        })
+      : null
+    record.anchorXZ = hinted ?? placeAnchor(record, liveAnchors(settings), placementOpts(settings))
     record = settle(record, settings, now, 'reject')
     await commit([record], () => store.putNode(record))
 
-    const app = useApp.getState()
-    app.select(record.id)
     const id = record.id
-    app.pushToast({ message: `Created ${record.title}`, undo: () => undoCreate(id) })
+    if (opts.announce !== false) {
+      const app = useApp.getState()
+      app.select(record.id)
+      app.pushToast({ message: `Created ${record.title}`, undo: () => undoCreate(id) })
+    }
     return record
+  })
+}
+
+/**
+ * Change a live node's archetype (the omnibox's refinement may reclassify what the
+ * heuristics guessed). Per-archetype blocks are reset to the new archetype's defaults, a
+ * scene survives only on a memory, and the anchor moves only if the new archetype needs
+ * more room from the axis (memories) or the old spot breaks σ.
+ */
+export function retypeNode(id: string, archetype: Archetype): Promise<NodeRecord> {
+  return run(async () => {
+    requireWriter()
+    const settings = requireSettings()
+    const now = repo().now()
+    const prev = findLive(id)
+    if (prev.archetype === archetype) return prev
+    const fresh = makeNodeDraft(archetype, {}, { now })
+    let next: NodeRecord = { ...prev, archetype, updatedAt: now }
+    delete next.entity
+    delete next.demon
+    if (archetype !== 'memory') delete next.splat
+    if (fresh.entity) next.entity = fresh.entity
+    if (fresh.demon) next.demon = { ...fresh.demon, query: prev.title }
+    const minR = minRadiusFor(archetype)
+    if (Math.hypot(next.anchorXZ[0], next.anchorXZ[1]) < minR) {
+      const found = nudgeAnchor(next.anchorXZ, anchorY(next, placementOpts(settings)), liveAnchors(settings), {
+        selfId: id,
+        seed: fnv1a32(id),
+        minRadius: minR,
+      })
+      if (found) next = { ...next, anchorXZ: found }
+    }
+    next = settle(next, settings, now, 'nudge')
+    await putOne(next)
+    return next
+  })
+}
+
+/**
+ * Move many anchors at once in one atomic write (Phase 4 re-crystallise). Each target is
+ * nudged to keep σ against the already-placed ones, in id order, so the result does not
+ * depend on the input order. Toasts `label` with an Undo that restores every old anchor.
+ */
+export function reanchorNodes(targets: ReadonlyMap<string, readonly [number, number]>, label = 'Re-anchored'): Promise<NodeRecord[]> {
+  return run(async () => {
+    requireWriter()
+    const settings = requireSettings()
+    const { store, now: clock } = repo()
+    const now = clock()
+    const opts = placementOpts(settings)
+    const live = [...useWorld.getState().nodes.values()]
+    const moving = new Set(targets.keys())
+    // Fixed nodes first; movers are placed one by one against everything placed so far.
+    const placed: PlacedAnchor[] = toPlacedAnchors(live.filter((n) => !moving.has(n.id)), opts)
+    const before = new Map<string, [number, number]>()
+    const next: NodeRecord[] = []
+    for (const id of [...moving].sort()) {
+      const prev = findLive(id)
+      const want = targets.get(id)!
+      const y = anchorY(prev, opts)
+      const xz = nudgeAnchor([quantize(want[0]), quantize(want[1])], y, placed, { selfId: id, seed: fnv1a32(id), minRadius: minRadiusFor(prev.archetype) })
+      if (!xz) continue
+      placed.push({ id, anchorXZ: xz, y })
+      if (xz[0] === prev.anchorXZ[0] && xz[1] === prev.anchorXZ[1]) continue
+      before.set(id, [prev.anchorXZ[0], prev.anchorXZ[1]])
+      next.push({ ...prev, anchorXZ: xz, updatedAt: now })
+    }
+    if (next.length === 0) return []
+    await commit(next, () => store.putNodes(next))
+    useApp.getState().pushToast({
+      message: `${label}: ${next.length} node${next.length === 1 ? '' : 's'} moved`,
+      undo: () => void reanchorNodes(before, 'Restored').catch((e) => console.warn('[repo] undo re-anchor failed', e)),
+    })
+    return next
   })
 }
 
@@ -527,7 +632,7 @@ const FROZEN_FIELDS = ['id', 'createdAt', 'deletedAt', 'anchorXZ', 'schemaVersio
  * only, and a date change keeps XZ (snapping/nudging only if the new height breaks σ).
  * Use moveAnchor to drag, add/removeAttachment for files, softDelete/restore for trash.
  */
-export function updateNode(id: string, patch: Partial<NodeRecord>): Promise<NodeRecord> {
+export function updateNode(id: string, patch: Partial<NodeRecord>, opts: { keepAnchor?: boolean } = {}): Promise<NodeRecord> {
   return run(async () => {
     requireWriter()
     const settings = requireSettings()
@@ -538,7 +643,9 @@ export function updateNode(id: string, patch: Partial<NodeRecord>): Promise<Node
     let next: NodeRecord = { ...prev, ...clean, updatedAt: now }
     if (patch.thermo) next.thermo = { ...prev.thermo, ...patch.thermo }
     if (typeof next.title === 'string') next.title = next.title.trim()
-    next = replaceOnTagChange(prev, next, liveAnchors(settings), placementOpts(settings))
+    // keepAnchor: the anchor was placed semantically (omnibox), so a new primary tag must not
+    // send it back to a tag-hash sector.
+    if (!opts.keepAnchor) next = replaceOnTagChange(prev, next, liveAnchors(settings), placementOpts(settings))
     const dateChanged = next.temporalOrigin !== prev.temporalOrigin
     next = settle(next, settings, now, dateChanged ? 'nudge' : 'snap')
     await putOne(next)

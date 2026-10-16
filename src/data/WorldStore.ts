@@ -4,7 +4,7 @@ import type { AssetMeta, InteractionEvent, NodeRecord, WorldSettings } from '../
 // implementation must be durable, atomic per call, and exportable (see archive.ts).
 // Implementations: memoryStore (tests, private-mode fallback) and idbStore
 // (IndexedDB for records/events/settings/asset meta, OPFS for blob bytes).
-// Phase 4 adds an HTTP adapter over node:sqlite behind the same interface.
+// Phase 4 adds httpStore: the SQLite engine (server/) over HTTP, behind the same interface.
 
 export interface BlobInput {
   meta: AssetMeta
@@ -12,9 +12,9 @@ export interface BlobInput {
 }
 
 export interface StoreInfo {
-  kind: 'memory' | 'idb'
-  /** Where blob bytes live. 'idb' is the fallback when OPFS is unavailable. */
-  blobBackend: 'memory' | 'opfs' | 'idb'
+  kind: 'memory' | 'idb' | 'sqlite'
+  /** Where blob bytes live. 'idb' is the fallback when OPFS is unavailable; 'server' is the engine's blob directory. */
+  blobBackend: 'memory' | 'opfs' | 'idb' | 'server'
 }
 
 export interface WorldStore {

@@ -60,13 +60,14 @@ describe('assignTiers', () => {
     expect(t.get('a')).toBe('impostor')
   })
 
-  it('applies distance hysteresis: enter at 60, leave beyond 75', () => {
+  it('applies distance hysteresis: enter at enterDistance, leave beyond exitDistance', () => {
+    const { enterDistance: enter, exitDistance: exit } = TIER_LIMITS
     const at = (d: number, prev: Map<string, SplatTier>) => assignTiers([cand('a', d)], null, prev).get('a')
-    expect(at(65, none)).toBe('impostor')
+    expect(at(enter + 5, none)).toBe('impostor')
     const inside = new Map<string, SplatTier>([['a', 'proxy']])
-    expect(at(65, inside)).toBe('proxy')
-    expect(at(74.9, inside)).toBe('proxy')
-    expect(at(76, inside)).toBe('impostor')
+    expect(at(enter + 5, inside)).toBe('proxy')
+    expect(at(exit - 0.1, inside)).toBe('proxy')
+    expect(at(exit + 1, inside)).toBe('impostor')
   })
 
   it('applies rank hysteresis: a newcomer must be meaningfully closer to evict an incumbent', () => {

@@ -109,11 +109,26 @@ export interface NodeRecord {
   splat?: SplatBlock
   entity?: { kind: EntityKind }
   demon?: DemonBlock
+  /** Where the record came from when not typed in the editor (Phase 4 omnibox). */
+  provenance?: Provenance
   createdAt: number
   updatedAt: number
   /** Soft delete (30-day trash). */
   deletedAt: number | null
   schemaVersion: number
+}
+
+/**
+ * Omnibox origin. 'provisional' records were spawned from the raw text by heuristics in
+ * under 1.5 s; 'refined' ones were rewritten by the model; 'fallback' means refinement
+ * failed or was refused and the heuristic record was kept.
+ */
+export interface Provenance {
+  source: 'omnibox'
+  state: 'provisional' | 'refined' | 'fallback'
+  /** The text the user typed. */
+  raw: string
+  refinedAt?: number
 }
 
 export type QualityTier = 'auto' | 'high' | 'medium' | 'low'

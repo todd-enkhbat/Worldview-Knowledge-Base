@@ -20,6 +20,9 @@ import { backupNow, getStore, importWorld, isRepoReady, relayoutWorld, updateSet
 import type { RelayoutResult } from '../data/repo.ts'
 import { initStorageStatus, isStandalone, requestPersistence, safariEvictionRisk } from '../data/storage.ts'
 import { Credits } from './Credits.tsx'
+import { getEnginePreference, migrateWorld, planMigration, probeEngine, type EngineHealth, type EngineKind, type MigrationPlan } from '../data/engine.ts'
+import { disableSemantic, enableSemantic, useSemantic } from '../ai/semanticIndex.ts'
+import { runRecrystallise } from '../ai/recrystallise.ts'
 import {
   INSTALL_TEXT,
   STORAGE_EXPLAIN,
@@ -708,6 +711,142 @@ function DangerSection({ canWrite }: { canWrite: boolean }) {
 
 // ─── panel ─────────────────────────────────────────────────────────────────────────
 
+// ─── engine (Phase 4) ──────────────────────────────────────────────────────────────
+
+function EngineSection({ canWrite }: { canWrite: boolean }) {
+  const current = getEnginePreference()
+  const target: EngineKind = current === 'sqlite' ? 'idb' : 'sqlite'
+  const [health, setHealth] = useState<EngineHealth | null | 'checking'>('checking')
+  const [plan, setPlan] = useState<MigrationPlan | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [ok, setOk] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  useEffect(() => {
+    let live = true
+    void probeEngine().then((h) => live && setHealth(h))
+    return () => {
+      live = false
+    }
+  }, [])
+  const prepare = async () => {
+    setError(null)
+    setOk(null)
+    try {
+      setPlan(await planMigration(target))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    }
+  }
+  const run = async () => {
+    if (!plan) return
+    setBusy(true)
+    setError(null)
+    try {
+      const r = await migrateWorld(getStore(), target, { confirmReplace: plan.targetHasWorld })
+      setOk(`Moved ${plural(r.nodes, 'record')} and ${plural(r.assets, 'asset')} to ${target === 'sqlite' ? 'SQLite' : 'IndexedDB'}. Reloading…`)
+      setTimeout(() => location.reload(), 900)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+      setBusy(false)
+    } finally {
+      setPlan(null)
+    }
+  }
+  const name = (k: EngineKind) => (k === 'sqlite' ? 'SQLite (local server)' : 'IndexedDB (this browser)')
+  return (
+    <Section
+      title="Engine"
+      intro="Where the world is stored. SQLite runs inside the dev server (npm run dev) and adds server-side vector search; IndexedDB works anywhere, including the static build."
+    >
+      <KV k="Now">{name(current)}</KV>
+      <KV k="SQLite">
+        {health === 'checking' ? 'checking…' : health ? `running · Claude refinement ${health.refine ? 'on' : 'off (no ANTHROPIC_API_KEY)'}` : 'not running'}
+      </KV>
+      <Note>
+        Moving copies the whole world through an export archive and checks its records hash. The engine you leave keeps its copy untouched, so
+        you can always move back.
+      </Note>
+      {plan ? (
+        <div className="space-y-2">
+          <Note tone={plan.targetHasWorld ? 'warn' : 'plain'}>
+            {plan.targetHasWorld
+              ? `${name(target)} already holds a world (${plural(plan.targetNodes, 'record')}). It will be replaced; a pre-import backup of it is kept.`
+              : `${name(target)} is empty.`}
+          </Note>
+          <div className="flex gap-2">
+            <button type="button" className={plan.targetHasWorld ? BTN_DANGER : BTN_PRIMARY} disabled={busy} onClick={() => void run()}>
+              {busy ? 'Moving…' : `Move to ${target === 'sqlite' ? 'SQLite' : 'IndexedDB'}`}
+            </button>
+            <button type="button" className={BTN} disabled={busy} onClick={() => setPlan(null)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button type="button" className={BTN} disabled={!canWrite || busy || (target === 'sqlite' && !health)} onClick={() => void prepare()}>
+          Move world to {target === 'sqlite' ? 'SQLite' : 'IndexedDB'}…
+        </button>
+      )}
+      <Outcome ok={ok} error={error} />
+    </Section>
+  )
+}
+
+// ─── semantic engine (Phase 4) ─────────────────────────────────────────────────────
+
+function SemanticSection({ canWrite }: { canWrite: boolean }) {
+  const sem = useSemantic()
+  const [ok, setOk] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const recrystallise = async () => {
+    setBusy(true)
+    setOk(null)
+    setError(null)
+    try {
+      const r = await runRecrystallise()
+      setOk(r.moved ? `Re-crystallised: ${plural(r.moved, 'node')} moved (mean turn ${Math.round((r.meanTurn * 180) / Math.PI)}°). Undo is in the toast.` : 'Already crystallised: nothing moved.')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <Section
+      title="Semantic engine"
+      intro="EmbeddingGemma 2 runs in this browser (no data leaves it). The first start downloads the model from Hugging Face (about 175 MB with WebGPU, 315 MB without), then it is cached."
+    >
+      <KV k="Status">
+        {sem.phase === 'off' && 'off'}
+        {sem.phase === 'loading-model' && `downloading the model ${Math.round(sem.download * 100)}%`}
+        {sem.phase === 'indexing' && `indexing ${sem.indexed} / ${sem.total}`}
+        {sem.phase === 'ready' && `ready · ${sem.indexed} nodes · ${sem.config ?? ''} · ${sem.backend === 'sqlite' ? 'vectors in SQLite (sqlite-vec)' : 'vectors in this browser'}`}
+        {sem.phase === 'error' && <span className="text-signal">{sem.error}</span>}
+      </KV>
+      <div className="flex flex-wrap gap-2">
+        {sem.phase === 'off' || sem.phase === 'error' ? (
+          <button type="button" className={BTN_PRIMARY} onClick={() => void enableSemantic().catch((e: unknown) => setError(String(e)))}>
+            {sem.phase === 'error' ? 'Retry' : 'Turn on (model download)'}
+          </button>
+        ) : (
+          <button type="button" className={BTN} onClick={() => disableSemantic()}>
+            Turn off
+          </button>
+        )}
+        <button type="button" className={BTN} disabled={!canWrite || busy || sem.phase !== 'ready'} onClick={() => void recrystallise()}>
+          {busy ? 'Re-crystallising…' : 'Re-crystallise layout'}
+        </button>
+      </div>
+      <Note>
+        New nodes land near what they mean. Re-crystallise lays out every node by meaning at once (UMAP, aligned to the current layout so the
+        world turns as little as possible); each node keeps its distance from the axis and its date.
+      </Note>
+      <Outcome ok={ok} error={error} />
+    </Section>
+  )
+}
+
 function SettingsPanel() {
   const writer = useRepoStatus((s) => s.writer)
   const ready = useRepoStatus((s) => s.ready)
@@ -738,6 +877,8 @@ function SettingsPanel() {
         </p>
       )}
       <StorageSection />
+      <EngineSection canWrite={canWrite} />
+      <SemanticSection canWrite={canWrite} />
       <BackupsSection canWrite={canWrite} />
       <ImportSection canWrite={canWrite} />
       <RelayoutSection canWrite={canWrite} />

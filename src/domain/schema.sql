@@ -1,6 +1,7 @@
--- Phase-4 target schema (DOCUMENTATION ONLY: nothing executes this file in Phases 1–3).
--- It mirrors src/domain/types.ts for the node:sqlite HTTP adapter that will implement the
--- same WorldStore interface. Keep it in step with types.ts when fields are added.
+-- The SQLite engine's schema (Phase 4). server/worldDb.ts executes this file once per new
+-- database (PRAGMA user_version 0 → 1) after loading sqlite-vec. It mirrors
+-- src/domain/types.ts; keep it in step when fields are added (unknown NodeRecord keys
+-- survive in nodes.extra, so an older server never drops a newer client's fields).
 -- Conventions: epoch milliseconds as INTEGER; booleans as INTEGER 0/1; JSON as TEXT checked
 -- with json_valid(); ids are uuids (TEXT). Positions and velocities are never stored: they are
 -- a deterministic function of (records, settings, step).
@@ -46,6 +47,8 @@ CREATE TABLE nodes (
   updated_at         INTEGER NOT NULL,
   deleted_at         INTEGER,                                                         -- soft delete (30-day trash)
   schema_version     INTEGER NOT NULL,
+  provenance         TEXT    CHECK (provenance IS NULL OR json_valid(provenance)),    -- {source, state, raw?, refinedAt?}
+  extra              TEXT    CHECK (extra IS NULL OR json_valid(extra)),              -- NodeRecord keys this schema does not know
   CHECK (anchor_x * anchor_x + anchor_z * anchor_z < 3000 * 3000),
   CHECK (archetype <> 'entity' OR entity_kind IS NOT NULL),
   CHECK (archetype <> 'demon' OR (demon IS NOT NULL AND json_extract(demon, '$.radius') > 0))
@@ -57,7 +60,7 @@ CREATE INDEX nodes_temporal_origin ON nodes (temporal_origin);
 -- Link (NodeRecord.links[]). One row per (source, target, kind).
 CREATE TABLE links (
   source_id  TEXT    NOT NULL REFERENCES nodes (id) ON DELETE CASCADE,
-  target_id  TEXT    NOT NULL REFERENCES nodes (id) ON DELETE CASCADE,
+  target_id  TEXT    NOT NULL,                     -- no FK: putNodes writes in id order, and trashed targets only warn
   kind       TEXT    NOT NULL CHECK (kind IN ('relates', 'supports', 'contradicts', 'derives', 'influenced-by')),
   label      TEXT,
   created_at INTEGER NOT NULL,
@@ -74,8 +77,8 @@ CREATE TABLE assets (
   mime       TEXT    NOT NULL,
   bytes      INTEGER NOT NULL CHECK (bytes >= 0),
   created_at INTEGER NOT NULL,
-  node_id    TEXT    REFERENCES nodes (id) ON DELETE SET NULL,  -- owner, for orphan collection
-  data       BLOB                                               -- NULL when stored on disk by id
+  node_id    TEXT,                                              -- owner, for orphan collection (no FK: scene blobs are written before their record)
+  data       BLOB                                               -- unused: bytes live in the blob directory by id
 );
 CREATE INDEX assets_node ON assets (node_id);
 
@@ -87,8 +90,8 @@ CREATE TABLE attachments (
   name           TEXT    NOT NULL,
   mime           TEXT    NOT NULL,
   bytes          INTEGER NOT NULL CHECK (bytes >= 0),
-  blob_id        TEXT    NOT NULL REFERENCES assets (id),
-  thumb_blob_id  TEXT    REFERENCES assets (id),
+  blob_id        TEXT    NOT NULL,                 -- no FK: an import writes records before blobs
+  thumb_blob_id  TEXT,
   created_at     INTEGER NOT NULL,
   ord            INTEGER NOT NULL
 );
@@ -112,9 +115,17 @@ CREATE TABLE kv (
   value TEXT NOT NULL CHECK (json_valid(value))
 );
 
--- Phase 4 semantic layout: 512-d embeddings via sqlite-vec (cosine distance).
--- Load the extension first: SELECT load_extension('vec0');
+-- Semantic layout: 512-d embeddings via sqlite-vec (cosine distance). Load the extension
+-- first (sqlite-vec's load()). Embeddings are derived data: not exported, not hashed.
 CREATE VIRTUAL TABLE embeddings USING vec0 (
   node_id   TEXT PRIMARY KEY,
   embedding float[512] distance_metric=cosine
+);
+
+-- Which text and model produced each embedding, so unchanged nodes are not re-embedded.
+CREATE TABLE embedding_meta (
+  node_id    TEXT    PRIMARY KEY,
+  text_hash  TEXT    NOT NULL,
+  model      TEXT    NOT NULL,
+  updated_at INTEGER NOT NULL
 );

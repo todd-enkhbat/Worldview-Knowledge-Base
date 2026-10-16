@@ -23,5 +23,5 @@
     "noFallthroughCasesInSwitch": true,
     "noImplicitOverride": true
   },
-  "include": ["src", "tests", "scripts", "vite.config.ts", "eslint.config.js"]
+  "include": ["src", "server", "tests", "scripts", "vite.config.ts", "eslint.config.js"]
 }

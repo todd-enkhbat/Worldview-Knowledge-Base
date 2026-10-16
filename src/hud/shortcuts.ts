@@ -52,7 +52,7 @@ export function closePalette(): void {
 /** Any modal that owns the keyboard (palette, picker, editor, settings, trash). */
 export function isModalOpen(s = useApp.getState()): boolean {
   const p = s.panels
-  return p.palette || p.picker || p.settings || p.trash || s.editor.open
+  return p.palette || p.picker || p.settings || p.trash || p.omnibox || s.editor.open
 }
 
 export function selectAndFly(id: string): boolean {
@@ -105,7 +105,7 @@ export async function exportBackup(): Promise<'saved' | 'cancelled'> {
 
 // ─── global keys ─────────────────────────────────────────────────────────────────────
 
-export type ShortcutId = 'palette' | 'new' | 'library' | 'settings' | 'stats' | 'delete' | 'edit'
+export type ShortcutId = 'palette' | 'new' | 'library' | 'settings' | 'stats' | 'delete' | 'edit' | 'omnibox'
 
 export interface KeyLike {
   key: string
@@ -147,6 +147,7 @@ export function resolveShortcut(e: KeyLike, ctx: ShortcutContext): ShortcutId | 
   if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && letter === 'k') return 'palette'
   if (e.metaKey || e.ctrlKey || e.altKey || ctx.modal) return null
   if (e.key === ',') return 'settings'
+  if (e.key === '/') return 'omnibox'
   if (e.key === '`' || (e.code === 'Backquote' && !e.shiftKey)) return 'stats'
   if (e.shiftKey) return null
   if (e.key === 'Delete' || e.key === 'Backspace') {
@@ -173,6 +174,9 @@ export function runShortcut(id: ShortcutId): void {
       break
     case 'new':
       openPicker()
+      break
+    case 'omnibox':
+      app.togglePanel('omnibox', true)
       break
     case 'library':
       app.togglePanel('library')

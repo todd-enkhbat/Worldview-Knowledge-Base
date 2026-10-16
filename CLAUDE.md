@@ -7,6 +7,7 @@ A brutalist 4D worldview engine. The approved build plan is [docs/PLAN.md](docs/
 - `npm run check`: typecheck + lint + fast tests. Run it before declaring work done.
 - `npm run test:accept` / `npm run bench`: full-size physics acceptance and benchmarks (Node 26 runs `scripts/*.ts` directly)
 - `npm run serve`: production build + preview on the same origin
+- The dev/preview server also hosts the SQLite engine and `/api` (`server/`). Data in `data/` (gitignored). Put `ANTHROPIC_API_KEY` in `.env.local` (see `.env.example`) for omnibox refinement; never give it a `VITE_` prefix.
 
 ## Hard rules
 - **Pinned stack.** Exact versions only (`.npmrc` has `save-exact`). three must stay at 0.186.1 (postprocessing requires <0.187). Do not add dependencies without recording why in DECISIONS.md. TypeScript stays on 6.0.x (typescript-eslint needs <6.1).

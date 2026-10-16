@@ -11,7 +11,7 @@ import type { Archetype, NodeRecord } from '../../domain/types.ts'
 import { LAYER, RENDER_ORDER } from '../layers.ts'
 import { getPoseTable, type PoseTable } from '../poses.ts'
 import { SLAB, TESSERACT } from './geometry.ts'
-import { farScale, nodeScale, nodeYaw } from './instancing.ts'
+import { nodeScale, nodeYaw, recordFarScale } from './instancing.ts'
 import { COLORS } from './materials.ts'
 
 // Pooled troika labels: only the K nearest born nodes to the camera (plus the selection)
@@ -158,7 +158,7 @@ function place(g: Group, rec: NodeRecord, table: PoseTable, camera: Camera): voi
   const o = row * 3
   // Plaques and engravings ride on the mesh, so they take its distance boost too.
   camera.getWorldPosition(_cam)
-  const s = nodeScale(rec) * farScale(Math.hypot(table.pos[o] - _cam.x, table.pos[o + 1] - _cam.y, table.pos[o + 2] - _cam.z))
+  const s = nodeScale(rec) * recordFarScale(rec, Math.hypot(table.pos[o] - _cam.x, table.pos[o + 1] - _cam.y, table.pos[o + 2] - _cam.z))
   const lift = BILLBOARD_LIFT[rec.archetype]
   if (rec.archetype === 'memory' || rec.archetype === 'document') {
     g.position.set(table.pos[o], table.pos[o + 1], table.pos[o + 2])

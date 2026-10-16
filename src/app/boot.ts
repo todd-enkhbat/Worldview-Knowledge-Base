@@ -1,6 +1,7 @@
 import { initRepo, useRepoStatus } from '../data/repo.ts'
 import type { RepoStatus } from '../data/repo.ts'
 import { installDevApi } from './devApi.ts'
+import { isSemanticEnabled, startSemantic } from '../ai/semanticIndex.ts'
 
 // Start the data layer once per page, outside React (StrictMode runs effects twice, and the
 // world must load before the first frame needs it). Components read useWorld / useRepoStatus.
@@ -12,7 +13,10 @@ export function bootData(): Promise<RepoStatus | null> {
   booted ??= (async () => {
     installDevApi()
     try {
-      return await initRepo()
+      const status = await initRepo()
+      // Opt-in per browser (a 175 MB model download): only resume if it was turned on.
+      if (isSemanticEnabled()) startSemantic().catch((e) => console.warn('[boot] semantic index failed to start', e))
+      return status
     } catch (e) {
       console.error('[boot] the data layer failed to start', e)
       if (!useRepoStatus.getState().error) {

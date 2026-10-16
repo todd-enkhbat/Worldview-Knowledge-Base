@@ -8,7 +8,9 @@ import { Inspector } from './Inspector.tsx'
 import { Library } from './Library.tsx'
 import { ModeHint } from './ModeHint.tsx'
 import { NodeEditor } from './NodeEditor.tsx'
+import { Omnibox } from './Omnibox.tsx'
 import { ProximityCard } from './ProximityCard.tsx'
+import { SceneDrop } from './SceneDrop.tsx'
 import { Settings } from './Settings.tsx'
 import { SplatCrystallising, SplatFraming } from './SplatFraming.tsx'
 import { StatsPanel } from './StatsPanel.tsx'
@@ -59,6 +61,8 @@ export function Hud() {
           <Settings />
           <Trash />
           <CommandPalette />
+          <SceneDrop />
+          <Omnibox />
         </>
       )}
 
