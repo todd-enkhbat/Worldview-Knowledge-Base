@@ -43,7 +43,11 @@ export function createRefiner(opts: RefinerOptions = {}): (body: unknown) => Pro
     } catch (e) {
       if (e instanceof Anthropic.AuthenticationError) return { ok: false, reason: 'unavailable', message: 'The Anthropic API key was rejected.' }
       if (e instanceof Anthropic.RateLimitError) return { ok: false, reason: 'error', message: 'Rate limited; try again shortly.' }
-      if (e instanceof Anthropic.APIError) return { ok: false, reason: 'error', message: `API error ${e.status ?? ''}: ${e.message}` }
+      if (e instanceof Anthropic.APIError) {
+        // The API's own sentence (e.g. "Your credit balance is too low…"), not the raw JSON.
+        const inner = (e.error as { error?: { message?: unknown } } | undefined)?.error?.message
+        return { ok: false, reason: 'error', message: typeof inner === 'string' ? inner : `API error ${e.status ?? ''}: ${e.message}` }
+      }
       return { ok: false, reason: 'error', message: e instanceof Error ? e.message : String(e) }
     }
 
