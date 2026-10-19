@@ -458,3 +458,24 @@ User choices at the gate: SQLite as an **opt-in** engine (IndexedDB stays the de
 - **Kept:** tag-hash placement remains the fallback when the index is off.
 
 **Not in Phase 4:** demons still match with BM25 rather than embeddings. The capture pipeline, desktop shell and publishing stay in ROADMAP.
+
+### Readability pass, part 1: labels, default view, architecture dimming (2026-10-19)
+User choices: keep the five `LinkKind`s, dim the architecture behind a slider, and start with labels and the default view. Plan: `../Worldview-Knowledge-Base-main/plans/readability-pass.md`.
+
+**Screen-space labels.** Before this pass, no title was readable from the default view: in-world troika text at 0.065–0.19 u is sub-pixel at establishing-shot distance. `world/nodes/ScreenLabels.tsx` is an HTML overlay over the canvas, with one pooled div per shown node, 12 px bold title and a 10 px tag line (archetype · date at its precision).
+- **Handover:** a node gets a screen label only when its in-world title would be smaller than `MIN_WORLD_TEXT_PX = 11` (`worldTextPx` in `labels.tsx`). The in-world pool now carries text only above that size, so the two never double up.
+- **Declutter:** `declutter.ts` is pure and tested. It places labels greedily by priority (selected > hovered > linked to selection > degree > nearness, ties on id). It tries above, right, left and below, and drops a label only when no side fits clear of placed labels, the viewport and the HUD bars. Placement is resampled every 0.2 s; positions follow the pose table every frame. Opacity fades over 150 ms (none under reduced motion).
+- Far titles are clipped to 28 characters; hovered and selected nodes show the full title.
+- An HTML overlay was chosen over billboarded troika at constant pixel size. It needs no glyph atlas or extra draw calls, and text stays crisp at any DPR. The `#/lab/perf` A/B in the plan was not run; the main-thread check below stands in for it.
+
+**Default view.** `establish.ts` margins are now asymmetric (0.34 above, 0.16 below), because labels sit over their nodes and the top bar covers the top of the frame. When the middle half of node heights is narrower than 25 % of the 10–90 % band, the shot frames that dense cluster instead of the whole band. The demo world has 10 of 14 nodes within a year of NOW, and from far enough to see all 14 those labels cannot fit.
+
+**Architecture dimming.** Settings → Quality → Architecture (30–100 %, default 62 %) scales albedo and `envMapIntensity` of the board/cast concrete, brass, metal and terrain materials from their original values (`environment/dim.ts`). Emitters and year numerals are untouched. It is a per-device preference in `localStorage` (`hyperspace.view`), not world data, so archives and hashes are unchanged.
+
+**Measured** (pane, demo world, `__wv.readability()`):
+- 800×600: 7 of 12 in view readable, 0 overlaps.
+- 1440×900: 9 of 11 in view readable (82 %, RD1 target 80 %), 0 overlaps, min title 12 px.
+- Frame time at 120 Hz: median 8.3 ms, p99 9.8 ms, 0 frames > 25 ms over 180 frames.
+- `npm run check`: 608 tests pass.
+
+**Not done yet:** typed and visible links (RD2), year rings and the present plane (RD3/RD4), and the first-visit orientation line. P in Safari is still the user's check, now with labels on.

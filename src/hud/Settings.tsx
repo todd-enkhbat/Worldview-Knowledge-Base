@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
-import { useApp, useWorld } from '../app/store.ts'
+import { ARCHITECTURE_RANGE, useApp, useWorld } from '../app/store.ts'
 import { formatByPrecision } from '../domain/time.ts'
 import type { QualityTier } from '../domain/types.ts'
 import { ArchiveError } from '../data/archive.ts'
@@ -629,7 +629,9 @@ function RelayoutSection({ canWrite }: { canWrite: boolean }) {
 
 function QualitySection({ canWrite }: { canWrite: boolean }) {
   const tier = useApp((s) => s.quality.tier)
+  const architecture = useApp((s) => s.view.architecture)
   const id = useId()
+  const archId = useId()
   const [error, setError] = useState<string | null>(null)
   const onChange = async (t: QualityTier) => {
     setError(null)
@@ -642,7 +644,7 @@ function QualitySection({ canWrite }: { canWrite: boolean }) {
     }
   }
   return (
-    <Section title="Quality" intro="Rendering detail. Saved with the world; applies right away.">
+    <Section title="Quality" intro="Rendering detail. The tier is saved with the world; everything applies right away.">
       <label htmlFor={id} className="flex flex-col gap-1">
         <span className="hud-label">Tier</span>
         <select id={id} className={`${INPUT} w-full max-w-sm bg-void`} value={tier} onChange={(e) => onChange(e.target.value as QualityTier)}>
@@ -652,6 +654,22 @@ function QualitySection({ canWrite }: { canWrite: boolean }) {
             </option>
           ))}
         </select>
+      </label>
+      <label htmlFor={archId} className="flex flex-col gap-1">
+        <span className="hud-label">
+          Architecture · {Math.round(architecture * 100)}%
+        </span>
+        <input
+          id={archId}
+          type="range"
+          className="w-full max-w-sm accent-[var(--color-ember)]"
+          min={ARCHITECTURE_RANGE[0]}
+          max={ARCHITECTURE_RANGE[1]}
+          step={0.02}
+          value={architecture}
+          onChange={(e) => useApp.getState().setView({ architecture: Number(e.target.value) })}
+        />
+        <span className="text-[11px] text-concrete">How bright the column, colonnade and land are next to your nodes. Saved on this device.</span>
       </label>
       <Outcome ok={null} error={error} />
     </Section>

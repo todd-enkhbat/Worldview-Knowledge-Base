@@ -1,7 +1,7 @@
 import { memo, useCallback, useRef, useState } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { Text } from '@react-three/drei'
-import { Vector3, type Camera, type Group } from 'three'
+import { Vector3, type Camera, type Group, type PerspectiveCamera } from 'three'
 import monoBold from '@fontsource/jetbrains-mono/files/jetbrains-mono-latin-700-normal.woff?url'
 import monoRegular from '@fontsource/jetbrains-mono/files/jetbrains-mono-latin-400-normal.woff?url'
 import { useApp } from '../../app/store.ts'
@@ -15,7 +15,8 @@ import { nodeScale, nodeYaw, recordFarScale } from './instancing.ts'
 import { COLORS } from './materials.ts'
 
 // Pooled troika labels: only the K nearest born nodes to the camera (plus the selection)
-// carry text. The set is recomputed a few times per second; React re-renders only when the
+// whose text would be readable (worldTextPx ≥ MIN_WORLD_TEXT_PX) carry in-world text; the
+// rest are labelled in screen space by ScreenLabels.tsx. The set is recomputed a few times per second; React re-renders only when the
 // set changes. Placement runs every frame from the pose table. Memories carry their plaque
 // typography and documents their engraved title; every other archetype gets a billboard.
 
@@ -39,6 +40,21 @@ const ARCHETYPE_NAME: Record<Archetype, string> = {
   document: 'DOCUMENT',
   memory: 'MEMORY',
   demon: 'DEMON',
+}
+
+/** Title size (world units at node scale 1) of each archetype's in-world text. */
+const TITLE_FONT: Record<Archetype, number> = { idea: 0.19, entity: 0.19, lens: 0.19, demon: 0.19, memory: 0.1, document: 0.12 }
+
+/** Below this many CSS px, a title is handed to the screen-space label layer. */
+export const MIN_WORLD_TEXT_PX = 11
+
+/** On-screen height (CSS px) of a record's in-world title at camera distance `d`. */
+export function worldTextPx(rec: NodeRecord, d: number, camera: Camera, viewportHeight: number): number {
+  const fov = (camera as PerspectiveCamera).fov ?? 50
+  const pxPerUnit = viewportHeight / (2 * Math.max(d, 1e-3) * Math.tan((fov * Math.PI) / 360))
+  const onMesh = rec.archetype === 'memory' || rec.archetype === 'document'
+  const s = onMesh ? nodeScale(rec) * recordFarScale(rec, d) : 1
+  return TITLE_FONT[rec.archetype] * s * pxPerUnit
 }
 
 const EMBER_TEXT = COLORS.ember.clone().multiplyScalar(2.4)
@@ -88,7 +104,7 @@ export function LabelPool({ records, byId, memoryRank }: PoolProps) {
     if (t - s.last >= RESAMPLE_SECONDS || t < s.last || s.records !== records) {
       s.last = t
       s.records = records
-      const next = nearestIds(records, table, state.camera, s.bestD, s.bestI, useApp.getState().selectedId)
+      const next = nearestIds(records, table, state.camera, state.size.height, s.bestD, s.bestI, useApp.getState().selectedId)
       if (!sameIds(next, ids)) setIds(next)
     }
     for (let i = 0; i < ids.length; i++) {
@@ -108,11 +124,12 @@ export function LabelPool({ records, byId, memoryRank }: PoolProps) {
   )
 }
 
-/** K nearest born nodes to the camera, in record order, plus the selection. */
+/** K nearest born nodes to the camera with readable in-world text, in record order, plus the selection if readable. */
 function nearestIds(
   records: readonly NodeRecord[],
   table: PoseTable,
   camera: Camera,
+  viewportHeight: number,
   bestD: Float64Array,
   bestI: Int32Array,
   selectedId: string | null,
@@ -130,6 +147,7 @@ function nearestIds(
     const dy = table.pos[o + 1] - cy
     const dz = table.pos[o + 2] - cz
     const d2 = dx * dx + dy * dy + dz * dz
+    if (worldTextPx(records[i], Math.sqrt(d2), camera, viewportHeight) < MIN_WORLD_TEXT_PX) continue
     if (count === K && d2 >= bestD[K - 1]) continue
     let j = count < K ? count++ : K - 1
     while (j > 0 && bestD[j - 1] > d2) {
@@ -142,7 +160,13 @@ function nearestIds(
   }
   const order = Array.from(bestI.subarray(0, count)).sort((a, b) => a - b)
   const out = order.map((i) => records[i].id)
-  if (selectedId && !out.includes(selectedId) && table.index.has(selectedId)) out.push(selectedId)
+  const sel = selectedId ? records.find((r) => r.id === selectedId) : undefined
+  const row = sel ? table.index.get(sel.id) : undefined
+  if (sel && row !== undefined && !out.includes(sel.id)) {
+    const o = row * 3
+    const d = Math.hypot(table.pos[o] - cx, table.pos[o + 1] - cy, table.pos[o + 2] - cz)
+    if (worldTextPx(sel, d, camera, viewportHeight) >= MIN_WORLD_TEXT_PX) out.push(sel.id)
+  }
   return out
 }
 

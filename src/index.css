@@ -38,3 +38,55 @@ body,
     @apply border border-bone/30 px-2 py-1 font-mono text-[11px] uppercase tracking-wider text-bone hover:bg-bone hover:text-void disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-bone;
   }
 }
+
+/* Screen-space node labels (world/nodes/ScreenLabels.tsx): constant size, decluttered. */
+.wv-labels {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 1;
+}
+.wv-label {
+  position: absolute;
+  left: 0;
+  top: 0;
+  padding: 3px 6px 4px;
+  border-left: 1px solid color-mix(in srgb, var(--color-ember) 70%, transparent);
+  background: color-mix(in srgb, var(--color-void) 72%, transparent);
+  font-family: var(--font-mono);
+  color: var(--color-bone);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0;
+  transition: opacity 150ms ease-out;
+  will-change: transform, opacity;
+}
+.wv-label.is-shown {
+  opacity: 1;
+}
+.wv-label.is-selected {
+  border-left-color: var(--color-signal);
+  background: color-mix(in srgb, var(--color-void) 88%, transparent);
+}
+.wv-label-tag {
+  font-size: 10px;
+  line-height: 13px;
+  letter-spacing: 0.12em;
+  color: color-mix(in srgb, var(--color-bone) 60%, transparent);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wv-label-title {
+  font-size: 12px;
+  line-height: 15px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@media (prefers-reduced-motion: reduce) {
+  .wv-label {
+    transition: none;
+  }
+}

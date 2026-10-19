@@ -7,6 +7,7 @@ import { LAYER } from '../layers.ts'
 import { Crystals, Demons, Documents, Lenses, Monoliths, Tesseracts, type VectorPairs } from './archetypes.tsx'
 import { useNodeKit } from './kit.ts'
 import { LabelPool } from './labels.tsx'
+import { ScreenLabels } from './ScreenLabels.tsx'
 import { SelectionMarkers } from './markers.tsx'
 
 export { usePoseWriterStatic, buildStaticPoseTable } from './staticPoses.ts'
@@ -91,6 +92,7 @@ export function NodeLayer() {
       <Suspense fallback={null}>
         <LabelPool records={groups.all} byId={nodes} memoryRank={groups.memoryRank} />
       </Suspense>
+      <ScreenLabels records={groups.all} byId={nodes} />
     </group>
   )
 }

@@ -11,6 +11,7 @@ import { EnvironmentLighting, EnvironmentLights, SkyDome, Stars } from './Sky.ts
 import { buildArchitecture } from './layout.ts'
 import { PALETTE, createConcreteMaterial, createEmissiveMaterial, createMetalMaterial } from './materials.ts'
 import { usePathGraph } from './usePathGraph.ts'
+import { useArchitectureDim } from './dim.ts'
 
 // The brutalist world shell: void sky and stars, PMREM environment, floor (reflective in third
 // person), terraced land and horizon ranges around it, fluted core, a ground colonnade with a
@@ -49,6 +50,8 @@ function useEnvironmentMaterials() {
     },
     [m],
   )
+  const lit = useMemo(() => [m.board, m.cast, m.brass, m.metal], [m])
+  useArchitectureDim(lit)
   return m
 }
 

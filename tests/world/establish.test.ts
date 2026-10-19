@@ -18,14 +18,15 @@ describe('establishingShot', () => {
     expect(establishingShot([node('a', 3, 30, 1)], settings, 50, 4 / 3, 800)).toBeNull()
   })
 
-  it('aims at the middle of the populated band and fits it in the frame', () => {
+  it('aims just above the middle of the populated band (room for labels) and fits it in the frame', () => {
     const nodes = Array.from({ length: 21 }, (_, i) => node(`n${i}`, 10 + i, 22 + (i % 5) * 7))
     const shot = establishingShot(nodes, settings, 50, 4 / 3, 800)!
     // The 10–90 % band of years 10..30 is years 12..28.
     const yMid = ((12 + 28) / 2) * Y_PER_YEAR
     expect(shot.target[0]).toBe(0)
     expect(shot.target[2]).toBe(0)
-    expect(shot.target[1]).toBeCloseTo(yMid, 6)
+    // Margins are 0.34 above and 0.16 below, so the aim rises by 0.09 of the band.
+    expect(shot.target[1]).toBeCloseTo(yMid + 0.09 * 16 * Y_PER_YEAR, 6)
     const d = Math.hypot(shot.position[0], shot.position[1] - shot.target[1], shot.position[2])
     // The band (16 years) fits vertically, and the camera looks down on it.
     expect(16 * Y_PER_YEAR).toBeLessThan(2 * d * halfV)
@@ -38,5 +39,15 @@ describe('establishingShot', () => {
     expect(shot.target[1]).toBeLessThan(25 * Y_PER_YEAR)
     const capped = establishingShot(nodes, settings, 50, 4 / 3, 50)!
     expect(Math.hypot(capped.position[0], capped.position[1] - capped.target[1], capped.position[2])).toBeCloseTo(50, 6)
+  })
+
+  it('frames a dense cluster rather than the whole band, so its labels fit', () => {
+    const spread = [node('a', 2, 30), node('b', 6, 30), node('c', 12, 30)]
+    const cluster = Array.from({ length: 10 }, (_, i) => node(`k${i}`, 29.5 + i * 0.05, 20 + i * 3))
+    const shot = establishingShot([...spread, ...cluster], settings, 50, 4 / 3, 800)!
+    expect(shot.target[1]).toBeGreaterThan(28 * Y_PER_YEAR)
+    const all = establishingShot(spread, settings, 50, 4 / 3, 800)!
+    const dist = (s: typeof shot) => Math.hypot(s.position[0], s.position[1] - s.target[1], s.position[2])
+    expect(dist(shot)).toBeLessThan(dist(all))
   })
 })

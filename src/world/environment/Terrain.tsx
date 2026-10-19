@@ -3,6 +3,7 @@ import { BufferAttribute, BufferGeometry, Color, MeshStandardMaterial } from 'th
 import { LAYER } from '../layers.ts'
 import { PALETTE } from './materials.ts'
 import { PERISTYLE_RADIUS } from './layout.ts'
+import { useArchitectureDim } from './dim.ts'
 
 // The land around the time column, so the world reads as a place rather than a tower on an
 // endless slab: a shallow terraced basin just outside the peristyle, rolling cut-stone
@@ -179,6 +180,8 @@ export function Terrain({ yMax }: { yMax: number }) {
   const peak = terrainPeak(yMax)
   const geometry = useMemo(() => buildTerrainGeometry(peak), [peak])
   const material = useMemo(createTerrainMaterial, [])
+  const dimmed = useMemo(() => [material], [material])
+  useArchitectureDim(dimmed)
   useEffect(() => () => geometry.dispose(), [geometry])
   useEffect(() => () => material.dispose(), [material])
   return <mesh name="terrain" geometry={geometry} material={material} layers={LAYER.SOLID} raycast={() => {}} />

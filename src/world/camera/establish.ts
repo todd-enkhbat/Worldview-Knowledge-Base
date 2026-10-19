@@ -17,12 +17,17 @@ const AZIMUTH = (0.5 + PYLON_EVERY / 2) * ((Math.PI * 2) / PERISTYLE_COLUMNS)
 const ELEVATION = 0.37
 /** Raised three-quarter view direction (target → camera), normalised below. */
 const DIR: Vec3 = [Math.cos(AZIMUTH) * Math.cos(ELEVATION), Math.sin(ELEVATION), Math.sin(AZIMUTH) * Math.cos(ELEVATION)]
-/** Frame the central 10–90 % of node heights: a few outliers should not push the camera away. */
+/** Frame the central 10–90 % of node heights (a few outliers should not push the camera away),
+ *  or the middle half when that is a dense cluster. */
 const LOW_Q = 0.1
 const HIGH_Q = 0.9
-/** Air around the framed band (fraction of its height, and at least this many units). */
-const MARGIN = 0.18
+/** Air above and below the framed band (fractions of its height). More above: labels sit over
+ *  their nodes and the top bar covers the top of the frame. At least MIN_BAND units in all. */
+const MARGIN_TOP = 0.34
+const MARGIN_BOTTOM = 0.16
 const MIN_BAND = 60
+/** Middle half narrower than this fraction of the 10–90 % band counts as a dense cluster. */
+const DENSE_FRACTION = 0.25
 
 function quantile(sorted: readonly number[], q: number): number {
   const i = (sorted.length - 1) * q
@@ -51,10 +56,19 @@ export function establishingShot(
   }
   if (ys.length === 0) return null
   ys.sort((a, b) => a - b)
-  const y0 = quantile(ys, LOW_Q)
-  const y1 = quantile(ys, HIGH_Q)
-  const band = Math.max(MIN_BAND, (y1 - y0) * (1 + 2 * MARGIN))
-  const yc = (y0 + y1) / 2
+  let y0 = quantile(ys, LOW_Q)
+  let y1 = quantile(ys, HIGH_Q)
+  // A dense cluster (the middle half within DENSE_FRACTION of the band) would be an unreadable
+  // knot from far enough to see everything: frame the cluster instead, so its labels fit.
+  const q0 = quantile(ys, 0.25)
+  const q1 = quantile(ys, 0.75)
+  if (y1 - y0 > 0 && q1 - q0 < DENSE_FRACTION * (y1 - y0)) {
+    y0 = q0
+    y1 = q1
+  }
+  const h = y1 - y0
+  const band = Math.max(MIN_BAND, h * (1 + MARGIN_TOP + MARGIN_BOTTOM))
+  const yc = (y0 + y1) / 2 + ((MARGIN_TOP - MARGIN_BOTTOM) * h) / 2
   const halfV = Math.tan((vfovDeg * Math.PI) / 360)
   // Fit the band vertically and the ring diameter horizontally.
   const d = Math.min(maxDistance, Math.max(band / 2 / halfV, (rMax * 1.3) / (halfV * aspect)))

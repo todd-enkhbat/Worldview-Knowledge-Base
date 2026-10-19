@@ -64,6 +64,35 @@ export interface QualityState {
   lodSplatCount: number
 }
 
+/** Per-device view preferences (localStorage; not part of the world or its archive). */
+export interface ViewState {
+  /** Architecture brightness, 0.3–1 (1 = the original full-contrast shell). */
+  architecture: number
+}
+
+const VIEW_KEY = 'hyperspace.view'
+export const VIEW_DEFAULTS: ViewState = { architecture: 0.62 }
+export const ARCHITECTURE_RANGE = [0.3, 1] as const
+
+function loadView(): ViewState {
+  try {
+    const raw = globalThis.localStorage?.getItem(VIEW_KEY)
+    const v = raw ? (JSON.parse(raw) as Partial<ViewState>) : {}
+    const a = typeof v.architecture === 'number' && Number.isFinite(v.architecture) ? v.architecture : VIEW_DEFAULTS.architecture
+    return { architecture: Math.min(ARCHITECTURE_RANGE[1], Math.max(ARCHITECTURE_RANGE[0], a)) }
+  } catch {
+    return { ...VIEW_DEFAULTS }
+  }
+}
+
+function saveView(v: ViewState): void {
+  try {
+    globalThis.localStorage?.setItem(VIEW_KEY, JSON.stringify(v))
+  } catch {
+    // Private mode or blocked storage: the preference lasts for this session only.
+  }
+}
+
 export interface ClockState {
   /** Integer physics step at the playhead. */
   step: number
@@ -85,6 +114,7 @@ interface AppState {
   editor: EditorState
   toasts: UndoToast[]
   quality: QualityState
+  view: ViewState
 
   setMode: (to: CameraMode) => boolean
   select: (id: string | null) => void
@@ -97,6 +127,7 @@ interface AppState {
   pushToast: (t: Omit<UndoToast, 'id' | 'expiresAt'>, ttlMs?: number) => string
   dismissToast: (id: string) => void
   setQuality: (patch: Partial<QualityState>) => void
+  setView: (patch: Partial<ViewState>) => void
   /** Esc precedence: palette or modal, then first-person exit, then deselect. */
   escape: () => void
 }
@@ -126,6 +157,7 @@ export const useApp = create<AppState>()((set, get) => ({
   editor: { open: false, nodeId: null, archetype: null },
   toasts: [],
   quality: { tier: 'auto', dpr: 1.5, reflector: 'full', dofOnlyFlyIn: false, lodSplatCount: 1_500_000 },
+  view: loadView(),
 
   setMode: (to) => {
     const from = get().mode
@@ -147,6 +179,12 @@ export const useApp = create<AppState>()((set, get) => ({
   },
   dismissToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
   setQuality: (patch) => set((s) => ({ quality: { ...s.quality, ...patch } })),
+  setView: (patch) =>
+    set((s) => {
+      const view = { ...s.view, ...patch }
+      saveView(view)
+      return { view }
+    }),
   escape: () => {
     const s = get()
     const modalOpen = s.panels.palette || s.panels.picker || s.panels.settings || s.panels.trash || s.panels.omnibox || s.editor.open
