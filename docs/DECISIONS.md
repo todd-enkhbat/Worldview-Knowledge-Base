@@ -479,3 +479,20 @@ User choices: keep the five `LinkKind`s, dim the architecture behind a slider, a
 - `npm run check`: 608 tests pass.
 
 **Not done yet:** typed and visible links (RD2), year rings and the present plane (RD3/RD4), and the first-visit orientation line. P in Safari is still the user's check, now with labels on.
+
+### Readability pass, part 2: typed, visible links (2026-10-19)
+The five `LinkKind`s are kept, per the user. Before this, every link was one grey `LineBasicMaterial` at 0.28 brightness and the kind was never drawn.
+- **Styles** (`world/links/style.ts`):
+  - supports: solid ember, 2 px.
+  - contradicts: solid signal red, 2 px, with a 14 % gap at the midpoint.
+  - derives: dashed bone, 1.5 px, with an arrow.
+  - influenced-by: dotted, 1.5 px, with an arrow.
+  - relates: grey, 1 px.
+- **One link per node pair.** When a pair carries several kinds, the most assertive is drawn (contradicts > supports > derives > influenced-by > relates).
+- **Arrow direction:** arrows follow the flow of ideas. For "A derives from B" and "A was influenced by B" the arrow runs B → A, and the legend says so. The plan's "arrowhead at the target" is superseded by this.
+- **Rendering:** `LineSegments2` + `LineMaterial` (three/examples), with screen-space widths, one object per kind (≤ 5 draw calls). Buffers are allocated once per link set and rewritten in place. Arrowheads keep a constant 9 px on screen, so a rebuild runs when the poses, the camera or the emphasis change. Base brightness is raised from 0.28 to 1.15; near, hovered and selected ends go to 1.7, 2.4 and 3. Unborn ends fade to 0.3.
+- **Hover:** `LinkHover.tsx` picks in screen space (≤ 6 px from the projected segment) and shows "A — supports → B". A hovered node always wins over a link. The tip flips at the stage edges.
+- **Legend:** a HUD key at the bottom left lists all five kinds with counts for this world, dimming kinds with no links. It is open on a first visit and remembered per device (`hyperspace.linkLegend`). No keyboard shortcut was added, because `L` is already Library.
+- **Verified:** in the node sandbox, `__wv.linkStats()` gives contradicts 1 link → 2 segments, derives and influenced-by 1 → 3 (body + two head strokes), relates 5 → 5, supports 1 → 1. Hovering the red link showed "Notes on brutalism — contradicts → Rain on the concrete church". `npm run check`: 612 tests pass.
+- **Not verified by eye:** the arrowheads close up, because the sandbox camera drifts and screenshots at that size are unreliable. The segment counts above stand in for that check.
+- **Test noise:** an earlier full run failed 18 files on worker start-up and 60 s timeouts while the machine ran about 100× slower than usual. A rerun on a quiet machine passed in 20 s.

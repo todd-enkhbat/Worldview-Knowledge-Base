@@ -90,3 +90,25 @@ body,
     transition: none;
   }
 }
+
+/* Link tooltip (world/links/LinkHover.tsx). */
+.wv-link-tip {
+  position: absolute;
+  left: 0;
+  top: 0;
+  max-width: 420px;
+  width: max-content;
+  padding: 4px 8px;
+  border-left: 2px solid var(--color-bone);
+  background: color-mix(in srgb, var(--color-void) 90%, transparent);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--color-bone);
+  pointer-events: none;
+  opacity: 0;
+  z-index: 2;
+}
+.wv-link-tip.is-shown {
+  opacity: 1;
+}

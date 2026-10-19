@@ -10,7 +10,7 @@ import type { Archetype, LinkKind, NodeRecord, WorldSettings } from '../domain/t
 import { SCHEMA_VERSION } from '../domain/types.ts'
 import { makeNodeDraft } from '../domain/validate.ts'
 import { enableMainCameraLayers } from '../world/layers.ts'
-import { LinkLayer } from '../world/links/index.tsx'
+import { LinkHover, LinkLayer } from '../world/links/index.tsx'
 import { NodeLayer, usePoseWriterStatic } from '../world/nodes/index.tsx'
 import { getPoseTable, touchPoseTable } from '../world/poses.ts'
 
@@ -125,6 +125,7 @@ function Scene({ ghosts }: { ghosts: boolean }) {
       </mesh>
       <NodeLayer />
       <LinkLayer />
+      <LinkHover />
       <OrbitControls makeDefault target={TARGET} enableDamping />
       <EffectComposer multisampling={0} frameBufferType={HalfFloatType}>
         <Bloom mipmapBlur luminanceThreshold={1} luminanceSmoothing={0.25} intensity={0.85} />

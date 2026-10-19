@@ -1,46 +1,39 @@
 import { useEffect, useMemo, useRef } from 'react'
-import { useFrame } from '@react-three/fiber'
-import { BufferAttribute, BufferGeometry, Color, DynamicDrawUsage, LineBasicMaterial, LineSegments } from 'three'
+import { useFrame, useThree } from '@react-three/fiber'
+import { Color, InstancedInterleavedBuffer, InterleavedBufferAttribute, Vector3 } from 'three'
+import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js'
+import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js'
+import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry.js'
 import { useWorld } from '../../app/store.ts'
-import type { NodeRecord } from '../../domain/types.ts'
+import { registerDevApi } from '../../app/devApi.ts'
+import type { LinkKind } from '../../domain/types.ts'
 import { LAYER } from '../layers.ts'
 import { getPoseTable } from '../poses.ts'
 import { emphasisLevel, sampleEmphasis } from '../nodes/emphasis.ts'
+import { KIND_PRECEDENCE, LINK_STYLE, buildTypedLinks, type TypedLink } from './style.ts'
 
-// <LinkLayer/>: explicit links (record.links) as plain thin lines between the current
-// poses. One LineSegments with a dynamic buffer: positions are rewritten when the pose table
-// changes, colours when the emphasis (selection / hover / near) changes. Dim by default,
-// ember when either endpoint is emphasised, signal-tinted when one is selected.
+export { buildTypedLinks, LINK_STYLE, KIND_PRECEDENCE, linkSentence } from './style.ts'
+export type { TypedLink } from './style.ts'
+export { LinkHover } from './LinkHover.tsx'
 
-export interface LinkPairs {
-  a: string[]
-  b: string[]
-}
+// <LinkLayer/>: explicit links (record.links) drawn by kind (style.ts) with screen-space wide
+// lines, one LineSegments2 per kind (≤ 5 draw calls). Each link is one segment, two when it has
+// a midpoint gap (contradicts), plus two for an arrowhead (derives, influenced-by). Arrowheads
+// keep a constant on-screen size, so the buffers are rewritten whenever the poses or the
+// camera move; colours follow the emphasis (selection / hover / near) and unborn ends fade.
 
-/** Undirected, de-duplicated links whose endpoints are both live. Exported for tests. */
-export function buildLinkPairs(nodes: ReadonlyMap<string, NodeRecord>): LinkPairs {
-  const seen = new Set<string>()
-  const a: string[] = []
-  const b: string[] = []
-  for (const n of nodes.values()) {
-    for (const l of n.links) {
-      const t = l.targetId
-      if (t === n.id || !nodes.has(t)) continue
-      const key = n.id < t ? `${n.id}|${t}` : `${t}|${n.id}`
-      if (seen.has(key)) continue
-      seen.add(key)
-      a.push(n.id)
-      b.push(t)
-    }
-  }
-  return { a, b }
-}
-
-const DIM = new Color('#8d8a84').multiplyScalar(0.28)
-const LIT = new Color('#e8b04a').multiplyScalar(2.6)
-const NEAR = new Color('#e8b04a').multiplyScalar(1.5)
-const SELECTED = new Color('#ff4a1c').multiplyScalar(3)
-const UNBORN_FADE = 0.35
+/** Segments per link: up to two body halves plus two arrowhead strokes. */
+const SEGS_PER_LINK = 4
+const ARROW_PX = 9
+/** The arrow tip stops this many px short of the downstream node, so its mesh does not hide it. */
+const TIP_BACK_PX = 14
+const ARROW_HALF_ANGLE = 0.42
+/** Brightness: base, an emphasised end, the hovered end, the selected end; unborn ends fade. */
+const BASE = 1.15
+const NEAR = 1.7
+const LIT = 2.4
+const SELECTED = 3
+const UNBORN_FADE = 0.3
 
 function capacityFor(n: number): number {
   let c = 16
@@ -48,99 +41,167 @@ function capacityFor(n: number): number {
   return c
 }
 
-function makeLines(capacity: number, material: LineBasicMaterial): LineSegments {
-  const g = new BufferGeometry()
-  const pos = new BufferAttribute(new Float32Array(capacity * 6), 3).setUsage(DynamicDrawUsage)
-  const col = new BufferAttribute(new Float32Array(capacity * 6), 3).setUsage(DynamicDrawUsage)
-  g.setAttribute('position', pos)
-  g.setAttribute('color', col)
-  g.setDrawRange(0, 0)
-  const lines = new LineSegments(g, material)
-  lines.name = 'links'
-  lines.layers.set(LAYER.SOLID)
-  // Endpoints move every pose write; culling would need a bounds pass per write for a
-  // single draw call.
-  lines.frustumCulled = false
-  return lines
+interface KindLines {
+  kind: LinkKind
+  links: TypedLink[]
+  lines: LineSegments2
+  pos: Float32Array
+  col: Float32Array
+  dist: Float32Array
+  bufs: InstancedInterleavedBuffer[]
+  base: Color
 }
+
+function makeKindLines(kind: LinkKind, links: TypedLink[], material: LineMaterial): KindLines {
+  const cap = capacityFor(links.length * SEGS_PER_LINK)
+  const g = new LineSegmentsGeometry()
+  const pos = new Float32Array(cap * 6)
+  const col = new Float32Array(cap * 6)
+  const dist = new Float32Array(cap * 2)
+  const posBuf = new InstancedInterleavedBuffer(pos, 6, 1)
+  const colBuf = new InstancedInterleavedBuffer(col, 6, 1)
+  const distBuf = new InstancedInterleavedBuffer(dist, 2, 1)
+  g.setAttribute('instanceStart', new InterleavedBufferAttribute(posBuf, 3, 0))
+  g.setAttribute('instanceEnd', new InterleavedBufferAttribute(posBuf, 3, 3))
+  g.setAttribute('instanceColorStart', new InterleavedBufferAttribute(colBuf, 3, 0))
+  g.setAttribute('instanceColorEnd', new InterleavedBufferAttribute(colBuf, 3, 3))
+  g.setAttribute('instanceDistanceStart', new InterleavedBufferAttribute(distBuf, 1, 0))
+  g.setAttribute('instanceDistanceEnd', new InterleavedBufferAttribute(distBuf, 1, 1))
+  g.instanceCount = 0
+  const lines = new LineSegments2(g, material)
+  lines.name = `links-${kind}`
+  lines.layers.set(LAYER.SOLID)
+  // Endpoints move every pose write; culling would need a bounds pass per write.
+  lines.frustumCulled = false
+  return { kind, links, lines, pos, col, dist, bufs: [posBuf, colBuf, distBuf], base: new Color(LINK_STYLE[kind].color) }
+}
+
+function makeMaterial(kind: LinkKind): LineMaterial {
+  const s = LINK_STYLE[kind]
+  const m = new LineMaterial({ vertexColors: true, linewidth: s.width, worldUnits: false, toneMapped: false })
+  if (s.dash) {
+    m.dashed = true
+    m.dashSize = s.dash[0]
+    m.gapSize = s.dash[1]
+    m.dashScale = 1
+  }
+  return m
+}
+
+/** Dev: per-kind link and segment counts from the last rebuild (__wv.linkStats()). */
+let lastStats: Record<string, { links: number; segments: number }> = {}
+registerDevApi('linkStats', () => lastStats)
+
+const _a = new Vector3()
+const _b = new Vector3()
+const _d = new Vector3()
+const _t = new Vector3()
+const _side = new Vector3()
+const _view = new Vector3()
 
 export function LinkLayer() {
   const nodes = useWorld((s) => s.nodes)
-  const pairs = useMemo(() => buildLinkPairs(nodes), [nodes])
-  const material = useMemo(() => new LineBasicMaterial({ vertexColors: true, toneMapped: false }), [])
-  useEffect(() => () => material.dispose(), [material])
-  const capacity = capacityFor(pairs.a.length)
-  const lines = useMemo(() => makeLines(capacity, material), [capacity, material])
-  useEffect(() => () => lines.geometry.dispose(), [lines])
+  const size = useThree((s) => s.size)
+  const links = useMemo(() => buildTypedLinks(nodes), [nodes])
+  const materials = useMemo(() => Object.fromEntries(KIND_PRECEDENCE.map((k) => [k, makeMaterial(k)])) as Record<LinkKind, LineMaterial>, [])
+  useEffect(() => () => Object.values(materials).forEach((m) => m.dispose()), [materials])
+  useEffect(() => {
+    for (const m of Object.values(materials)) m.resolution.set(size.width, size.height)
+  }, [materials, size])
 
-  const st = useRef({
-    version: -1,
-    pairs: null as LinkPairs | null,
-    lines: null as LineSegments | null,
-    sel: null as string | null,
-    hov: null as string | null,
-    near: null as string | null,
-  })
+  const groups = useMemo(() => {
+    const out: KindLines[] = []
+    for (const k of KIND_PRECEDENCE) {
+      const ls = links.filter((l) => l.kind === k)
+      if (ls.length) out.push(makeKindLines(k, ls, materials[k]))
+    }
+    return out
+  }, [links, materials])
+  useEffect(() => () => groups.forEach((g) => g.lines.geometry.dispose()), [groups])
+
+  const st = useRef({ key: '', groups: null as KindLines[] | null, h: 0 })
 
   useFrame((state) => {
-    const s = st.current
     const table = getPoseTable()
-    const e = sampleEmphasis(state.camera, state.clock.elapsedTime)
-    const structural = s.pairs !== pairs || s.lines !== lines
-    const moved = structural || s.version !== table.version
-    const recolor = moved || e.selected !== s.sel || e.hovered !== s.hov || e.near !== s.near
-    if (!moved && !recolor) return
+    const cam = state.camera
+    const e = sampleEmphasis(cam, state.clock.elapsedTime)
+    const s = st.current
+    const key = `${table.version}|${cam.matrixWorld.elements.join(',')}|${e.selected}|${e.hovered}|${e.near}`
+    if (key === s.key && s.groups === groups && s.h === size.height) return
+    s.key = key
+    s.groups = groups
+    s.h = size.height
+    const stats: typeof lastStats = {}
+    const fov = (cam as { fov?: number }).fov ?? 50
+    const pxPerUnitAt1 = size.height / (2 * Math.tan((fov * Math.PI) / 360))
 
-    const n = pairs.a.length
-    const pos = lines.geometry.getAttribute('position') as BufferAttribute
-    const col = lines.geometry.getAttribute('color') as BufferAttribute
-    const P = pos.array as Float32Array
-    const C = col.array as Float32Array
-    for (let i = 0; i < n; i++) {
-      const ra = table.index.get(pairs.a[i])
-      const rb = table.index.get(pairs.b[i])
-      const o = i * 6
-      if (moved) {
-        if (ra === undefined || rb === undefined) {
-          P.fill(0, o, o + 6)
+    for (const g of groups) {
+      const style = LINK_STYLE[g.kind]
+      let seg = 0
+      const put = (ax: number, ay: number, az: number, bx: number, by: number, bz: number, k: number) => {
+        const o = seg * 6
+        g.pos[o] = ax
+        g.pos[o + 1] = ay
+        g.pos[o + 2] = az
+        g.pos[o + 3] = bx
+        g.pos[o + 4] = by
+        g.pos[o + 5] = bz
+        g.col[o] = g.col[o + 3] = g.base.r * k
+        g.col[o + 1] = g.col[o + 4] = g.base.g * k
+        g.col[o + 2] = g.col[o + 5] = g.base.b * k
+        g.dist[seg * 2] = 0
+        g.dist[seg * 2 + 1] = Math.hypot(bx - ax, by - ay, bz - az)
+        seg++
+      }
+      for (const l of g.links) {
+        const ra = table.index.get(l.from)
+        const rb = table.index.get(l.to)
+        if (ra === undefined || rb === undefined) continue
+        _a.set(table.pos[ra * 3], table.pos[ra * 3 + 1], table.pos[ra * 3 + 2])
+        _b.set(table.pos[rb * 3], table.pos[rb * 3 + 1], table.pos[rb * 3 + 2])
+        const la = emphasisLevel(e, l.from)
+        const lb = emphasisLevel(e, l.to)
+        const hov = l.from === e.hovered || l.to === e.hovered
+        let k = la === 2 || lb === 2 ? SELECTED : hov ? LIT : la === 1 || lb === 1 ? NEAR : BASE
+        if (table.born[ra] !== 1 || table.born[rb] !== 1) k *= UNBORN_FADE
+
+        if (style.gap > 0) {
+          _t.lerpVectors(_a, _b, 0.5 - style.gap / 2)
+          put(_a.x, _a.y, _a.z, _t.x, _t.y, _t.z, k)
+          _t.lerpVectors(_a, _b, 0.5 + style.gap / 2)
+          put(_t.x, _t.y, _t.z, _b.x, _b.y, _b.z, k)
         } else {
-          P[o] = table.pos[ra * 3]
-          P[o + 1] = table.pos[ra * 3 + 1]
-          P[o + 2] = table.pos[ra * 3 + 2]
-          P[o + 3] = table.pos[rb * 3]
-          P[o + 4] = table.pos[rb * 3 + 1]
-          P[o + 5] = table.pos[rb * 3 + 2]
+          put(_a.x, _a.y, _a.z, _b.x, _b.y, _b.z, k)
+        }
+
+        if (style.arrow) {
+          _d.subVectors(_b, _a)
+          const len = _d.length()
+          if (len < 1e-4) continue
+          _d.divideScalar(len)
+          const unit = Math.max(_b.distanceTo(cam.position), 1e-3) / pxPerUnitAt1
+          const head = Math.min(ARROW_PX * unit, len * 0.3)
+          _t.copy(_b).addScaledVector(_d, -Math.min(TIP_BACK_PX * unit, len * 0.3))
+          _view.subVectors(cam.position, _t).normalize()
+          _side.crossVectors(_d, _view).normalize()
+          const c = Math.cos(ARROW_HALF_ANGLE) * head
+          const sn = Math.sin(ARROW_HALF_ANGLE) * head
+          put(_t.x, _t.y, _t.z, _t.x - _d.x * c + _side.x * sn, _t.y - _d.y * c + _side.y * sn, _t.z - _d.z * c + _side.z * sn, k)
+          put(_t.x, _t.y, _t.z, _t.x - _d.x * c - _side.x * sn, _t.y - _d.y * c - _side.y * sn, _t.z - _d.z * c - _side.z * sn, k)
         }
       }
-      if (recolor) {
-        const la = emphasisLevel(e, pairs.a[i])
-        const lb = emphasisLevel(e, pairs.b[i])
-        const c =
-          la === 2 || lb === 2
-            ? SELECTED
-            : (la === 1 && pairs.a[i] === e.hovered) || (lb === 1 && pairs.b[i] === e.hovered)
-              ? LIT
-              : la === 1 || lb === 1
-                ? NEAR
-                : DIM
-        const unborn = ra === undefined || rb === undefined || table.born[ra] !== 1 || table.born[rb] !== 1
-        const k = unborn ? UNBORN_FADE : 1
-        C[o] = C[o + 3] = c.r * k
-        C[o + 1] = C[o + 4] = c.g * k
-        C[o + 2] = C[o + 5] = c.b * k
-      }
+      g.lines.geometry.instanceCount = seg
+      for (const b of g.bufs) b.needsUpdate = true
+      stats[g.kind] = { links: g.links.length, segments: seg }
     }
-    if (moved) pos.needsUpdate = true
-    if (recolor) col.needsUpdate = true
-    lines.geometry.setDrawRange(0, n * 2)
-
-    s.version = table.version
-    s.pairs = pairs
-    s.lines = lines
-    s.sel = e.selected
-    s.hov = e.hovered
-    s.near = e.near
+    lastStats = stats
   }, -1)
 
-  return pairs.a.length > 0 ? <primitive object={lines} /> : null
+  return (
+    <group name="links">
+      {groups.map((g) => (
+        <primitive key={g.kind} object={g.lines} />
+      ))}
+    </group>
+  )
 }

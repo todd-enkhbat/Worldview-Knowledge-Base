@@ -3,7 +3,7 @@ import { CameraRig } from './camera/index.tsx'
 import { DustLayer } from './dust/DustLayer.tsx'
 import { EnvironmentScene, usePathGraph } from './environment/index.tsx'
 import { HyperspaceCanvas } from './HyperspaceCanvas.tsx'
-import { LinkLayer } from './links/index.tsx'
+import { LinkHover, LinkLayer } from './links/index.tsx'
 import { NodeLayer } from './nodes/index.tsx'
 import { Overlays } from './overlays/index.tsx'
 import { PostStack } from './post/PostStack.tsx'
@@ -27,6 +27,7 @@ function Scene() {
       <EnvironmentScene graph={graph} />
       <NodeLayer />
       <LinkLayer />
+      <LinkHover />
       {/* The dissipative O layer (citadels, mist, synapses, demon lattice, satellites) plus
           dwell logging. A top-level 'overlays' group so the interior's world-hide covers it. */}
       <group name="overlays">
