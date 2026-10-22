@@ -561,3 +561,42 @@ User pivot (plan: `../Worldview-Knowledge-Base-main/plans/milestone-1-intake.md`
 - `.docx`, email and calendar are deferred.
 - I1 (10 notes in 5 minutes), I2 (a 20-page PDF in under 60 s), I3 (a live URL) and I6 (asks rather than guesses) were not measured end to end in the UI; that needs the writer tab and real use.
 - No cost estimate in Settings yet: the token counts show in the chat footer only.
+
+### Milestone 1b: anything can live in the world (2026-10-22)
+User report: Claude kept a dropped photo as "My studio portrait" but said it could not attach the picture, because "notes here only hold text". Notes now keep originals of any type and point at live things.
+
+**Model**
+- `Attachment.kind` is `'image' | 'text' | 'file'`. Any file is kept byte for byte, up to 256 MB a file (was 64 MB, images and text only). `sniffMime` now recognises PDF and SQLite by magic, plus ~35 named formats (Office and iWork, epub, video, audio, archives, vCard, iCal, parquet, GeoJSON, KML, GPX, notebooks).
+- `NodeRecord.embeds?: Embed[]` (`youtube | web | place`), optional, so older records are valid as they are.
+
+**Intake** (`src/ai/chat/apply.ts`, `preview.ts`): every item keeps its original `File`, and Claude reads:
+- PDFs ≤ 20 MB whole.
+- Images whole. HEIC, oversize or unsupported types are re-encoded as JPEG ≤ 1568 px for Claude only; the original is kept as is.
+- Text as text.
+- Video: duration plus a frame from 10 % in. Audio: duration.
+- Previews: CSV/TSV (rows, typed columns, first rows), JSON (shape; notebooks as cells), vCard (one line per contact), iCal (one line per event), zip (listing plus small text files), docx/pptx/xlsx (text, slides, sheets and strings).
+- Anything else: name, type and size, and Claude asks.
+- **Folders:** a folder with `.obsidian/` or mostly markdown imports as a vault. Any other folder is staged as its layout plus up to 60 files.
+- **YouTube links** are read through oEmbed (title and channel).
+
+**Keeping**
+- Proposals gain `attach` (names of files from the conversation), `embeds` and `addTo` (an existing note's id: its files, embeds and links go onto that note instead of a new one).
+- On Keep, the originals are stored with `addAttachment`. A note whose source is a URL embeds that URL even if Claude did not.
+- Originals wait in memory until kept. After a reload, the card names any file that must be added again.
+
+**Prompt.** The system prompt now says originals are kept and links become embeds, and tells Claude never to describe a picture instead of keeping it.
+
+**Inspector** (`src/hud/NoteMedia.tsx`): video and audio play in place, PDFs view in place, and any file opens or saves. YouTube plays (youtube-nocookie), pages open, and places show an OpenStreetMap map (when they have coordinates) plus Apple and Google Maps links. Players and iframes load only on click.
+
+**Vault.** Export writes originals to `attachments/<note>/<file>`, and frontmatter lists them along with `url`/`place`. Import attaches files that notes reference (`![[photo.jpg]]`, `[[paper.pdf]]`, or our own `attachments/` paths).
+
+**Verified**
+- `npm run check`: 82 files, 636 tests. One timing flake in `archive.autoBackup` passed on rerun.
+- In the pane, from local sample state that was never saved: the video, PDF and contact-card rows and the YouTube, place and page embeds render.
+- Live: a dropped image plus "Keep it" → `search_world`, then a `memory` proposal with `attach: ['portrait.png']`.
+
+**Not done**
+- Geocoding addresses (a place without coordinates gets map links, not a map).
+- Reading inside databases, video or audio.
+- Persisting not-yet-kept originals across a reload.
+- Thumbnails for video.

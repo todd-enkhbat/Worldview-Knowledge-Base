@@ -278,10 +278,14 @@ describe('repo: attachments', () => {
     expect(img).toMatchObject({ kind: 'image', mime: 'image/png', name: 'board.bin', bytes: png.length })
     expect(useWorld.getState().nodes.get(n.id)!.attachments.map((a) => a.id)).toEqual([text.id, img.id])
 
-    await expect(addAttachment(n.id, new Blob([new Uint8Array([0, 1, 2, 3, 0, 0, 0])]), 'blob.bin')).rejects.toThrow(/Unsupported/)
+    // Any file can be kept: unknown binaries are stored as-is.
+    const bin = await addAttachment(n.id, new Blob([new Uint8Array([0, 1, 2, 3, 0, 0, 0])]), 'blob.bin')
+    expect(bin).toMatchObject({ kind: 'file', mime: 'application/octet-stream', bytes: 7 })
+    const pdf = await addAttachment(n.id, new Blob(['%PDF-1.7 rest']), 'paper.pdf')
+    expect(pdf).toMatchObject({ kind: 'file', mime: 'application/pdf' })
 
     const after = await removeAttachment(n.id, text.id)
-    expect(after.attachments.map((a) => a.id)).toEqual([img.id])
+    expect(after.attachments.map((a) => a.id)).toEqual([img.id, bin.id, pdf.id])
     expect(await store.getBlob(text.blobId)).toBeUndefined()
   })
 

@@ -2,7 +2,7 @@ import type Anthropic from '@anthropic-ai/sdk'
 import { create } from 'zustand'
 import { useWorld } from '../../app/store.ts'
 import { registerDevApi } from '../../app/devApi.ts'
-import { addNodes, getStore, isRepoReady, link } from '../../data/repo.ts'
+import { addAttachment, addNodes, getStore, isRepoReady, link, updateNode } from '../../data/repo.ts'
 import { proposalToDraft, searchWorld, URL_RE, urlToIntake, type IntakeItem } from './apply.ts'
 import { TOOL_INPUTS, type AskUserInput, type ChatStreamEvent, type ProposedNote, type ToolName } from './protocol.ts'
 
@@ -79,6 +79,34 @@ export const useChat = create<ChatState>()(() => ({
   staged: [],
   usage: { input: 0, output: 0, cacheRead: 0 },
 }))
+
+// ─── originals ───────────────────────────────────────────────────────────────────────
+// Files the user added this session, by name, so a kept note can store the original. They
+// live in memory until kept; after a reload a card says its file must be dropped again.
+
+const originals = new Map<string, File>()
+
+function rememberOriginal(file: File): void {
+  originals.set(file.name, file)
+  const rel = (file as File & { webkitRelativePath?: string }).webkitRelativePath
+  if (rel) originals.set(rel, file)
+}
+
+/** The originals a proposal should keep: its attach list, plus its source if that is a file. */
+function originalsFor(note: ProposedNote): { found: File[]; missing: string[] } {
+  const names = [...new Set([...(note.attach ?? []), ...(note.source.ref && !/^https?:\/\//.test(note.source.ref) ? [note.source.ref] : [])])]
+  const found: File[] = []
+  const missing: string[] = []
+  for (const n of names) {
+    const f = originals.get(n) ?? originals.get(n.split('/').pop()!)
+    if (f && !found.includes(f)) found.push(f)
+    else if (!f && (note.attach ?? []).includes(n)) missing.push(n)
+  }
+  return { found, missing }
+}
+
+/** Test hook: register a file as if the user had added it. */
+export const _rememberOriginalForTests = rememberOriginal
 
 // ─── persistence ─────────────────────────────────────────────────────────────────────
 
@@ -165,12 +193,15 @@ export async function send(text = '', opts: { hidden?: boolean } = {}): Promise<
   const content: ContentBlock[] = [...toolResults()]
   const today = isoDay(Date.now())
   if (s.contextDay !== today) content.push({ type: 'text', text: worldContext() })
-  for (const item of s.staged) content.push(item.block)
+  for (const item of s.staged) {
+    content.push(...item.blocks)
+    if (item.file) rememberOriginal(item.file)
+  }
   const urls = [...new Set(trimmed.match(URL_RE) ?? [])].slice(0, 3)
   for (const url of urls) {
     const page = await urlToIntake(url)
     if ('error' in page) useChat.setState({ error: page.error })
-    else content.push(page.block)
+    else content.push(...page.blocks)
   }
   if (s.laterKept.length) content.push({ type: 'text', text: `[ui:kept] Since then I also kept: ${s.laterKept.join('; ')}` })
   if (trimmed) content.push({ type: 'text', text: opts.hidden ? `[ui:start] ${trimmed}` : trimmed })
@@ -320,9 +351,27 @@ async function keepCards(toolId: string, keys: readonly string[]): Promise<void>
   const settings = useWorld.getState().settings
   if (!settings) return
   const cs = useChat.getState().cards[toolId] ?? []
-  const chosen = cs.filter((c) => keys.includes(c.key) && c.status === 'open')
-  if (!chosen.length) return
+  const open = cs.filter((c) => keys.includes(c.key) && c.status === 'open')
+  if (!open.length) return
   const now = Date.now()
+  // Additions to existing notes: files, embeds and links go onto that note.
+  for (const c of open.filter((x) => x.note.addTo && useWorld.getState().nodes.has(x.note.addTo))) {
+    const id = c.note.addTo!
+    try {
+      const target = useWorld.getState().nodes.get(id)!
+      const extra = proposalToDraft(c.note, id, new Map([...useWorld.getState().nodes.keys()].map((k) => [k, k])), settings, now, useChat.getState().model ?? 'claude')
+      if (extra.embeds?.length) await updateNode(id, { embeds: [...(target.embeds ?? []), ...extra.embeds] }, { keepAnchor: true })
+      for (const l of extra.links ?? []) if (!target.links.some((x) => x.targetId === l.targetId)) await link(id, l.targetId, l.kind).catch(() => {})
+      const { found, missing } = originalsFor(c.note)
+      const failed = [...missing]
+      for (const f of found) await addAttachment(id, f, f.name).catch(() => failed.push(f.name))
+      setCard(toolId, c.key, { status: 'kept', id, error: failed.length ? `Not attached (add ${failed.length === 1 ? 'it' : 'them'} again): ${failed.join(', ')}` : undefined })
+    } catch (e) {
+      setCard(toolId, c.key, { error: e instanceof Error ? e.message : String(e) })
+    }
+  }
+  const chosen = open.filter((x) => !(x.note.addTo && useWorld.getState().nodes.has(x.note.addTo)))
+  if (!chosen.length) return continueIfDecided()
   const ids = new Map<string, string>()
   for (const id of useWorld.getState().nodes.keys()) ids.set(id, id)
   for (const c of cs) if (c.status === 'kept' && c.id) ids.set(c.key, c.id)
@@ -336,7 +385,17 @@ async function keepCards(toolId: string, keys: readonly string[]): Promise<void>
     for (const c of chosen) setCard(toolId, c.key, { error: e instanceof Error ? e.message : String(e) })
     return
   }
-  for (const c of chosen) setCard(toolId, c.key, { status: 'kept', id: fresh.get(c.key), error: undefined })
+  for (const c of chosen) {
+    const id = fresh.get(c.key)!
+    const { found, missing } = originalsFor(c.note)
+    const failed: string[] = [...missing]
+    for (const f of found) await addAttachment(id, f, f.name).catch(() => failed.push(f.name))
+    setCard(toolId, c.key, {
+      status: 'kept',
+      id,
+      error: failed.length ? `Not attached (add ${failed.length === 1 ? 'it' : 'them'} again to keep the original): ${failed.join(', ')}` : undefined,
+    })
+  }
   // Cards kept earlier that link to the ones just kept get their links now.
   for (const c of cs) {
     if (c.status !== 'kept' || !c.id) continue

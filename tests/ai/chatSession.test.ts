@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useApp, useWorld } from '../../src/app/store.ts'
 import { createMemoryStore } from '../../src/data/memoryStore.ts'
 import { closeRepo, completeFirstRun, createNode, initRepo } from '../../src/data/repo.ts'
-import { keepAll, keepCard, loadChat, resetChat, send, skipCard, useChat } from '../../src/ai/chat/session.ts'
+import { _rememberOriginalForTests, keepAll, keepCard, loadChat, resetChat, send, skipCard, useChat } from '../../src/ai/chat/session.ts'
 import { importVault } from '../../src/ai/chat/apply.ts'
 import type { ChatStreamEvent } from '../../src/ai/chat/protocol.ts'
 
@@ -102,6 +102,63 @@ describe('chat session', () => {
     await vi.waitFor(() => expect(titles()).toEqual([]))
   })
 
+  it('keeps the original file and live embeds with the note (the portrait case)', async () => {
+    _rememberOriginalForTests(new File([new Uint8Array([0xff, 0xd8, 0xff, 0xe0])], 'portrait.jpg', { type: 'image/jpeg' }))
+    script([
+      [
+        {
+          type: 'tool_use',
+          id: 'p1',
+          name: 'propose_notes',
+          input: {
+            notes: [
+              note('n1', 'My studio portrait', {
+                kind: 'memory',
+                attach: ['portrait.jpg', 'gone.mov'],
+                embeds: [
+                  { kind: 'youtube', url: 'https://youtu.be/abc123', title: 'Talk' },
+                  { kind: 'place', place: { name: 'Pupin Hall', address: '550 W 120th St, New York', lat: 40.81, lng: -73.96 } },
+                ],
+              }),
+            ],
+          },
+        },
+      ],
+      [{ type: 'text', text: 'kept' }],
+    ])
+    await send('here is my portrait')
+    await keepCard('p1', 'n1')
+    const rec = [...useWorld.getState().nodes.values()].find((n) => n.title === 'My studio portrait')!
+    expect(rec.attachments).toMatchObject([{ name: 'portrait.jpg', kind: 'image', mime: 'image/jpeg' }])
+    expect(rec.embeds?.map((e) => e.kind)).toEqual(['youtube', 'place'])
+    expect(useChat.getState().cards.p1[0].error).toMatch(/gone\.mov/)
+    await vi.waitFor(() => expect(useChat.getState().busy).toBe(false))
+  })
+
+  it('adds a file and a place to an existing note when the card says addTo', async () => {
+    const memory = await createNode({ archetype: 'memory', title: 'My studio portrait' })
+    _rememberOriginalForTests(new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])], 'portrait.png', { type: 'image/png' }))
+    script([
+      [
+        {
+          type: 'tool_use',
+          id: 'p1',
+          name: 'propose_notes',
+          input: { notes: [note('n1', 'The photo itself', { addTo: memory.id, attach: ['portrait.png'], embeds: [{ kind: 'place', place: { name: 'The studio' } }] })] },
+        },
+      ],
+      [{ type: 'text', text: 'done' }],
+    ])
+    await send('attach this to my portrait memory')
+    await keepCard('p1', 'n1')
+    const rec = useWorld.getState().nodes.get(memory.id)!
+    expect(useWorld.getState().nodes.size).toBe(1)
+    expect(rec.attachments.map((a) => a.name)).toEqual(['portrait.png'])
+    expect(rec.embeds?.[0]).toMatchObject({ kind: 'place', place: { name: 'The studio' } })
+    expect(useChat.getState().cards.p1[0]).toMatchObject({ status: 'kept', id: memory.id })
+    await vi.waitFor(() => expect(useChat.getState().busy).toBe(false))
+  })
+
   it('turns an invalid tool input into an error result and lets Claude retry', async () => {
     const { bodies } = script([[{ type: 'tool_use', id: 'x', name: 'propose_notes', input: { notes: [] } }], [{ type: 'text', text: 'sorry' }]])
     await send('hi')
@@ -116,14 +173,19 @@ describe('chat session', () => {
   })
 
   it('imports a vault without Claude, moving pre-T0 dates to reference dates', async () => {
+    const file = (path: string, text: string) => ({ path, file: new File([text], path.split('/').pop()!) })
     const r = await importVault([
-      { path: 'Boltzmann.md', text: '---\nkind: entity\ndate: 1844-02-20\n---\n[[Entropy]]', lastModified: 0 },
-      { path: 'Entropy.md', text: '---\ndate: 2001\n---\nbody', lastModified: 0 },
+      file('Boltzmann.md', '---\nkind: entity\ndate: 1844-02-20\n---\n[[Entropy]] ![[portrait.png]]'),
+      file('Entropy.md', '---\ndate: 2001\n---\nbody'),
+      file('assets/portrait.png', 'png bytes'),
     ])
     expect(r.added).toBe(2)
     const b = [...useWorld.getState().nodes.values()].find((n) => n.title === 'Boltzmann')!
     expect(b.temporalOrigin).toBe(T0)
     expect(b.referenceDate).toMatchObject({ epochMs: Date.UTC(1844, 1, 20), precision: 'day' })
     expect(b.links).toHaveLength(1)
+    // ![[portrait.png]] attaches the vault's file as the note's original.
+    expect(r.attached).toBe(1)
+    expect(useWorld.getState().nodes.get(b.id)!.attachments.map((a) => a.name)).toEqual(['portrait.png'])
   })
 })

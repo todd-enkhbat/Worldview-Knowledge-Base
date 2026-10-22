@@ -17,7 +17,6 @@ export interface AttachmentFieldProps {
   onRemovePending: (index: number) => void
 }
 
-const ACCEPT = 'image/*,text/*,.md,.markdown,.txt,.csv,.tsv,.json,.log'
 
 /**
  * Attachments are staged, not written: removals and new files apply on Save so Cancel really
@@ -79,7 +78,6 @@ export function AttachmentField({ id, existing, removedIds, onToggleRemove, pend
         id={id}
         type="file"
         multiple
-        accept={ACCEPT}
         aria-describedby={`${id}-hint`}
         className={
           'block w-full font-mono text-[11px] text-concrete file:mr-2 file:cursor-pointer file:border file:border-bone/30 ' +

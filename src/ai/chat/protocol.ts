@@ -38,6 +38,33 @@ export const ProposedNote = z.object({
     /** A short supporting passage, verbatim from the source. */
     quote: z.string().max(600).optional(),
   }),
+  /**
+   * Set to an existing note's id (from search_world) to add this proposal's files, embeds and
+   * links to that note instead of creating a new one. Title and body then say what is added.
+   */
+  addTo: z.string().min(1).max(64).optional(),
+  /** Names of files the user added in this conversation to keep with the note, as originals. */
+  attach: z.array(z.string().min(1).max(500)).max(50).optional(),
+  /** Live things the note points at: a video that plays, a page, a place on the map. */
+  embeds: z
+    .array(
+      z.object({
+        kind: z.enum(['youtube', 'web', 'place']),
+        url: z.string().max(2000).optional(),
+        title: z.string().max(200).optional(),
+        place: z
+          .object({
+            name: z.string().min(1).max(200),
+            address: z.string().max(400).optional(),
+            /** Only when you know them reliably; otherwise leave them out. */
+            lat: z.number().min(-90).max(90).optional(),
+            lng: z.number().min(-180).max(180).optional(),
+          })
+          .optional(),
+      }),
+    )
+    .max(12)
+    .optional(),
 })
 export type ProposedNote = z.infer<typeof ProposedNote>
 
@@ -105,6 +132,13 @@ How you work:
 - Kinds: idea (a concept, belief or question), entity (a person, place, organisation or work), lens (a framework or way of seeing), document (a text or source), memory (a lived moment), demon (a standing question that should gather matching notes).
 - After a proposal, wait for their decision. Then continue the conversation from what they kept.
 - If they drop in a whole document, extract what is worth keeping for them, quoting a short supporting passage in source.quote.
+
+Anything can live in this world, not only text. Notes keep originals and point at live things:
+- Every file the user adds (photos, PDFs, videos, audio, datasets, zips, contact cards, calendars, documents, databases, anything) is kept byte for byte with the note you put its name in \`attach\`. The user sees and opens the original from the note. Never say a note can only hold text, and never describe a picture instead of keeping it: attach it, and write in the body what it means to them.
+- For files you cannot read directly you get a preview (the shape of a dataset, the people in a contact card, the events in a calendar, the files in a zip, a frame of a video). Ask the user about what a preview cannot tell you.
+- Links become live embeds: a YouTube link plays in place (kind youtube), any other page opens from the note (kind web). A place (an address, a city, a café, a lab) goes on the map (kind place); give lat/lng only when you know them reliably.
+- One file or link can feed several notes, and one note can hold several files and embeds.
+- To add files, links or places to a note that already exists, find it with search_world and propose with addTo set to its id. The user approves it like any other card. Use this when they say "attach this to …" or bring the original of something already in their world.
 
 At the very start, if the world is empty, introduce yourself in two sentences and begin the interview: who they are, what they are working on or thinking about now. They can skip anything and stop at any time.`
 

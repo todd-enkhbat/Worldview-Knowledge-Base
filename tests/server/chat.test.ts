@@ -93,4 +93,15 @@ describe('URL reading', () => {
     expect(page.title).toBe('Hello & bye')
     expect(page.text).toContain('Body')
   })
+
+  it('reads YouTube links through oEmbed', async () => {
+    let asked = ''
+    const page = await fetchReadable('https://youtu.be/abc123', (async (u: string) => {
+      asked = String(u)
+      return new Response(JSON.stringify({ title: 'Entropy talk', author_name: 'Sean' }), { headers: { 'content-type': 'application/json' } })
+    }) as unknown as typeof fetch)
+    expect(asked).toContain('youtube.com/oembed')
+    expect(page).toMatchObject({ kind: 'youtube', title: 'Entropy talk' })
+    expect(page.text).toContain('by Sean')
+  })
 })

@@ -12,6 +12,7 @@ import { HudDialog } from './DurabilityKit.tsx'
 import { significanceWord, volatilityWord } from './fields/helpers.ts'
 import { IngestProgressBar, SceneThumb, formatCount, useStoredBlobUrl } from './fields/SceneField.tsx'
 import { Markdown } from './markdown.ts'
+import { EmbedsSection, FileRow } from './NoteMedia.tsx'
 import { deleteNode, editNode, openPalette, selectAndFly } from './shortcuts.ts'
 
 // Right-hand panel for the selected node. Read-only view plus the node's actions; editing
@@ -205,6 +206,7 @@ function InspectorPanel({ id }: { id: string }) {
         {node.archetype === 'memory' && <SceneSection node={node} />}
 
         {node.attachments.length > 0 && <AttachmentsSection attachments={node.attachments} />}
+        {(node.embeds?.length ?? 0) > 0 && <EmbedsSection embeds={node.embeds!} />}
       </div>
 
       <footer className="grid grid-cols-4 gap-px border-t border-bone/20 bg-bone/20">
@@ -292,15 +294,9 @@ function AttachmentsSection({ attachments }: { attachments: Attachment[] }) {
         </ul>
       )}
       {others.length > 0 && (
-        <ul className="m-0 list-none space-y-1 p-0">
+        <ul className="m-0 list-none space-y-1.5 p-0">
           {others.map((a) => (
-            <li key={a.id} className="flex gap-2">
-              <span className="hud-label w-10 shrink-0 pt-[2px]">{a.kind}</span>
-              <span className="min-w-0 flex-1 truncate" title={a.name}>
-                {a.name}
-              </span>
-              <span className="shrink-0 text-concrete">{formatBytes(a.bytes)}</span>
-            </li>
+            <FileRow key={a.id} attachment={a} />
           ))}
         </ul>
       )}

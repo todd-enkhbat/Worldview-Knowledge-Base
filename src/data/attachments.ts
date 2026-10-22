@@ -7,7 +7,7 @@ import type { Attachment } from '../domain/types.ts'
 export type AttachmentKind = Attachment['kind']
 
 /** Hard cap per attachment. Browser storage is the only copy; huge blobs belong in a splat or an export. */
-export const MAX_ATTACHMENT_BYTES = 64 * 1024 * 1024
+export const MAX_ATTACHMENT_BYTES = 256 * 1024 * 1024
 /** Longest thumbnail edge in pixels. */
 export const THUMB_MAX_PX = 256
 export const THUMB_QUALITY = 0.8
@@ -48,12 +48,52 @@ const IMAGE_EXTENSIONS: Record<string, string> = {
   heif: 'image/heif',
 }
 
+/** Binary formats worth naming (everything else is application/octet-stream). */
+const FILE_EXTENSIONS: Record<string, string> = {
+  pdf: 'application/pdf',
+  zip: 'application/zip',
+  gz: 'application/gzip',
+  tar: 'application/x-tar',
+  '7z': 'application/x-7z-compressed',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  key: 'application/vnd.apple.keynote',
+  pages: 'application/vnd.apple.pages',
+  numbers: 'application/vnd.apple.numbers',
+  epub: 'application/epub+zip',
+  mp4: 'video/mp4',
+  mov: 'video/quicktime',
+  webm: 'video/webm',
+  m4v: 'video/x-m4v',
+  mp3: 'audio/mpeg',
+  m4a: 'audio/mp4',
+  wav: 'audio/wav',
+  aac: 'audio/aac',
+  flac: 'audio/flac',
+  ogg: 'audio/ogg',
+  vcf: 'text/vcard',
+  ics: 'text/calendar',
+  sqlite: 'application/vnd.sqlite3',
+  sqlite3: 'application/vnd.sqlite3',
+  db: 'application/vnd.sqlite3',
+  parquet: 'application/vnd.apache.parquet',
+  geojson: 'application/geo+json',
+  kml: 'application/vnd.google-earth.kml+xml',
+  gpx: 'application/gpx+xml',
+  ipynb: 'application/x-ipynb+json',
+}
+
 const TEXT_MIMES = new Set([
   'application/json',
   'application/x-ndjson',
   'application/yaml',
   'application/xml',
   'application/x-yaml',
+  'application/geo+json',
+  'application/x-ipynb+json',
+  'application/gpx+xml',
+  'application/vnd.google-earth.kml+xml',
 ])
 
 function extensionOf(name: string | undefined): string {
@@ -127,6 +167,9 @@ export function sniffMime(head: Uint8Array, name?: string, declared?: string): s
     return 'image/svg+xml'
   }
   const declaredBase = (declared ?? '').split(';')[0].trim().toLowerCase()
+  if (startsWith(head, ascii('%PDF-'))) return 'application/pdf'
+  if (startsWith(head, ascii('SQLite format 3'))) return 'application/vnd.sqlite3'
+  if (FILE_EXTENSIONS[ext] && (FILE_EXTENSIONS[ext].startsWith('text/') ? looksLikeText(head) : true)) return FILE_EXTENSIONS[ext]
   if (TEXT_EXTENSIONS[ext] && looksLikeText(head)) return TEXT_EXTENSIONS[ext]
   if ((declaredBase.startsWith('text/') || TEXT_MIMES.has(declaredBase)) && looksLikeText(head)) return declaredBase
   if (IMAGE_EXTENSIONS[ext] && declaredBase.startsWith('image/')) return declaredBase
@@ -135,11 +178,11 @@ export function sniffMime(head: Uint8Array, name?: string, declared?: string): s
   return looksLikeText(head) ? 'text/plain' : 'application/octet-stream'
 }
 
-/** The attachment kind for a mime, or null when the app cannot store it as an attachment. */
-export function attachmentKindOf(mime: string): AttachmentKind | null {
+/** The attachment kind for a mime: any file can be kept; images and text get previews. */
+export function attachmentKindOf(mime: string): AttachmentKind {
   if (mime.startsWith('image/')) return 'image'
-  if (mime.startsWith('text/') || TEXT_MIMES.has(mime)) return 'text'
-  return null
+  if ((mime.startsWith('text/') && mime !== 'text/vcard' && mime !== 'text/calendar') || TEXT_MIMES.has(mime)) return 'text'
+  return 'file'
 }
 
 export async function readHead(blob: Blob, n = SNIFF_BYTES): Promise<Uint8Array> {
@@ -148,7 +191,7 @@ export async function readHead(blob: Blob, n = SNIFF_BYTES): Promise<Uint8Array>
 
 export interface SniffResult {
   mime: string
-  kind: AttachmentKind | null
+  kind: AttachmentKind
 }
 
 export async function sniffBlob(blob: Blob, name?: string): Promise<SniffResult> {

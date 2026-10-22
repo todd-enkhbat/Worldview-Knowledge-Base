@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import type Anthropic from '@anthropic-ai/sdk'
 import { useApp, useWorld } from '../app/store.ts'
-import { useRepoStatus } from '../data/repo.ts'
-import { exportVault, zipVault } from '../data/obsidian.ts'
+import { getStore, useRepoStatus } from '../data/repo.ts'
+import { exportVault, vaultAttachments, zipVault } from '../data/obsidian.ts'
 import {
   answerAsk,
   editCard,
@@ -19,7 +19,7 @@ import {
 } from '../ai/chat/session.ts'
 import { BTN, BTN_PRIMARY } from './DurabilityKit.tsx'
 import { Markdown } from './markdown.ts'
-import { intake, intakeVaultFiles } from './chatIntake.ts'
+import { intake, intakeFolderFiles } from './chatIntake.ts'
 import { selectAndFly } from './shortcuts.ts'
 
 // The chat (milestone 1): the front door of the world. Talk, drop files or a vault folder,
@@ -41,8 +41,10 @@ function chipOf(b: Block): string | null {
   if (b.type === 'text') {
     const file = /^<file name=("[^"]*")/.exec(b.text)
     if (file) return `File · ${JSON.parse(file[1]) as string}`
-    const page = /^<page url=("[^"]*") title=("[^"]*")/.exec(b.text)
-    if (page) return `Page · ${JSON.parse(page[2]) as string}`
+    const page = /^<(page|video) url=("[^"]*") title=("[^"]*")/.exec(b.text)
+    if (page) return `${page[1] === 'video' ? 'Video' : 'Page'} · ${JSON.parse(page[3]) as string}`
+    const folder = /^<folder name=("[^"]*")/.exec(b.text)
+    if (folder) return `Folder · ${JSON.parse(folder[1]) as string}`
     if (b.text.startsWith('[ui:imported]')) return 'Obsidian vault imported'
   }
   return null
@@ -75,6 +77,11 @@ function CardView({ toolId, card, writer }: { toolId: string; card: Card; writer
         </span>
         {card.status !== 'open' && <span className="ml-auto text-ember">{card.status === 'edit' ? 'change asked' : card.status}</span>}
       </div>
+      {n.addTo && (
+        <div className="mt-0.5 text-[11px] text-ember">
+          Adds to <AddToTitle id={n.addTo} />
+        </div>
+      )}
       <div className="mt-0.5 text-[13px] font-semibold text-bone">
         {card.status === 'kept' && card.id ? (
           <button type="button" className="text-left hover:underline" onClick={() => selectAndFly(card.id!)}>
@@ -85,10 +92,18 @@ function CardView({ toolId, card, writer }: { toolId: string; card: Card; writer
         )}
       </div>
       {n.body && <p className="mt-1 line-clamp-3 whitespace-pre-line text-[12px] leading-snug text-bone/80">{n.body}</p>}
-      {(n.tags.length > 0 || n.links.length > 0 || n.source.ref) && (
+      {(n.tags.length > 0 || n.links.length > 0 || n.source.ref || n.attach?.length || n.embeds?.length) && (
         <div className="mt-1 flex flex-wrap gap-x-3 text-[11px] text-concrete">
           {n.tags.length > 0 && <span>#{n.tags.join(' #')}</span>}
           {n.links.length > 0 && <span>{n.links.length} link{n.links.length === 1 ? '' : 's'}</span>}
+          {(n.attach?.length ?? 0) > 0 && (
+            <span title={n.attach!.join(', ')}>
+              keeps {n.attach!.length === 1 ? n.attach![0] : `${n.attach!.length} files`}
+            </span>
+          )}
+          {(n.embeds ?? []).map((e, i) => (
+            <span key={i}>{e.kind === 'place' ? `place: ${e.place?.name ?? e.title ?? ''}` : e.kind === 'youtube' ? 'video' : 'page'}</span>
+          ))}
           {n.source.ref && <span className="max-w-full truncate">from {n.source.ref}</span>}
         </div>
       )}
@@ -131,6 +146,11 @@ function CardView({ toolId, card, writer }: { toolId: string; card: Card; writer
       )}
     </li>
   )
+}
+
+function AddToTitle({ id }: { id: string }) {
+  const title = useWorld((s) => s.nodes.get(id)?.title)
+  return <span className="font-semibold">{title ?? 'a note that no longer exists'}</span>
 }
 
 function Proposals({ toolId, writer }: { toolId: string; writer: boolean }) {
@@ -222,9 +242,15 @@ function Turn({ role, content, writer }: { role: 'user' | 'assistant'; content: 
   return parts.length ? <div className="flex flex-col gap-1.5">{parts}</div> : null
 }
 
-function downloadVault(): void {
-  const w = useWorld.getState()
-  const zip = zipVault(exportVault([...w.nodes.values()]))
+async function downloadVault(): Promise<void> {
+  const records = [...useWorld.getState().nodes.values()]
+  // Originals travel as files beside the notes, at the paths their frontmatter names.
+  const files = new Map<string, string | Uint8Array>(exportVault(records))
+  for (const { path, blobId } of vaultAttachments(records)) {
+    const blob = await getStore().getBlob(blobId).catch(() => undefined)
+    if (blob) files.set(path, new Uint8Array(await blob.arrayBuffer()))
+  }
+  const zip = zipVault(files)
   const url = URL.createObjectURL(new Blob([zip as Uint8Array<ArrayBuffer>], { type: 'application/zip' }))
   const a = document.createElement('a')
   a.href = url
@@ -303,7 +329,7 @@ export function Chat() {
         <header className="flex items-center gap-2 border-b border-bone/15 px-3 py-2">
           <span className="hud-label">Talk to your world</span>
           <span className="ml-auto" />
-          <button type="button" className={`${BTN} px-1.5 py-0`} onClick={downloadVault} title="Export every note as an Obsidian vault (.zip)">
+          <button type="button" className={`${BTN} px-1.5 py-0`} onClick={() => void downloadVault()} title="Export every note and its files as an Obsidian vault (.zip)">
             Export vault
           </button>
           <button type="button" className={`${BTN} px-1.5 py-0`} onClick={() => setFull((f) => !f)} title={full ? 'Dock to the side' : 'Full screen'}>
@@ -317,8 +343,8 @@ export function Chat() {
         <div ref={listRef} className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-3 py-3">
           {!history.length && !busy && (
             <div className="text-[13px] leading-relaxed text-concrete">
-              Tell me about anything: an idea you keep coming back to, a person who shaped you, a moment you remember. Drop in files, a folder of notes or an Obsidian
-              vault, or paste a link. I&apos;ll propose notes; nothing is saved until you keep it.
+              Tell me about anything: an idea you keep coming back to, a person who shaped you, a moment you remember. Drop in anything: photos, PDFs, videos, datasets, zips, contacts,
+              a folder or an Obsidian vault, or paste a link or an address. I&apos;ll propose notes; nothing is saved until you keep it.
             </div>
           )}
           {turns}
@@ -340,7 +366,7 @@ export function Chat() {
             <div className="mb-1.5 flex flex-wrap gap-1">
               {staged.map((s, i) => (
                 <span key={i} className="flex items-center gap-1 border border-bone/25 px-1.5 py-0.5 text-[11px] text-bone">
-                  {s.kind === 'pdf' ? 'PDF' : s.kind === 'image' ? 'Image' : s.kind === 'page' ? 'Page' : 'File'} · {s.name}
+                  {s.kind === 'pdf' ? 'PDF' : s.kind === 'image' ? 'Image' : s.kind === 'page' ? 'Link' : 'File'} · {s.name}
                   <button type="button" aria-label={`Remove ${s.name}`} className="text-concrete hover:text-bone" onClick={() => unstage(i)}>
                     ×
                   </button>
@@ -375,11 +401,11 @@ export function Chat() {
               <button type="button" className={BTN_PRIMARY} disabled={busy || !writer} onClick={submit}>
                 Send
               </button>
-              <button type="button" className={BTN} disabled={!writer} title="Attach files (PDF, images, text, markdown)" onClick={() => fileRef.current?.click()}>
+              <button type="button" className={BTN} disabled={!writer} title="Add any files: photos, PDFs, videos, datasets, zips, contacts…" onClick={() => fileRef.current?.click()}>
                 Files
               </button>
-              <button type="button" className={BTN} disabled={!writer} title="Import a folder of notes or an Obsidian vault" onClick={() => dirRef.current?.click()}>
-                Vault
+              <button type="button" className={BTN} disabled={!writer} title="Add a folder: an Obsidian vault is imported, anything else is read file by file" onClick={() => dirRef.current?.click()}>
+                Folder
               </button>
             </div>
           </div>
@@ -396,7 +422,6 @@ export function Chat() {
             type="file"
             multiple
             hidden
-            accept=".pdf,.md,.markdown,.txt,.csv,.json,.html,.htm,image/png,image/jpeg,image/gif,image/webp"
             onChange={(e) => {
               const files = Array.from(e.target.files ?? [])
               e.target.value = ''
@@ -412,7 +437,7 @@ export function Chat() {
             onChange={(e) => {
               const files = Array.from(e.target.files ?? [])
               e.target.value = ''
-              if (files.length) void intakeVaultFiles(files)
+              if (files.length) void intakeFolderFiles(files)
             }}
           />
         </footer>

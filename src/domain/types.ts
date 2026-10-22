@@ -30,9 +30,13 @@ export interface Link {
   createdAt: number
 }
 
+/**
+ * An original kept with a note: any file. 'image' and 'text' get previews; 'file' is anything
+ * else (PDF, video, audio, zip, dataset, contact card, database…), kept byte for byte.
+ */
 export interface Attachment {
   id: string
-  kind: 'image' | 'text'
+  kind: 'image' | 'text' | 'file'
   name: string
   mime: string
   bytes: number
@@ -41,6 +45,20 @@ export interface Attachment {
   /** OPFS blob holding a small webp thumbnail (images only). */
   thumbBlobId?: string
   createdAt: number
+}
+
+/**
+ * Something live that a note points at rather than stores: a video that plays in place, a web
+ * page, or a place on the map.
+ */
+export interface Embed {
+  id: string
+  kind: 'youtube' | 'web' | 'place'
+  /** The page or video URL (absent for a place given only by address). */
+  url?: string
+  title?: string
+  place?: { name: string; address?: string; lat?: number; lng?: number }
+  addedAt: number
 }
 
 export interface ThermoBlock {
@@ -105,6 +123,8 @@ export interface NodeRecord {
   anchorXZ: [number, number]
   links: Link[]
   attachments: Attachment[]
+  /** Live things the note points at (videos, pages, places). Optional: older records have none. */
+  embeds?: Embed[]
   visibility: Visibility
   splat?: SplatBlock
   entity?: { kind: EntityKind }
@@ -180,7 +200,7 @@ export interface InteractionEvent {
   bits?: number
 }
 
-export type AssetKind = 'splat-proxy' | 'splat-interior' | 'splat-thumb' | 'image' | 'image-thumb' | 'text'
+export type AssetKind = 'splat-proxy' | 'splat-interior' | 'splat-thumb' | 'image' | 'image-thumb' | 'text' | 'file'
 
 export interface AssetMeta {
   id: string

@@ -890,7 +890,6 @@ export function addAttachment(nodeId: string, file: Blob, name?: string): Promis
     if (file.size > MAX_ATTACHMENT_BYTES) throw new Error(`Attachments are limited to ${MAX_ATTACHMENT_BYTES >> 20} MB`)
     const displayName = cleanFileName(name ?? (file as Partial<File>).name)
     const { mime, kind } = await sniffBlob(file, displayName)
-    if (!kind) throw new Error(`Unsupported attachment type ${mime}: only images and text files can be attached`)
 
     const blobId = crypto.randomUUID()
     const meta: AssetMeta = { id: blobId, kind, mime, bytes: file.size, createdAt: now, nodeId }
