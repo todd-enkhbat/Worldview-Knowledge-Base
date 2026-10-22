@@ -31,6 +31,8 @@ export interface EnvironmentSceneProps {
   lights?: boolean
   /** PMREM environment (sets scene.environment). */
   environment?: boolean
+  /** The classic world's architecture (floor, land, column, catwalk, numerals, manifold). Off in the particle world. */
+  classic?: boolean
 }
 
 function useEnvironmentMaterials() {
@@ -55,7 +57,7 @@ function useEnvironmentMaterials() {
   return m
 }
 
-export function EnvironmentScene({ graph: external, lights = true, environment = true }: EnvironmentSceneProps) {
+export function EnvironmentScene({ graph: external, lights = true, environment = true, classic = true }: EnvironmentSceneProps) {
   const own = usePathGraph()
   const graph = external ?? own
   const reflective = useApp((s) => s.mode === 'third_person' && s.quality.reflector !== 'off')
@@ -64,6 +66,16 @@ export function EnvironmentScene({ graph: external, lights = true, environment =
   const materials = useEnvironmentMaterials()
   const arch = useMemo(() => buildArchitecture(graph.helix.yMax, graph.helix.pitch), [graph.helix.yMax, graph.helix.pitch])
 
+  if (!classic) {
+    return (
+      <group name="environment">
+        <SkyDome />
+        <Stars />
+        {environment && <EnvironmentLighting />}
+        {lights && <EnvironmentLights />}
+      </group>
+    )
+  }
   return (
     <group name="environment">
       <SkyDome />

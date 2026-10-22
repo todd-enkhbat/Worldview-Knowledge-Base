@@ -68,10 +68,12 @@ export interface QualityState {
 export interface ViewState {
   /** Architecture brightness, 0.3–1 (1 = the original full-contrast shell). */
   architecture: number
+  /** 'field': the particle world (milestone 2). 'classic': the column, helix and rings. */
+  world: 'field' | 'classic'
 }
 
 const VIEW_KEY = 'hyperspace.view'
-export const VIEW_DEFAULTS: ViewState = { architecture: 0.62 }
+export const VIEW_DEFAULTS: ViewState = { architecture: 0.62, world: 'field' }
 export const ARCHITECTURE_RANGE = [0.3, 1] as const
 
 function loadView(): ViewState {
@@ -79,7 +81,10 @@ function loadView(): ViewState {
     const raw = globalThis.localStorage?.getItem(VIEW_KEY)
     const v = raw ? (JSON.parse(raw) as Partial<ViewState>) : {}
     const a = typeof v.architecture === 'number' && Number.isFinite(v.architecture) ? v.architecture : VIEW_DEFAULTS.architecture
-    return { architecture: Math.min(ARCHITECTURE_RANGE[1], Math.max(ARCHITECTURE_RANGE[0], a)) }
+    return {
+      architecture: Math.min(ARCHITECTURE_RANGE[1], Math.max(ARCHITECTURE_RANGE[0], a)),
+      world: v.world === 'classic' ? 'classic' : 'field',
+    }
   } catch {
     return { ...VIEW_DEFAULTS }
   }
@@ -167,6 +172,8 @@ export const useApp = create<AppState>()((set, get) => ({
   setMode: (to) => {
     const from = get().mode
     if (!canTransition(from, to)) return false
+    // The catwalk and the worldline ride belong to the classic world's helix.
+    if (get().view.world === 'field' && (to === 'third_person' || to === 'autonav')) return false
     if (from !== to) set({ mode: to, prevMode: from })
     return true
   },

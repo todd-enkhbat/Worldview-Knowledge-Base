@@ -11,6 +11,9 @@ import { SplatLayer } from './splats/index.tsx'
 import { usePlayheadClock } from './time/usePlayheadClock.ts'
 import { usePhysicsPoses } from './time/usePhysicsPoses.ts'
 import { YearRings } from './time/YearRings.tsx'
+import { FieldLayer } from './field/FieldLayer.tsx'
+import { FieldPicker } from './field/FieldPicker.tsx'
+import { useApp } from '../app/store.ts'
 import { Worldline } from './worldline/index.ts'
 
 // #/ — the world. The data layer boots outside React (app/boot.ts); until first run completes
@@ -23,6 +26,23 @@ function Scene() {
   usePhysicsPoses()
   // One path graph shared by the catwalk geometry and the avatar, so they always agree.
   const graph = usePathGraph()
+  // Milestone 2: the particle world replaces the column, helix, rings, meshes and dust. Time
+  // lives in the timeline; links become currents; notes become clouds of grains.
+  const field = useApp((s) => s.view.world === 'field')
+  if (field) {
+    return (
+      <>
+        <EnvironmentScene graph={graph} classic={false} />
+        <FieldLayer />
+        <FieldPicker />
+        <NodeLayer labelsOnly />
+        <LinkHover />
+        <SplatLayer />
+        <CameraRig paths={graph} />
+        <PostStack />
+      </>
+    )
+  }
   return (
     <>
       <EnvironmentScene graph={graph} />

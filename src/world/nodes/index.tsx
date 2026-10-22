@@ -58,9 +58,14 @@ export function groupNodes(nodes: ReadonlyMap<string, NodeRecord>): NodeGroups {
   return { all, byArchetype, memoryRank, vectors: { from, to } }
 }
 
-export function NodeLayer() {
+export function NodeLayer({ labelsOnly = false }: { labelsOnly?: boolean }) {
   const nodes = useWorld((s) => s.nodes)
   const groups = useMemo(() => groupNodes(nodes), [nodes])
+  if (labelsOnly) return <ScreenLabels records={groups.all} byId={nodes} always />
+  return <NodeMeshes nodes={nodes} groups={groups} />
+}
+
+function NodeMeshes({ nodes, groups }: { nodes: ReadonlyMap<string, NodeRecord>; groups: NodeGroups }) {
   const kit = useNodeKit()
   const raycaster = useThree((s) => s.raycaster)
 

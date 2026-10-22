@@ -600,3 +600,43 @@ User report: Claude kept a dropped photo as "My studio portrait" but said it cou
 - Reading inside databases, video or audio.
 - Persisting not-yet-kept originals across a reload.
 - Thumbnails for video.
+
+### Milestone 2: the particle world (2026-10-22)
+The user asked for the world to be "particles and waves instead of rigid bodies", time you experience rather than climb, and no single ring and circle. Built as the new default world. The classic world stays a setting: Settings → Quality → World: Field / Classic (per device, `hyperspace.view`).
+
+**Design decisions (made by the agent, user to review)**
+- **Space is meaning only.** `world/field/layout.ts` is a deterministic force layout. Links pull together (non-`relates` links pull harder), shared tags pull weakly, the top-4 semantic neighbours pull when the embedding index is on, and every pair repels. There are no archetype rings and no time axis.
+  - It starts from the frozen anchors (scaled 0.45), so the world's shape is stable across reloads.
+  - A warm start runs at 0.3 heat, so keeping a note nudges its neighbourhood rather than reshuffling the world (tested: existing notes move < 6 u; a newly linked one < 12 u).
+- **Time is experienced through the timeline only** (`world/field/state.ts`). Everything is a pure function of the playhead, so scrubbing back restores the frame exactly (tested).
+  - A note is born when the playhead passes its date and condenses out of a wide cloud over ~2 months.
+  - Its order then decays with τ = 6 y toward a floor of 0.3: the cloud spreads and its rise in the land erodes.
+  - Links hold order, up to half the decay at degree ≥ 6.
+  - Every birth sends a wave across the land for 1.2 y (crest speed 70 u/y; at most 16 ripples at once).
+- **Albert's framing.** The visible land is the macrostate: the sum of the born notes' bumps, with height = mass, links and order. Newborn notes are low-entropy (tight clouds) and age into high-entropy ones (diffuse). The engine's integer microstate keeps running underneath for the timeline's S and ΔE readouts, but in the field it no longer positions the notes.
+  - **Deviation:** the grains are a shader animation over that macrostate, not the reversible integer dynamics. They are deterministic in the playhead, plus a cosmetic wall-clock shimmer that moves nothing time decides.
+- **Rendering** (`world/field/FieldLayer.tsx`): three GPU point layers fed by two small float textures each frame.
+  - **Land:** 300² jittered grains on a 128² heightfield, with an ambient swell, birth ripples and faint contours. It writes depth so the post fog sees land, not sky.
+  - **Clouds:** 420–1600+ grains per note by mass, attachments and text (≤ 260k in all), additive and archetype-coloured.
+  - **Image notes:** their grains are the picture. A 56² card of the thumbnail's pixels faces you and dissolves as order falls, and 60 % of the cloud takes the photo's colours.
+  - **Currents:** 40 grains per link flow along an arc in the link kind's colour.
+  - Selection, hover and the selection's neighbours brighten.
+- **Shared pose table.** `world/field/runtime.ts` writes it in field mode, so screen labels (always on in the field), the link tooltip, fly-to and the Inspector work unchanged. `usePhysicsPoses` hands over to it; the physics client still runs.
+- **Picking** (`FieldPicker.tsx`) is in screen space: the nearest born note within its on-screen cloud (≥ 26 px). A click is a press that moved ≤ 5 px, so orbit drags never select; a click on empty land deselects.
+- **Hidden in the field:** the column, helix, catwalk, terrain ranges, colonnade, numerals, manifold, node meshes and plaques, link lines, year rings, present plane, overlays (citadels, mist, synapses, demon lattice), worldline and GPU dust. Third person and autonav (both ride the helix) are refused in field mode. Captured splat scenes still render at their notes.
+- **Camera:** a raised three-quarter shot over the whole layout (`fieldShot`).
+
+**Verified in the pane** (demo world, 14 notes, read-only tab):
+- The land, clouds and labels render with no console errors.
+- At 2004-11 nothing is born and the land is flat and empty.
+- At 2010-11, Boltzmann and the one-month-old "Entropy is the arrow of time" show the newborn as a loose condensing cloud with its rise beginning.
+- 120 Hz: median 8.3 ms, p99 9.4 ms.
+- `npm run check`: 85 files, 644 tests (new: layout, time model, runtime and pose table).
+
+**Not done**
+- Attention (inspecting a note re-condensing it) is not wired, because the interaction log is async and not in the store yet.
+- No level of detail for the land up close: grains thin out at ground level.
+- No entropy readout for the field itself (the timeline's S is still the engine's).
+- Currents for very large worlds are uncapped (40 × links).
+- Image cards use the first image only.
+- Splat scenes keep their terrarium scale (small against the field).

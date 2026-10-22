@@ -71,6 +71,8 @@ function makeSlot(root: HTMLElement): Slot {
 interface Props {
   records: readonly NodeRecord[]
   byId: ReadonlyMap<string, NodeRecord>
+  /** Label every node on screen (no in-world plaques to hand over to: the particle world). */
+  always?: boolean
 }
 
 const _v = new Vector3()
@@ -86,7 +88,7 @@ function hudBoxes(canvas: HTMLCanvasElement): [number, number, number, number][]
   return out
 }
 
-export function ScreenLabels({ records, byId }: Props) {
+export function ScreenLabels({ records, byId, always = false }: Props) {
   const gl = useThree((s) => s.gl)
   const size = useThree((s) => s.size)
   const rootRef = useRef<HTMLDivElement | null>(null)
@@ -162,7 +164,7 @@ export function ScreenLabels({ records, byId }: Props) {
         const p = project(rec.id)
         if (!p || p.x < 0 || p.x > W || p.y < 0 || p.y > H) continue
         inView++
-        const px = worldTextPx(rec, p.d, cam, H)
+        const px = always ? 0 : worldTextPx(rec, p.d, cam, H)
         if (px >= MIN_WORLD_TEXT_PX) {
           worldText++
           minWorldPx = Math.min(minWorldPx, px)

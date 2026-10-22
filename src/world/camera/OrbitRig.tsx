@@ -5,6 +5,8 @@ import { Vector3, type Camera, type PerspectiveCamera } from 'three'
 import { useApp, useWorld } from '../../app/store.ts'
 import { setPostFocus } from '../post/postMode.ts'
 import { establishingShot } from './establish.ts'
+import { fieldShot } from '../field/layout.ts'
+import { fieldLayoutFor } from '../field/runtime.ts'
 import { registerOrbitControls, takeOrbitPivot } from './flyTo.ts'
 import { updateProximity } from './proximity.ts'
 
@@ -53,7 +55,10 @@ function establishWhenLoaded(c: CameraControlsImpl, camera: Camera): () => void 
     const { nodes, settings } = useWorld.getState()
     if (!settings || nodes.size === 0) return
     const cam = camera as PerspectiveCamera
-    const shot = establishingShot(nodes.values(), settings, cam.fov ?? 50, cam.aspect || 1, ORBIT_LIMITS.maxDistance * 0.9)
+    const shot =
+      useApp.getState().view.world === 'field'
+        ? fieldShot(fieldLayoutFor(nodes), cam.fov ?? 50, cam.aspect || 1, ORBIT_LIMITS.maxDistance * 0.9)
+        : establishingShot(nodes.values(), settings, cam.fov ?? 50, cam.aspect || 1, ORBIT_LIMITS.maxDistance * 0.9)
     if (!shot) return
     established = true
     void c.setLookAt(...shot.position, ...shot.target, transition)

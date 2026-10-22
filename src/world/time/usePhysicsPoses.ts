@@ -1,7 +1,8 @@
 import { useFrame } from '@react-three/fiber'
 import { useEffect } from 'react'
-import { useWorld } from '../../app/store.ts'
-import { getPlayhead } from './clock.ts'
+import { useApp, useWorld } from '../../app/store.ts'
+import { updateField } from '../field/runtime.ts'
+import { getPlayhead, playheadEpoch } from './clock.ts'
 import { applyOverlays } from './overlayHook.ts'
 import { getPhysicsClient } from './physicsClient.ts'
 import { PoseWriter } from './poseWriter.ts'
@@ -21,10 +22,18 @@ export function usePhysicsPoses(): void {
     return () => client.stop()
   }, [])
 
-  useFrame(() => {
+  useFrame((state) => {
     const client = getPhysicsClient()
     const ph = getPlayhead()
     client.sendTarget(ph.step)
+    // The particle world writes its own poses (a pure function of the playhead); the engine
+    // keeps running for the timeline's readouts.
+    if (useApp.getState().view.world === 'field') {
+      client.acquire()
+      const w = useWorld.getState()
+      if (w.settings) updateField(w.nodes, w.settings, playheadEpoch(w.settings), state.clock.elapsedTime)
+      return
+    }
     const frame = client.acquire()
     let table
     if (frame) table = writer.writePhysics(frame, ph.step, ph.acc)
