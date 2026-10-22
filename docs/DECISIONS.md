@@ -496,3 +496,21 @@ The five `LinkKind`s are kept, per the user. Before this, every link was one gre
 - **Verified:** in the node sandbox, `__wv.linkStats()` gives contradicts 1 link → 2 segments, derives and influenced-by 1 → 3 (body + two head strokes), relates 5 → 5, supports 1 → 1. Hovering the red link showed "Notes on brutalism — contradicts → Rain on the concrete church". `npm run check`: 612 tests pass.
 - **Not verified by eye:** the arrowheads close up, because the sandbox camera drifts and screenshots at that size are unreliable. The segment counts above stand in for that check.
 - **Test noise:** an earlier full run failed 18 files on worker start-up and 60 s timeouts while the machine ran about 100× slower than usual. A rerun on a quiet machine passed in 20 s.
+
+### Readability pass, part 3: time in the scene (2026-10-21)
+- **Year rings** (`world/time/YearRings.tsx`): a faint horizontal ring around the node field on 1 January of every year. The rings use `ringYears()`, which is the same list as the Timeline's `yearTicks()`, so the two cannot drift apart (RD4, `tests/world/timeRings.test.ts`). The ring radius is the outermost node radius + 8 u (at least 30 u). It is one `LineSegments` with per-vertex colour: dim, marked (labelled years), or ember (the focused year).
+- **Year labels:** screen-space, 11 px, at the ring's right-hand edge. When that edge is off screen at close framing, a label slides inward along the camera's right axis until it fits. Labels are thinned by `labelStride()` (1/2/5/10/… years) so they stay ≥ 24 px apart.
+- **Present plane:** a disc at the playhead's height (3.5 % ember) with an ember edge ring. It moves as you scrub, matching the Timeline's playhead.
+- **Hover, both ways:**
+  - Pointer over the Timeline sets `useApp.timeFocusYear`. That year's ring and label turn ember, the tick brightens, and that year's node labels get an ember tint and a priority boost.
+  - A birth tick within 5 px of the pointer hovers its node.
+  - A node hovered in the world draws its birth tick thick and shows its title above the bar.
+  - Leaving the bar clears only the hover the bar itself set.
+- **Node labels avoid HUD panels** marked `data-label-avoid` (the link legend), so they no longer slip underneath it.
+- **Verified in the pane:**
+  - Year labels 2024–2028 show on the right edge of the default view.
+  - Hovering 2026 on the Timeline: `timeFocusYear` = 2026, the 2026 ring label is ember, and 7 node labels are tinted.
+  - Hovering a node shows its title over its birth tick.
+  - Frame time: median 8.3 ms, p99 9.8 ms, 0 frames > 25 ms.
+  - `npm run check`: 616 tests pass.
+- **Known nit:** the birth-tick title sits over the readouts row while it shows.

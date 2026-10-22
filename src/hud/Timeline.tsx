@@ -6,7 +6,7 @@ import type { Archetype, WorldSettings } from '../domain/types.ts'
 import { isEditableTarget } from '../world/camera/keyboard.ts'
 import { getPlayhead, seekPlayhead, stepOfEpoch } from '../world/time/clock.ts'
 import { useSimStats } from '../world/time/physicsClient.ts'
-import { axisAt, fractionOfStep, stepAtFraction, yearTicks } from '../world/time/timeScale.ts'
+import { axisAt, fractionOfStep, nearestOnAxis, stepAtFraction, yearOf, yearTicks } from '../world/time/timeScale.ts'
 import { isModalOpen } from './shortcuts.ts'
 
 // The time bar along the bottom of the HUD: T0 on the left, the present, then five years
@@ -14,6 +14,9 @@ import { isModalOpen } from './shortcuts.ts'
 // playhead, transport (Space toggles play), speeds and the physics readouts. The playhead
 // and the date/step readouts move in a rAF loop straight from getPlayhead(), so playback
 // never re-renders React; the stats come from useSimStats, which changes ≤ 1 Hz.
+// Hover links the bar to the world both ways: the pointer's year lights its ring and nodes
+// (useApp.timeFocusYear), a birth tick under the pointer hovers its node, and a node hovered in
+// the world lights its birth tick here.
 
 const MAGNITUDES = SPEEDS.filter((s) => s > 0)
 
@@ -25,6 +28,9 @@ const BIRTH_COLOR: Readonly<Record<Archetype, string>> = {
   memory: 'var(--color-ember)',
   demon: 'var(--color-signal)',
 }
+
+/** Birth-tick pick tolerance (px). */
+const BIRTH_PICK_PX = 5
 
 /** Arrow keys on the playhead: a month (Shift: a year). */
 const MONTH_STEPS = 50
@@ -102,12 +108,23 @@ function TimelineBar({ settings }: { settings: WorldSettings }) {
   const ticks = useMemo(() => yearTicks(settings, now), [settings, now])
   const nodes = useWorld((s) => s.nodes)
   const births = useMemo(() => {
-    const out: { id: string; x: number; color: string }[] = []
+    const out: { id: string; x: number; color: string; title: string }[] = []
     for (const n of nodes.values()) {
-      out.push({ id: n.id, x: fractionOfStep(stepOfEpoch(settings, n.temporalOrigin), maxStep) * 1000, color: BIRTH_COLOR[n.archetype] })
+      out.push({
+        id: n.id,
+        x: fractionOfStep(stepOfEpoch(settings, n.temporalOrigin), maxStep) * 1000,
+        color: BIRTH_COLOR[n.archetype],
+        title: n.title,
+      })
     }
     return out
   }, [nodes, settings, maxStep])
+  const birthFs = useMemo(() => births.map((b) => b.x / 1000), [births])
+  const hoveredId = useApp((s) => s.hoveredId)
+  const focusYear = useApp((s) => s.timeFocusYear)
+  const hoveredBirth = hoveredId ? births.find((b) => b.id === hoveredId) : undefined
+  /** The node this bar set as hovered, so leaving clears only our own hover. */
+  const ownHover = useRef<string | null>(null)
 
   const trackRef = useRef<HTMLDivElement>(null)
   const headRef = useRef<HTMLDivElement>(null)
@@ -154,7 +171,29 @@ function TimelineBar({ settings }: { settings: WorldSettings }) {
     seekAt(e.clientX)
   }
   const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
-    if (dragging.current) seekAt(e.clientX)
+    if (dragging.current) {
+      seekAt(e.clientX)
+      return
+    }
+    const el = trackRef.current
+    if (!el) return
+    const r = el.getBoundingClientRect()
+    if (r.width <= 0) return
+    const f = (e.clientX - r.left) / r.width
+    const app = useApp.getState()
+    app.setTimeFocusYear(yearOf(epochAtStep(stepAtFraction(f, maxStep), settings.T0, settings.stepsPerYear)))
+    const i = nearestOnAxis(birthFs, f, BIRTH_PICK_PX / r.width)
+    const id = i >= 0 ? births[i].id : null
+    if (id !== ownHover.current && (id !== null || app.hoveredId === ownHover.current)) {
+      ownHover.current = id
+      app.hover(id)
+    }
+  }
+  const onPointerLeave = () => {
+    const app = useApp.getState()
+    app.setTimeFocusYear(null)
+    if (ownHover.current !== null && app.hoveredId === ownHover.current) app.hover(null)
+    ownHover.current = null
   }
   const endDrag = () => {
     dragging.current = false
@@ -191,6 +230,7 @@ function TimelineBar({ settings }: { settings: WorldSettings }) {
       aria-valuemax={maxStep}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
+      onPointerLeave={onPointerLeave}
       onPointerUp={endDrag}
       onPointerCancel={endDrag}
       onLostPointerCapture={endDrag}
@@ -205,8 +245,12 @@ function TimelineBar({ settings }: { settings: WorldSettings }) {
           const left = `${fractionOfStep(t.step, maxStep) * 100}%`
           return (
             <div key={t.year} aria-hidden className="absolute top-0" style={{ left }}>
-              <div className={`w-px ${t.label ? 'h-3 bg-bone/50' : 'h-1.5 bg-bone/25'}`} />
-              {t.label && <span className="absolute left-1 top-0 text-[9px] leading-none text-concrete tabular-nums">{t.year}</span>}
+              <div className={`w-px ${t.year === focusYear ? 'h-3 bg-ember' : t.label ? 'h-3 bg-bone/50' : 'h-1.5 bg-bone/25'}`} />
+              {(t.label || t.year === focusYear) && (
+                <span className={`absolute left-1 top-0 text-[9px] leading-none tabular-nums ${t.year === focusYear ? 'text-ember' : 'text-concrete'}`}>
+                  {t.year}
+                </span>
+              )}
             </div>
           )
         })}
@@ -215,7 +259,19 @@ function TimelineBar({ settings }: { settings: WorldSettings }) {
           {births.map((b) => (
             <line key={b.id} x1={b.x} x2={b.x} y1={0} y2={10} stroke={b.color} strokeWidth={1} vectorEffect="non-scaling-stroke" />
           ))}
+          {hoveredBirth && (
+            <line x1={hoveredBirth.x} x2={hoveredBirth.x} y1={-4} y2={10} stroke={hoveredBirth.color} strokeWidth={3} vectorEffect="non-scaling-stroke" />
+          )}
         </svg>
+      )}
+      {!collapsed && hoveredBirth && (
+        <span
+          aria-hidden
+          className="pointer-events-none absolute -top-5 z-10 max-w-[260px] -translate-x-1/2 truncate border-l border-ember bg-void/90 px-1.5 text-[11px] leading-4 text-bone"
+          style={{ left: `${hoveredBirth.x / 10}%` }}
+        >
+          {hoveredBirth.title}
+        </span>
       )}
       <div aria-hidden className="absolute inset-y-0 w-px bg-glass" style={{ left: presentPct }}>
         {!collapsed && <span className="absolute -top-0.5 left-1 text-[9px] leading-none text-glass">NOW</span>}

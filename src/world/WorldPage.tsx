@@ -10,6 +10,7 @@ import { PostStack } from './post/PostStack.tsx'
 import { SplatLayer } from './splats/index.tsx'
 import { usePlayheadClock } from './time/usePlayheadClock.ts'
 import { usePhysicsPoses } from './time/usePhysicsPoses.ts'
+import { YearRings } from './time/YearRings.tsx'
 import { Worldline } from './worldline/index.ts'
 
 // #/ — the world. The data layer boots outside React (app/boot.ts); until first run completes
@@ -28,6 +29,7 @@ function Scene() {
       <NodeLayer />
       <LinkLayer />
       <LinkHover />
+      <YearRings />
       {/* The dissipative O layer (citadels, mist, synapses, demon lattice, satellites) plus
           dwell logging. A top-level 'overlays' group so the interior's world-hide covers it. */}
       <group name="overlays">

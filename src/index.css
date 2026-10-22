@@ -112,3 +112,33 @@ body,
 .wv-link-tip.is-shown {
   opacity: 1;
 }
+
+/* Year labels on the rings (world/time/YearRings.tsx). */
+.wv-year {
+  position: absolute;
+  left: 0;
+  top: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 16px;
+  letter-spacing: 0.08em;
+  color: color-mix(in srgb, var(--color-bone) 55%, transparent);
+  opacity: 0;
+  transition: opacity 150ms ease-out;
+}
+.wv-year.is-shown {
+  opacity: 1;
+}
+.wv-year.is-focus {
+  color: var(--color-ember);
+  font-weight: 700;
+}
+@media (prefers-reduced-motion: reduce) {
+  .wv-year {
+    transition: none;
+  }
+}
+.wv-label.is-year {
+  border-left-color: var(--color-ember);
+  background: color-mix(in srgb, var(--color-ember) 18%, var(--color-void) 82%);
+}

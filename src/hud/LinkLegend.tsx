@@ -52,7 +52,7 @@ export function LinkLegend() {
   }
   if (nodes.size === 0) return null
   return (
-    <div className="hud-panel pointer-events-auto absolute bottom-3 left-3 z-10 px-2 py-1.5">
+    <div data-label-avoid className="hud-panel pointer-events-auto absolute bottom-3 left-3 z-10 px-2 py-1.5">
       <button type="button" className="hud-label flex w-full items-center justify-between gap-3" aria-expanded={open} onClick={toggle}>
         <span>Links</span>
         <span aria-hidden="true">{open ? '−' : '+'}</span>

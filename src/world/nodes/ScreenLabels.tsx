@@ -4,6 +4,7 @@ import { Vector3, type PerspectiveCamera } from 'three'
 import { useApp } from '../../app/store.ts'
 import { registerDevApi } from '../../app/devApi.ts'
 import { formatByPrecision } from '../../domain/time.ts'
+import { yearOf } from '../time/timeScale.ts'
 import type { Archetype, NodeRecord } from '../../domain/types.ts'
 import { getPoseTable } from '../poses.ts'
 import { clipTitle, countOverlaps, labelPriority, labelSize, placeLabels, sideBox, type LabelCandidate, type PlacedLabel } from './declutter.ts'
@@ -74,6 +75,17 @@ interface Props {
 
 const _v = new Vector3()
 
+/** HUD panels marked data-label-avoid (the link legend), as boxes in canvas px. */
+function hudBoxes(canvas: HTMLCanvasElement): [number, number, number, number][] {
+  const c = canvas.getBoundingClientRect()
+  const out: [number, number, number, number][] = []
+  for (const el of document.querySelectorAll('[data-label-avoid]')) {
+    const r = el.getBoundingClientRect()
+    if (r.width > 0) out.push([r.left - c.left - 6, r.top - c.top - 6, r.right - c.left + 6, r.bottom - c.top + 6])
+  }
+  return out
+}
+
 export function ScreenLabels({ records, byId }: Props) {
   const gl = useThree((s) => s.gl)
   const size = useThree((s) => s.size)
@@ -136,7 +148,7 @@ export function ScreenLabels({ records, byId }: Props) {
 
     if (t - last.current >= RESAMPLE_SECONDS || t < last.current) {
       last.current = t
-      const { selectedId, hoveredId } = useApp.getState()
+      const { selectedId, hoveredId, timeFocusYear } = useApp.getState()
       const selNbrs = selectedId ? graph.get(selectedId) : undefined
       const cands: LabelCandidate[] = []
       let born = 0
@@ -166,7 +178,7 @@ export function ScreenLabels({ records, byId }: Props) {
           y: p.y,
           w: Math.min(sz.w, full ? 420 : sz.w),
           h: sz.h,
-          priority: labelPriority({
+          priority: (timeFocusYear !== null && yearOf(rec.temporalOrigin) === timeFocusYear ? 2e5 : 0) + labelPriority({
             selected: rec.id === selectedId,
             hovered: rec.id === hoveredId,
             linkedToSelection: !!selNbrs?.has(rec.id),
@@ -180,10 +192,7 @@ export function ScreenLabels({ records, byId }: Props) {
         height: H,
         max: MAX_LABELS,
         lift: LIFT,
-        avoid: [
-          [0, 0, W, TOP_CLEAR],
-          [0, H - BOTTOM_CLEAR, W, H],
-        ],
+        avoid: [[0, 0, W, TOP_CLEAR], [0, H - BOTTOM_CLEAR, W, H], ...hudBoxes(gl.domElement)],
       })
 
       const want = new Set(placed.current.map((p) => p.id))
@@ -195,12 +204,14 @@ export function ScreenLabels({ records, byId }: Props) {
         const full = rec.id === hoveredId || rec.id === selectedId
         const title = full ? rec.title : clipTitle(rec.title)
         const tag = `${TAG[rec.archetype]} · ${formatByPrecision(rec.temporalOrigin, rec.temporalPrecision)}`
-        const key = `${title}\u0000${tag}\u0000${rec.id === selectedId ? 's' : ''}`
+        const inYear = timeFocusYear !== null && yearOf(rec.temporalOrigin) === timeFocusYear
+        const key = `${title}\u0000${tag}\u0000${rec.id === selectedId ? 's' : ''}${inYear ? 'y' : ''}`
         if (s.key !== key) {
           s.key = key
           s.title.textContent = title
           s.tag.textContent = tag
           s.el.classList.toggle('is-selected', rec.id === selectedId)
+          s.el.classList.toggle('is-year', inYear)
           s.el.style.width = `${p.w}px`
         }
         if (!s.shown) {

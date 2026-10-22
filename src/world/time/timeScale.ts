@@ -45,3 +45,33 @@ export function stepAtFraction(f: number, maxStep: number): number {
 export function axisAt(settings: ScaleSettings, now: number): { maxStep: number; presentStep: number } {
   return { maxStep: maxStepAt(settings, now), presentStep: stepOfEpoch(settings, now) }
 }
+
+/** Smallest label stride (years) that keeps printed years at least `minPx` apart on screen. */
+export function labelStride(pxPerYear: number, minPx = 22): number {
+  if (!(pxPerYear > 0)) return LABEL_EVERY[LABEL_EVERY.length - 1]
+  return LABEL_EVERY.find((k) => k * pxPerYear >= minPx) ?? LABEL_EVERY[LABEL_EVERY.length - 1]
+}
+
+/** UTC calendar year of an epoch. Year rings and timeline ticks both sit on 1 January. */
+export function yearOf(epochMs: number): number {
+  return new Date(epochMs).getUTCFullYear()
+}
+
+/** Years that get a ring in the world: the same set the Timeline ticks (yearTicks). */
+export function ringYears(settings: ScaleSettings, now: number): number[] {
+  return yearTicks(settings, now).map((t) => t.year)
+}
+
+/** Index of the axis position (fractions in [0, 1]) nearest `f`, within `tol`; −1 when none. */
+export function nearestOnAxis(fs: readonly number[], f: number, tol: number): number {
+  let best = -1
+  let bestD = tol
+  for (let i = 0; i < fs.length; i++) {
+    const d = Math.abs(fs[i] - f)
+    if (d <= bestD) {
+      bestD = d
+      best = i
+    }
+  }
+  return best
+}

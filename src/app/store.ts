@@ -107,6 +107,8 @@ interface AppState {
   prevMode: CameraMode
   selectedId: string | null
   hoveredId: string | null
+  /** Year under the pointer on the Timeline: its ring and its nodes light up in the world. */
+  timeFocusYear: number | null
   /** Memory whose diorama is focused / being entered. */
   focusedId: string | null
   clock: ClockState
@@ -119,6 +121,7 @@ interface AppState {
   setMode: (to: CameraMode) => boolean
   select: (id: string | null) => void
   hover: (id: string | null) => void
+  setTimeFocusYear: (year: number | null) => void
   focus: (id: string | null) => void
   setClock: (patch: Partial<ClockState>) => void
   togglePanel: (id: PanelId, open?: boolean) => void
@@ -151,6 +154,7 @@ export const useApp = create<AppState>()((set, get) => ({
   prevMode: 'orbit',
   selectedId: null,
   hoveredId: null,
+  timeFocusYear: null,
   focusedId: null,
   clock: { step: 0, speed: 1, playing: false, settling: false },
   panels: { ...closedPanels },
@@ -167,6 +171,9 @@ export const useApp = create<AppState>()((set, get) => ({
   },
   select: (id) => set((s) => ({ selectedId: id, panels: { ...s.panels, inspector: id !== null } })),
   hover: (id) => set({ hoveredId: id }),
+  setTimeFocusYear: (year) => {
+    if (get().timeFocusYear !== year) set({ timeFocusYear: year })
+  },
   focus: (id) => set({ focusedId: id }),
   setClock: (patch) => set((s) => ({ clock: { ...s.clock, ...patch } })),
   togglePanel: (id, open) => set((s) => ({ panels: { ...s.panels, [id]: open ?? !s.panels[id] } })),
