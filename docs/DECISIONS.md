@@ -514,3 +514,11 @@ The five `LinkKind`s are kept, per the user. Before this, every link was one gre
   - Frame time: median 8.3 ms, p99 9.8 ms, 0 frames > 25 ms.
   - `npm run check`: 616 tests pass.
 - **Known nit:** the birth-tick title sits over the readouts row while it shows.
+
+### Readability pass, part 4: first-visit orientation line (2026-10-21)
+- `hud/OrientationHint.tsx` shows one line, "Height is time · lines are relations · click a node to read it", centred at the top of the stage. It appears on a first visit to a world with nodes, in orbit mode only, so it never competes with ModeHint.
+- It is dismissed by the first pointerdown, wheel or key anywhere and remembered per device (`hyperspace.oriented`). It is marked `data-label-avoid`, so node labels keep clear of it.
+- **Verified in the pane:** it shows on load with the flag cleared, disappears on a keydown (flag set), and does not return after a reload.
+- `npm run check`: 616 tests pass. One run failed `durabilityUi › trash lists, restores and empties` under parallel load. That test passed alone (7/7) and on the next full run (616/616), so it looks flaky and is not related to this change.
+
+**The readability pass is built.** What's left is the user's: RD7 (open the world cold and give a verdict) and RD5/P (Safari perf with labels, links and rings on).

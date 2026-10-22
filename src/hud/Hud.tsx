@@ -20,6 +20,7 @@ import { Trash } from './Trash.tsx'
 import { UndoToast } from './UndoToast.tsx'
 import { useGlobalShortcuts } from './shortcuts.ts'
 import { LinkLegend } from './LinkLegend.tsx'
+import { OrientationHint } from './OrientationHint.tsx'
 
 // DOM overlay over the canvas. The root lets the pointer through to the world; panels and
 // controls take it back. Layout: a top strip (TopBar, then durability Banners) and below it
@@ -52,6 +53,7 @@ export function Hud() {
             <StatsPanel />
             <ModeHint />
             <LinkLegend />
+            <OrientationHint />
             <DemonPanel />
             <SplatFraming />
             <SplatCrystallising />
