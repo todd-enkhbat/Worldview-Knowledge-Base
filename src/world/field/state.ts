@@ -37,12 +37,17 @@ export const smoothstep = (a: number, b: number, x: number) => {
   return t * t * (3 - 2 * t)
 }
 
-export function noteState(rec: NodeRecord, playheadMs: number, degree: number): NoteState {
+/**
+ * A note at the playhead. `lastTouchMs` is the latest time it was looked at, at or before
+ * the playhead (attention.ts): order then decays from that moment instead of from its birth.
+ */
+export function noteState(rec: NodeRecord, playheadMs: number, degree: number, lastTouchMs = -Infinity): NoteState {
   const age = (playheadMs - rec.temporalOrigin) / YEAR
   const born = age >= 0
   const condense = born ? smoothstep(0, CONDENSE_Y, age) : 0
   const hold = Math.min(1, degree / 6)
-  const order = born ? 0.3 + 0.7 * (hold * 0.5 + (1 - hold * 0.5) * Math.exp(-age / ORDER_TAU_Y)) : 0
+  const since = Math.max(0, (playheadMs - Math.max(rec.temporalOrigin, lastTouchMs)) / YEAR)
+  const order = born ? 0.3 + 0.7 * (hold * 0.5 + (1 - hold * 0.5) * Math.exp(-since / ORDER_TAU_Y)) : 0
   const mass = rec.thermo?.mass ?? 1
   const sigma = (1.4 + 0.45 * mass) * (1 + 2.2 * (1 - order)) * (1 + 4 * (1 - condense))
   const amp = (3.5 + 2.2 * mass + 1.2 * Math.min(degree, 6)) * condense * (0.45 + 0.55 * order)
@@ -90,6 +95,52 @@ export function buildHeightfield(
   return { res, x0, z0, size, h }
 }
 
+/**
+ * The land's colour: each born note tints the ground under its bump with its own colour,
+ * weighted like the bump, on a res×res RGB grid (0 where no note reaches).
+ */
+export function buildTint(
+  notes: readonly { xz: XZ; state: NoteState; rgb: readonly [number, number, number] }[],
+  hf: Pick<Heightfield, 'x0' | 'z0' | 'size'>,
+  res = 64,
+): Float32Array {
+  const acc = new Float32Array(res * res * 4)
+  const cell = hf.size / (res - 1)
+  for (const { xz, state, rgb } of notes) {
+    if (!state.born || state.amp <= 0.01) continue
+    const w = state.width * 1.3
+    const reach = w * 3
+    const i0 = Math.max(0, Math.floor((xz[0] - reach - hf.x0) / cell))
+    const i1 = Math.min(res - 1, Math.ceil((xz[0] + reach - hf.x0) / cell))
+    const j0 = Math.max(0, Math.floor((xz[1] - reach - hf.z0) / cell))
+    const j1 = Math.min(res - 1, Math.ceil((xz[1] + reach - hf.z0) / cell))
+    const inv = 1 / (2 * w * w)
+    for (let j = j0; j <= j1; j++) {
+      const dz = hf.z0 + j * cell - xz[1]
+      for (let i = i0; i <= i1; i++) {
+        const dx = hf.x0 + i * cell - xz[0]
+        const k = state.amp * Math.exp(-(dx * dx + dz * dz) * inv)
+        const o = (j * res + i) * 4
+        acc[o] += rgb[0] * k
+        acc[o + 1] += rgb[1] * k
+        acc[o + 2] += rgb[2] * k
+        acc[o + 3] += k
+      }
+    }
+  }
+  // Normalised colour in rgb, coverage (0…1) in alpha.
+  for (let o = 0; o < acc.length; o += 4) {
+    const k = acc[o + 3]
+    if (k > 1e-4) {
+      acc[o] /= k
+      acc[o + 1] /= k
+      acc[o + 2] /= k
+    }
+    acc[o + 3] = Math.min(1, k / 4)
+  }
+  return acc
+}
+
 /** Bilinear height at a world point (0 outside the grid). */
 export function sampleHeight(hf: Heightfield, x: number, z: number): number {
   const fx = ((x - hf.x0) / hf.size) * (hf.res - 1)
@@ -126,6 +177,23 @@ export function activeRipples(notes: readonly { rec: NodeRecord; xz: XZ }[], pla
     out.push({ x: xz[0], z: xz[1], age, amp: 1 + 0.6 * (rec.thermo?.mass ?? 1) })
   }
   return out.sort((a, b) => a.age - b.age).slice(0, max)
+}
+
+/**
+ * The field's entropy (nats): the summed differential entropy of the born notes' clouds,
+ * each a 3-D Gaussian of radius σ, ½·3·ln(2πe·σ²) apiece. It grows as notes age and spread,
+ * and falls when attention re-condenses them: Boltzmann's S = k log W with W the clouds'
+ * coarse-grained volume.
+ */
+export function fieldEntropy(sigma: ArrayLike<number>, born: ArrayLike<number>): number | null {
+  let s = 0
+  let n = 0
+  for (let i = 0; i < sigma.length; i++) {
+    if (!born[i]) continue
+    s += 1.5 * Math.log(2 * Math.PI * Math.E * sigma[i] * sigma[i])
+    n++
+  }
+  return n ? s : null
 }
 
 /** How far the land lifts a note's cloud above its bump. */

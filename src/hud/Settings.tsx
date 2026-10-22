@@ -41,6 +41,7 @@ import {
   wipeConfirmed,
 } from './durability.ts'
 import { BTN, BTN_DANGER, BTN_PRIMARY, ConfirmDialog, FOCUS, HudDialog, saveWorldArchive, useInstallPrompt, useNow } from './DurabilityKit.tsx'
+import { setWorldView } from './shortcuts.ts'
 
 const INPUT = `border border-bone/30 bg-transparent px-2 py-1 font-mono text-[12px] text-bone placeholder:text-concrete/60 ${FOCUS}`
 
@@ -625,15 +626,52 @@ function RelayoutSection({ canWrite }: { canWrite: boolean }) {
   )
 }
 
+// ─── world view ────────────────────────────────────────────────────────────────────
+
+function WorldViewSection() {
+  const world = useApp((s) => s.view.world)
+  const architecture = useApp((s) => s.view.architecture)
+  const archId = useId()
+  const option = (value: 'field' | 'classic', title: string, text: string) => (
+    <label className={`flex cursor-pointer gap-3 border px-3 py-2 ${world === value ? 'border-ember bg-ember/5' : 'border-bone/20 hover:border-bone/50'}`}>
+      <input type="radio" name="world-view" className="mt-1 accent-[var(--color-ember)]" checked={world === value} onChange={() => setWorldView(value)} />
+      <span className="flex flex-col gap-0.5">
+        <span className="text-[13px] text-bone">{title}</span>
+        <span className="text-[11px] text-concrete">{text}</span>
+      </span>
+    </label>
+  )
+  return (
+    <Section title="World view" intro="How your world is drawn. Your notes are the same in both; switch any time. Saved on this device.">
+      <div className="flex max-w-xl flex-col gap-1.5">
+        {option('field', 'Field (topographic)', 'Notes are clouds of grains on a living land shaped by what you know. Time plays in the timeline at the bottom.')}
+        {option('classic', 'Classic (structure)', 'The original column, helix and rings, with time as height. Kept as a backup view.')}
+      </div>
+      {world === 'classic' && (
+        <label htmlFor={archId} className="mt-2 flex flex-col gap-1">
+          <span className="hud-label">Architecture · {Math.round(architecture * 100)}%</span>
+          <input
+            id={archId}
+            type="range"
+            className="w-full max-w-sm accent-[var(--color-ember)]"
+            min={ARCHITECTURE_RANGE[0]}
+            max={ARCHITECTURE_RANGE[1]}
+            step={0.02}
+            value={architecture}
+            onChange={(e) => useApp.getState().setView({ architecture: Number(e.target.value) })}
+          />
+          <span className="text-[11px] text-concrete">How bright the column, colonnade and land are next to your nodes.</span>
+        </label>
+      )}
+    </Section>
+  )
+}
+
 // ─── quality ───────────────────────────────────────────────────────────────────────
 
 function QualitySection({ canWrite }: { canWrite: boolean }) {
   const tier = useApp((s) => s.quality.tier)
-  const architecture = useApp((s) => s.view.architecture)
-  const world = useApp((s) => s.view.world)
-  const worldId = useId()
   const id = useId()
-  const archId = useId()
   const [error, setError] = useState<string | null>(null)
   const onChange = async (t: QualityTier) => {
     setError(null)
@@ -646,7 +684,7 @@ function QualitySection({ canWrite }: { canWrite: boolean }) {
     }
   }
   return (
-    <Section title="Quality" intro="Rendering detail. The tier is saved with the world; everything applies right away.">
+    <Section title="Quality" intro="Rendering detail. Saved with the world; applies right away.">
       <label htmlFor={id} className="flex flex-col gap-1">
         <span className="hud-label">Tier</span>
         <select id={id} className={`${INPUT} w-full max-w-sm bg-void`} value={tier} onChange={(e) => onChange(e.target.value as QualityTier)}>
@@ -656,40 +694,6 @@ function QualitySection({ canWrite }: { canWrite: boolean }) {
             </option>
           ))}
         </select>
-      </label>
-      <label htmlFor={worldId} className="flex flex-col gap-1">
-        <span className="hud-label">World</span>
-        <select
-          id={worldId}
-          className={`${INPUT} w-full max-w-sm bg-void`}
-          value={world}
-          onChange={(e) => {
-            const next = e.target.value as 'field' | 'classic'
-            const app = useApp.getState()
-            if (next === 'field' && (app.mode === 'third_person' || app.mode === 'autonav')) app.setMode('orbit')
-            app.setView({ world: next })
-          }}
-        >
-          <option value="field">Field: notes as grains on a living land (time in the timeline)</option>
-          <option value="classic">Classic: the column, helix and rings (time as height)</option>
-        </select>
-        <span className="text-[11px] text-concrete">Saved on this device.</span>
-      </label>
-      <label htmlFor={archId} className="flex flex-col gap-1">
-        <span className="hud-label">
-          Architecture · {Math.round(architecture * 100)}%
-        </span>
-        <input
-          id={archId}
-          type="range"
-          className="w-full max-w-sm accent-[var(--color-ember)]"
-          min={ARCHITECTURE_RANGE[0]}
-          max={ARCHITECTURE_RANGE[1]}
-          step={0.02}
-          value={architecture}
-          onChange={(e) => useApp.getState().setView({ architecture: Number(e.target.value) })}
-        />
-        <span className="text-[11px] text-concrete">How bright the column, colonnade and land are next to your nodes. Saved on this device.</span>
       </label>
       <Outcome ok={null} error={error} />
     </Section>
@@ -914,6 +918,7 @@ function SettingsPanel() {
           Read-only tab: another tab is editing this world. Changes here are disabled; export still works.
         </p>
       )}
+      <WorldViewSection />
       <StorageSection />
       <EngineSection canWrite={canWrite} />
       <SemanticSection canWrite={canWrite} />

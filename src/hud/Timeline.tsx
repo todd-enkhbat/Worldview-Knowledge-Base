@@ -6,6 +6,8 @@ import type { Archetype, WorldSettings } from '../domain/types.ts'
 import { isEditableTarget } from '../world/camera/keyboard.ts'
 import { getPlayhead, seekPlayhead, stepOfEpoch } from '../world/time/clock.ts'
 import { useSimStats } from '../world/time/physicsClient.ts'
+import { getFieldFrame } from '../world/field/runtime.ts'
+import { fieldEntropy } from '../world/field/state.ts'
 import { axisAt, fractionOfStep, nearestOnAxis, stepAtFraction, yearOf, yearTicks } from '../world/time/timeScale.ts'
 import { isModalOpen } from './shortcuts.ts'
 
@@ -392,8 +394,26 @@ function SettlingFlag() {
   )
 }
 
+/** The particle world's entropy, sampled 4× a second (the field writes it each frame). */
+function useFieldEntropy(on: boolean): number | null {
+  const [s, setS] = useState<number | null>(null)
+  useEffect(() => {
+    if (!on) return
+    const tick = () => {
+      const f = getFieldFrame()
+      setS(fieldEntropy(f.sigma, f.born))
+    }
+    tick()
+    const id = setInterval(tick, 250)
+    return () => clearInterval(id)
+  }, [on])
+  return on ? s : null
+}
+
 function Readouts() {
   const sim = useSimStats(useShallow((s) => ({ mode: s.mode, stats: s.stats, error: s.error })))
+  const field = useApp((s) => s.view.world === 'field')
+  const fieldS = useFieldEntropy(field)
   const st = sim.stats
   const e = st?.energy ?? null
   const energyTitle = e
@@ -402,7 +422,15 @@ function Readouts() {
   return (
     <dl className="m-0 flex flex-wrap items-baseline gap-x-3 gap-y-1 tabular-nums">
       <Readout label="|A|" value={st ? String(st.activeCount) : '—'} title="Nodes born at the playhead" />
-      <Readout label="S" value={st?.S == null ? '—' : st.S.toFixed(2)} title="Entropy −D_KL of the born nodes (nats); — below 5 nodes" />
+      {field ? (
+        <Readout
+          label="S"
+          value={fieldS == null ? '—' : fieldS.toFixed(1)}
+          title={'Entropy of the field (nats): the summed volume of the born notes\u2019 clouds. It rises as ideas age and spread, and falls when you return to them.'}
+        />
+      ) : (
+        <Readout label="S" value={st?.S == null ? '—' : st.S.toFixed(2)} title="Entropy −D_KL of the born nodes (nats); — below 5 nodes" />
+      )}
       <Readout label="ΔE" value={e ? formatLedger(e.ledger) : '—'} title={energyTitle} />
       <Readout label="ckpt" value={st ? String(st.checkpoints) : '—'} title="Physics checkpoints held in memory" />
       {st !== null && st.overflowSentinel > 0 && (

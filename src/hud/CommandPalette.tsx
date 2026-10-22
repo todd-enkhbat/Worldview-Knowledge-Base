@@ -17,6 +17,7 @@ import {
   newNode,
   selectAndFly,
   usePaletteIntent,
+  setWorldView,
 } from './shortcuts.ts'
 import { flyTo } from '../world/camera/flyTo.ts'
 
@@ -158,6 +159,12 @@ function PaletteDialog() {
       { id: 'demons', label: 'Demons and Landauer ledger', keywords: 'demon maxwell sort query ledger landauer compact log plasticity', run: () => app().togglePanel('demons', true) },
       { id: 'export', label: 'Export backup', keywords: 'save archive zip download', busy: 'Exporting…', run: () => exportBackup() },
       { id: 'import', label: 'Import archive', keywords: 'restore load zip replace', hint: ro ? 'read-only' : undefined, disabled: ro, run: () => fileRef.current?.click() },
+      {
+        id: 'world-view',
+        label: app().view.world === 'field' ? 'World view: switch to Classic (structure)' : 'World view: switch to Field (topographic)',
+        keywords: 'world view classic field topographic helix column particles backup layout',
+        run: () => setWorldView(app().view.world === 'field' ? 'classic' : 'field'),
+      },
       { id: 'stats', label: 'Toggle stats', keywords: 'fps performance renderer', hint: '`', run: () => app().togglePanel('stats') },
     )
     return list

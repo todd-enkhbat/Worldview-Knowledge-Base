@@ -114,7 +114,8 @@ describe('Timeline', () => {
     expect(getPlayhead().step).toBe(STEPS_PER_YEAR)
   })
 
-  it('readouts: — before stats; values, settling and static once they arrive', () => {
+  it('readouts: — before stats; values, settling and static once they arrive (classic world: the engine\u2019s S)', () => {
+    act(() => useApp.getState().setView({ world: 'classic' }))
     expect(host.textContent).toMatch(/S—/)
     act(() => {
       useSimStats.setState({
@@ -137,6 +138,13 @@ describe('Timeline', () => {
     expect(host.textContent).toContain('settling')
     act(() => useSimStats.setState({ mode: 'static', error: 'no worker' }))
     expect(host.textContent).toContain('static')
+  })
+
+  it('shows the field\u2019s own entropy in the particle world', () => {
+    act(() => useApp.getState().setView({ world: 'field' }))
+    // No field has been evaluated in this test: no born clouds, so S is —.
+    expect(host.textContent).toMatch(/S—/)
+    expect(host.querySelector('[title^="Entropy of the field"]')).not.toBeNull()
   })
 
   it('collapses to a thin bar and back (remembered)', () => {

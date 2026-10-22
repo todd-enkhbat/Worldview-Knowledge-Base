@@ -6,6 +6,7 @@ import { softDelete } from '../data/repo.ts'
 import { stepAtEpoch, yOf } from '../domain/time.ts'
 import type { Archetype } from '../domain/types.ts'
 import { flyTo } from '../world/camera/flyTo.ts'
+import { requestEstablishingShot } from '../world/camera/OrbitRig.tsx'
 import { isEditableTarget } from '../world/camera/keyboard.ts'
 import { saveWorldArchive } from './DurabilityKit.tsx'
 
@@ -53,6 +54,18 @@ export function closePalette(): void {
 export function isModalOpen(s = useApp.getState()): boolean {
   const p = s.panels
   return p.palette || p.picker || p.settings || p.trash || p.omnibox || s.editor.open
+}
+
+/**
+ * Switch how the world is drawn (Settings → World view, the palette). The camera reframes for
+ * the new world, and modes that only exist in the classic world fall back to orbit.
+ */
+export function setWorldView(next: 'field' | 'classic'): void {
+  const app = useApp.getState()
+  if (app.view.world === next) return
+  if (next === 'field' && (app.mode === 'third_person' || app.mode === 'autonav')) app.setMode('orbit')
+  requestEstablishingShot()
+  app.setView({ world: next })
 }
 
 export function selectAndFly(id: string): boolean {

@@ -12,6 +12,7 @@ import {
   RGBAFormat,
   RedFormat,
   ShaderMaterial,
+  Vector3,
 } from 'three'
 import { useApp, useWorld } from '../../app/store.ts'
 import { getStore, isRepoReady } from '../../data/repo.ts'
@@ -19,7 +20,7 @@ import type { Archetype, LinkKind } from '../../domain/types.ts'
 import { LAYER } from '../layers.ts'
 import { LINK_STYLE, buildTypedLinks } from '../links/style.ts'
 import { getFieldFrame, type FieldFrame } from './runtime.ts'
-import { RIPPLE_Y } from './state.ts'
+import { RIPPLE_Y, buildTint, type NoteState } from './state.ts'
 
 // The particle world (milestone 2). Three point layers, all GPU-animated from small textures
 // the runtime fills each frame:
@@ -30,6 +31,12 @@ import { RIPPLE_Y } from './state.ts'
 // shimmer keeps the paused world alive without moving anything that time decides.
 
 const LAND_GRID = 300
+/** The detail patch: a finer land that follows where you look, for close views. */
+const DETAIL_GRID = 190
+const DETAIL_SIZE = 64
+const TINT_RES = 64
+/** How fast displayed clouds ease toward what time says (per second). */
+const EASE = 6
 const MAX_GRAINS = 260_000
 const IMAGE_GRID = 56
 const CURRENT_GRAINS = 40
@@ -83,7 +90,11 @@ void main() {
 const LAND_VERT = /* glsl */ `
 uniform sampler2D uHeight;
 uniform float uRes;
-uniform vec4 uExtent; // x0, z0, size, unused
+uniform sampler2D uTint;
+uniform float uTintRes;
+uniform vec4 uExtent; // heightfield: x0, z0, size
+uniform vec4 uPatch;  // this layer: x0, z0, size, grain scale
+uniform float uPatchFade; // 1 = the whole land (round edge); else the detail patch's opacity
 uniform float uTime;
 uniform float uPixel;
 uniform vec4 uRipples[${MAX_RIPPLES}]; // x, z, age (years), amp
@@ -93,20 +104,22 @@ attribute vec2 aRand;
 varying vec3 vColor;
 varying float vAlpha;
 
-float heightAt(vec2 uv) {
-  vec2 f = uv * (uRes - 1.0);
-  vec2 i = floor(f);
+vec4 bilinear(sampler2D tex, float res, vec2 uv) {
+  vec2 f = clamp(uv, 0.0, 1.0) * (res - 1.0);
+  vec2 i = min(floor(f), vec2(res - 2.0));
   vec2 t = f - i;
-  float a = texture2D(uHeight, (i + vec2(0.5, 0.5)) / uRes).r;
-  float b = texture2D(uHeight, (i + vec2(1.5, 0.5)) / uRes).r;
-  float c = texture2D(uHeight, (i + vec2(0.5, 1.5)) / uRes).r;
-  float d = texture2D(uHeight, (i + vec2(1.5, 1.5)) / uRes).r;
+  vec4 a = texture2D(tex, (i + vec2(0.5, 0.5)) / res);
+  vec4 b = texture2D(tex, (i + vec2(1.5, 0.5)) / res);
+  vec4 c = texture2D(tex, (i + vec2(0.5, 1.5)) / res);
+  vec4 d = texture2D(tex, (i + vec2(1.5, 1.5)) / res);
   return mix(mix(a, b, t.x), mix(c, d, t.x), t.y);
 }
 
 void main() {
-  vec2 xz = uExtent.xy + aUV * uExtent.z;
-  float h = heightAt(clamp(aUV, 0.0, 1.0));
+  vec2 xz = uPatch.xy + aUV * uPatch.z;
+  vec2 huv = (xz - uExtent.xy) / uExtent.z;
+  float h = bilinear(uHeight, uRes, huv).r;
+  vec4 tint = bilinear(uTint, uTintRes, huv);
   // A slow ambient swell, then every recent birth's wave front.
   float swell = 0.45 * sin(0.07 * xz.x + 0.35 * uTime) * cos(0.06 * xz.y - 0.27 * uTime);
   float crest = 0.0;
@@ -118,21 +131,36 @@ void main() {
     float fade = 1.0 - r.z / ${RIPPLE_Y.toFixed(2)};
     crest += r.w * fade * exp(-pow(dist - front, 2.0) / 40.0);
   }
-  vec3 p = vec3(xz.x, h + swell + crest * 1.6 + aRand.x * 0.25, xz.y);
+  vec3 p = vec3(xz.x, h + swell + crest * 1.6 + aRand.x * 0.2 * uPatch.w, xz.y);
   vec4 mv = modelViewMatrix * vec4(p, 1.0);
   gl_Position = projectionMatrix * mv;
-  gl_PointSize = clamp((0.16 + 0.16 * aRand.y) * uPixel / -mv.z, 1.0, 7.0);
-  float lift = smoothstep(0.0, 14.0, h);
-  vec3 low = vec3(0.05, 0.06, 0.085);
-  vec3 mid = vec3(0.24, 0.23, 0.22);
-  vec3 high = vec3(0.95, 0.66, 0.33);
-  // Faint survey contours every 2 u of height, as in the classic world's ranges.
-  float contour = smoothstep(0.92, 1.0, abs(fract(h * 0.5) * 2.0 - 1.0)) * smoothstep(0.3, 2.0, h);
-  vColor = mix(mix(low, mid, smoothstep(0.0, 0.5, lift)), high, smoothstep(0.5, 1.0, lift)) * (0.75 + 0.5 * aRand.y)
-    + vec3(0.9, 0.62, 0.3) * contour * 0.35
+
+  // Survey contours every 1.5 u of height, and an index contour every fifth (7.5 u).
+  float level = h / 1.5;
+  float line = 1.0 - smoothstep(0.0, 0.11, abs(fract(level + 0.5) - 0.5));
+  float index = 1.0 - smoothstep(0.0, 0.06, abs(fract(level / 5.0 + 0.5) - 0.5) * 5.0);
+  float onLand = smoothstep(0.25, 1.2, h);
+  float contour = max(line * 0.55, index) * onLand;
+  gl_PointSize = clamp((0.16 + 0.16 * aRand.y) * uPatch.w * (1.0 + 0.6 * contour) * uPixel / -mv.z, 1.0, 4.0);
+
+  float lift = smoothstep(0.0, 16.0, h);
+  vec3 low = vec3(0.045, 0.055, 0.08);
+  vec3 mid = vec3(0.22, 0.21, 0.2);
+  vec3 high = vec3(0.92, 0.66, 0.34);
+  vec3 ground = mix(mix(low, mid, smoothstep(0.0, 0.45, lift)), high, smoothstep(0.45, 1.0, lift));
+  // The land takes the colour of the notes that raised it.
+  ground = mix(ground, tint.rgb * (0.35 + 0.65 * lift), tint.a * (0.35 + 0.45 * lift));
+  vColor = ground * (0.75 + 0.5 * aRand.y)
+    + vec3(1.0, 0.72, 0.38) * contour * (0.25 + 0.4 * index)
     + vec3(1.0, 0.8, 0.5) * min(crest, 1.0) * 0.9;
-  vec2 c = aUV * 2.0 - 1.0;
-  float edge = 1.0 - smoothstep(0.55, 1.0, length(c));
+
+  float edge;
+  if (uPatchFade >= 1.0) {
+    edge = 1.0 - smoothstep(0.55, 1.0, length(huv * 2.0 - 1.0));
+  } else {
+    edge = (1.0 - smoothstep(0.55, 1.0, length(aUV * 2.0 - 1.0))) * uPatchFade
+      * (1.0 - smoothstep(0.55, 1.0, length(huv * 2.0 - 1.0)));
+  }
   vAlpha = edge * (0.55 + 0.4 * lift + 0.4 * min(crest, 1.0));
 }
 `
@@ -172,10 +200,10 @@ void main() {
     mv = modelViewMatrix * vec4(p, 1.0);
   }
   gl_Position = projectionMatrix * mv;
-  float size = (aRand.z > 0.5 ? 0.5 : 0.36 + 0.5 * aRand.y) * (1.0 + 0.5 * hl);
-  gl_PointSize = clamp(size * uPixel / -mv.z, 1.0, 22.0);
-  vColor = aColor * (aRand.z > 0.5 ? 1.0 : 1.3) * (1.0 + 1.2 * hl);
-  vAlpha = (aRand.z > 0.5 ? 0.9 : 0.28 + 0.4 * order) * cond;
+  float size = (aRand.z > 0.5 ? 0.34 : 0.14 + 0.22 * aRand.y) * (1.0 + 0.5 * hl);
+  gl_PointSize = clamp(size * uPixel / -mv.z, 1.0, 5.0);
+  vColor = aColor * (aRand.z > 0.5 ? 1.0 : 1.9) * (1.0 + 1.2 * hl);
+  vAlpha = (aRand.z > 0.5 ? 0.9 : 0.45 + 0.5 * order) * cond;
 }
 `
 
@@ -271,6 +299,38 @@ function grainsFor(frame: FieldFrame, i: number): Budget {
   return { cloud: Math.round(420 + 300 * mass + 120 * extra + 40 * Math.min(r.contentMd.length / 400, 8)), image: r.attachments.some((a) => a.kind === 'image') }
 }
 
+function landPoints(grid: number, material: ShaderMaterial, name: string, seed: number): Points {
+  const n = grid * grid
+  const uv = new Float32Array(n * 2)
+  const rnd = new Float32Array(n * 2)
+  const r = rng(seed)
+  for (let j = 0; j < grid; j++) {
+    for (let i = 0; i < grid; i++) {
+      const k = j * grid + i
+      uv[k * 2] = (i + r()) / grid
+      uv[k * 2 + 1] = (j + r()) / grid
+      rnd[k * 2] = r()
+      rnd[k * 2 + 1] = r()
+    }
+  }
+  const g = new BufferGeometry()
+  g.setAttribute('aUV', new BufferAttribute(uv, 2))
+  g.setAttribute('aRand', new BufferAttribute(rnd, 2))
+  g.setAttribute('position', new BufferAttribute(new Float32Array(n * 3), 3))
+  const p = new Points(g, material)
+  p.frustumCulled = false
+  p.layers.set(LAYER.SOLID)
+  p.raycast = () => {}
+  p.name = name
+  return p
+}
+
+const linearColor = (hex: string): [number, number, number] => {
+  const c = new Color(hex).convertSRGBToLinear()
+  return [c.r, c.g, c.b]
+}
+const TINT_RGB = Object.fromEntries(Object.entries(ARCHETYPE_COLOR).map(([k, v]) => [k, linearColor(v)])) as Record<Archetype, [number, number, number]>
+
 // ─── the layer ───────────────────────────────────────────────────────────────────────
 
 export function FieldLayer() {
@@ -294,12 +354,20 @@ export function FieldLayer() {
     t.needsUpdate = true
     return t
   }, [])
+  const tintTex = useMemo(() => {
+    const t = new DataTexture(new Float32Array(16), 2, 2, RGBAFormat, FloatType)
+    t.magFilter = NearestFilter
+    t.minFilter = NearestFilter
+    t.needsUpdate = true
+    return t
+  }, [])
   useEffect(
     () => () => {
       notesTex.dispose()
       heightTex.dispose()
+      tintTex.dispose()
     },
-    [notesTex, heightTex],
+    [notesTex, heightTex, tintTex],
   )
 
   const common = useMemo(() => ({ uNotes: { value: notesTex }, uN: { value: 1 }, uTime: { value: 0 }, uPixel: { value: 600 } }), [notesTex])
@@ -312,7 +380,11 @@ export function FieldLayer() {
         uniforms: {
           uHeight: { value: heightTex },
           uRes: { value: 2 },
+          uTint: { value: tintTex },
+          uTintRes: { value: 2 },
           uExtent: { value: [-50, -50, 100, 0] },
+          uPatch: { value: [-50, -50, 100, 1] },
+          uPatchFade: { value: 1 },
           uTime: common.uTime,
           uPixel: common.uPixel,
           uRipples: { value: Array.from({ length: MAX_RIPPLES }, () => [0, 0, 0, 0]).flat() },
@@ -321,7 +393,19 @@ export function FieldLayer() {
         transparent: false,
         depthWrite: true,
       }),
-    [heightTex, common],
+    [heightTex, tintTex, common],
+  )
+  // Shares every uniform with the land except where it sits and how visible it is.
+  const detailMat = useMemo(
+    () =>
+      new ShaderMaterial({
+        vertexShader: LAND_VERT,
+        fragmentShader: SOLID_DOT,
+        uniforms: { ...landMat.uniforms, uPatch: { value: [0, 0, DETAIL_SIZE, 0.55] }, uPatchFade: { value: 0 } },
+        transparent: false,
+        depthWrite: true,
+      }),
+    [landMat],
   )
   const cloudMat = useMemo(
     () => new ShaderMaterial({ vertexShader: CLOUD_VERT, fragmentShader: SOFT_DOT, uniforms: common, transparent: true, depthWrite: false, blending: AdditiveBlending }),
@@ -334,39 +418,23 @@ export function FieldLayer() {
   useEffect(
     () => () => {
       landMat.dispose()
+      detailMat.dispose()
       cloudMat.dispose()
       currentMat.dispose()
     },
-    [landMat, cloudMat, currentMat],
+    [landMat, detailMat, cloudMat, currentMat],
   )
 
-  // Land: a jittered grid, built once.
-  const land = useMemo(() => {
-    const n = LAND_GRID * LAND_GRID
-    const uv = new Float32Array(n * 2)
-    const rnd = new Float32Array(n * 2)
-    const r = rng(7)
-    for (let j = 0; j < LAND_GRID; j++) {
-      for (let i = 0; i < LAND_GRID; i++) {
-        const k = j * LAND_GRID + i
-        uv[k * 2] = (i + r()) / LAND_GRID
-        uv[k * 2 + 1] = (j + r()) / LAND_GRID
-        rnd[k * 2] = r()
-        rnd[k * 2 + 1] = r()
-      }
-    }
-    const g = new BufferGeometry()
-    g.setAttribute('aUV', new BufferAttribute(uv, 2))
-    g.setAttribute('aRand', new BufferAttribute(rnd, 2))
-    g.setAttribute('position', new BufferAttribute(new Float32Array(n * 3), 3))
-    const p = new Points(g, landMat)
-    p.frustumCulled = false
-    p.layers.set(LAYER.SOLID)
-    p.raycast = () => {}
-    p.name = 'field-land'
-    return p
-  }, [landMat])
-  useEffect(() => () => land.geometry.dispose(), [land])
+  // Land and detail patch: jittered grids, built once.
+  const land = useMemo(() => landPoints(LAND_GRID, landMat, 'field-land', 7), [landMat])
+  const detail = useMemo(() => landPoints(DETAIL_GRID, detailMat, 'field-land-detail', 11), [detailMat])
+  useEffect(
+    () => () => {
+      land.geometry.dispose()
+      detail.geometry.dispose()
+    },
+    [land, detail],
+  )
 
   // Pictures for image notes (async; the clouds rebuild when one arrives).
   useEffect(() => {
@@ -486,50 +554,102 @@ export function FieldLayer() {
     [clouds, currents],
   )
 
-  const seen = useRef({ version: -1, structure: -1, sel: null as string | null, hov: null as string | null })
+  const seen = useRef({ version: -1, structure: -1 })
+  // What is on screen eases toward what time says (attention re-condensing, a sudden scrub),
+  // without changing what time says: the runtime's frame stays a pure function of the playhead.
+  const shown = useRef({ sigma: new Float32Array(0), order: new Float32Array(0), hl: new Float32Array(0) })
+  const look = useMemo(() => ({ dir: new Vector3(), pt: new Vector3() }), [])
 
-  useFrame((state) => {
+  useFrame((state, dt) => {
     const frame = getFieldFrame()
     if (frame.structure !== structure) setStructure(frame.structure)
+    const cam = state.camera
     common.uTime.value = state.clock.elapsedTime
-    common.uPixel.value = (size.height * dpr) / (2 * Math.tan(((state.camera as { fov?: number }).fov ?? 50) * (Math.PI / 360)))
-    const { selectedId, hoveredId } = useApp.getState()
+    common.uPixel.value = (size.height * dpr) / (2 * Math.tan(((cam as { fov?: number }).fov ?? 50) * (Math.PI / 360)))
     const s = seen.current
-    if (frame.version === s.version && selectedId === s.sel && hoveredId === s.hov) return
-    s.version = frame.version
-    s.sel = selectedId
-    s.hov = hoveredId
 
-    // Note texture: row 0 = centre, sigma; row 1 = order, born, highlight, condense.
-    const n = Math.max(1, frame.ids.length)
-    const data = new Float32Array(n * 2 * 4)
-    const linked = new Set<string>()
-    const sel = selectedId ? frame.records[frame.index.get(selectedId) ?? -1] : undefined
-    if (sel) for (const l of sel.links) linked.add(l.targetId)
-    for (const r of frame.records) if (selectedId && r.links.some((l) => l.targetId === selectedId)) linked.add(r.id)
-    for (let i = 0; i < frame.ids.length; i++) {
-      const id = frame.ids[i]
-      data.set([frame.centers[i * 3], frame.centers[i * 3 + 1], frame.centers[i * 3 + 2], frame.sigma[i]], i * 4)
-      const hl = id === selectedId ? 1 : id === hoveredId ? 0.7 : linked.has(id) ? 0.35 : 0
-      data.set([frame.order[i], frame.born[i], hl, frame.condense[i]], (n + i) * 4)
+    // Land and tint: only when time (or the world) changed.
+    if (frame.version !== s.version) {
+      const hf = frame.heightfield
+      heightTex.image = { data: hf.h, width: hf.res, height: hf.res } as unknown as typeof heightTex.image
+      heightTex.needsUpdate = true
+      landMat.uniforms.uRes.value = hf.res
+      landMat.uniforms.uExtent.value = [hf.x0, hf.z0, hf.size, 0]
+      landMat.uniforms.uPatch.value = [hf.x0, hf.z0, hf.size, 1]
+      const tint = buildTint(
+        frame.ids.map((id, i) => ({
+          xz: frame.layout.get(id)!,
+          state: { born: frame.born[i] === 1, amp: frame.amp[i], width: frame.width[i] } as NoteState,
+          rgb: TINT_RGB[frame.records[i].archetype],
+        })),
+        hf,
+        TINT_RES,
+      )
+      tintTex.image = { data: tint, width: TINT_RES, height: TINT_RES } as unknown as typeof tintTex.image
+      tintTex.needsUpdate = true
+      landMat.uniforms.uTintRes.value = TINT_RES
+      const rip = landMat.uniforms.uRipples.value as number[]
+      rip.fill(0)
+      frame.ripples.forEach((r, i) => rip.splice(i * 4, 4, r.x, r.z, r.age, r.amp))
     }
-    notesTex.image = { data, width: n, height: 2 } as unknown as typeof notesTex.image
-    notesTex.needsUpdate = true
-    common.uN.value = n
 
-    const hf = frame.heightfield
-    heightTex.image = { data: hf.h, width: hf.res, height: hf.res } as unknown as typeof heightTex.image
-    heightTex.needsUpdate = true
-    landMat.uniforms.uRes.value = hf.res
-    landMat.uniforms.uExtent.value = [hf.x0, hf.z0, hf.size, 0]
-    const rip = landMat.uniforms.uRipples.value as number[]
-    rip.fill(0)
-    frame.ripples.forEach((r, i) => rip.splice(i * 4, 4, r.x, r.z, r.age, r.amp))
+    // Detail patch: centred where the view meets the ground, snapped to its own grain so it
+    // never swims; visible only when you are close.
+    cam.getWorldDirection(look.dir)
+    const t = look.dir.y < -0.05 ? Math.min(600, -cam.position.y / look.dir.y) : 80
+    look.pt.copy(cam.position).addScaledVector(look.dir, t)
+    const cell = DETAIL_SIZE / DETAIL_GRID
+    const px = Math.round(look.pt.x / cell) * cell - DETAIL_SIZE / 2
+    const pz = Math.round(look.pt.z / cell) * cell - DETAIL_SIZE / 2
+    const near = 1 - Math.min(1, Math.max(0, (cam.position.distanceTo(look.pt) - 40) / 80))
+    ;(detailMat.uniforms.uPatch.value as number[]).splice(0, 2, px, pz)
+    // The coarse land's grains shrink as the fine patch takes over, so close views stay fine.
+    ;(landMat.uniforms.uPatch.value as number[])[3] = 1 - 0.5 * near
+    detailMat.uniforms.uPatchFade.value = Math.min(0.999, near)
+    detail.visible = near > 0.01
+
+    // Clouds: ease sigma, order and highlight toward their targets.
+    const n = frame.ids.length
+    const sh = shown.current
+    if (frame.structure !== s.structure || sh.sigma.length !== n) {
+      sh.sigma = Float32Array.from(frame.sigma)
+      sh.order = Float32Array.from(frame.order)
+      sh.hl = new Float32Array(n)
+    }
+    const { selectedId, hoveredId } = useApp.getState()
+    const sel = selectedId !== null ? frame.index.get(selectedId) : undefined
+    const linked = new Set<number>()
+    if (sel !== undefined) {
+      for (const l of frame.records[sel].links) {
+        const j = frame.index.get(l.targetId)
+        if (j !== undefined) linked.add(j)
+      }
+      frame.records.forEach((r, j) => r.links.some((l) => l.targetId === selectedId) && linked.add(j))
+    }
+    const k = 1 - Math.exp(-EASE * Math.min(dt, 0.1))
+    const rows = Math.max(1, n)
+    const data = new Float32Array(rows * 2 * 4)
+    for (let i = 0; i < n; i++) {
+      // A scrub that crosses a birth or death shows at once; within a life, ease.
+      const jump = frame.born[i] === 0 || frame.condense[i] < 1
+      sh.sigma[i] = jump ? frame.sigma[i] : sh.sigma[i] + (frame.sigma[i] - sh.sigma[i]) * k
+      sh.order[i] = jump ? frame.order[i] : sh.order[i] + (frame.order[i] - sh.order[i]) * k
+      const hlTarget = i === sel ? 1 : frame.ids[i] === hoveredId ? 0.7 : linked.has(i) ? 0.35 : 0
+      sh.hl[i] += (hlTarget - sh.hl[i]) * Math.min(1, k * 2)
+      data.set([frame.centers[i * 3], frame.centers[i * 3 + 1], frame.centers[i * 3 + 2], sh.sigma[i]], i * 4)
+      data.set([sh.order[i], frame.born[i], sh.hl[i], frame.condense[i]], (rows + i) * 4)
+    }
+    notesTex.image = { data, width: rows, height: 2 } as unknown as typeof notesTex.image
+    notesTex.needsUpdate = true
+    common.uN.value = rows
+    s.version = frame.version
+    s.structure = frame.structure
   }, -1)
 
   return (
     <group name="field">
       <primitive object={land} />
+      <primitive object={detail} />
       <primitive object={clouds} />
       <primitive object={currents} />
     </group>

@@ -2,6 +2,7 @@ import type { NodeRecord, WorldSettings } from '../../domain/types.ts'
 import { isSemanticReady, semanticVectors } from '../../ai/semanticIndex.ts'
 import { setPoseTable } from '../poses.ts'
 import { computeFieldLayout, layoutBounds, type XZ } from './layout.ts'
+import { attentionVersion, ensureAttention, lastTouch } from './attention.ts'
 import { activeRipples, buildHeightfield, lift, noteState, sampleHeight, type Heightfield, type NoteState, type Ripple } from './state.ts'
 
 // The field's per-frame state (milestone 2), outside React. It owns the layout (recomputed
@@ -22,6 +23,9 @@ export interface FieldFrame {
   /** Cloud centre per note (x, y, z). */
   centers: Float32Array
   sigma: Float32Array
+  /** Height and width of each note's rise in the land. */
+  amp: Float32Array
+  width: Float32Array
   order: Float32Array
   condense: Float32Array
   born: Uint8Array
@@ -41,6 +45,8 @@ const empty = (): FieldFrame => ({
   degree: new Int32Array(0),
   centers: new Float32Array(0),
   sigma: new Float32Array(0),
+  amp: new Float32Array(0),
+  width: new Float32Array(0),
   order: new Float32Array(0),
   condense: new Float32Array(0),
   born: new Uint8Array(0),
@@ -54,6 +60,7 @@ let frame = empty()
 let lastNodes: ReadonlyMap<string, NodeRecord> | null = null
 let lastSemantic = false
 let lastCompute = -Infinity
+let lastAttention = -1
 
 export function getFieldFrame(): FieldFrame {
   return frame
@@ -96,6 +103,8 @@ function rebuildIfNeeded(nodes: ReadonlyMap<string, NodeRecord>): boolean {
     degree,
     centers: new Float32Array(n * 3),
     sigma: new Float32Array(n),
+    amp: new Float32Array(n),
+    width: new Float32Array(n),
     order: new Float32Array(n),
     condense: new Float32Array(n),
     born: new Uint8Array(n),
@@ -110,14 +119,18 @@ function rebuildIfNeeded(nodes: ReadonlyMap<string, NodeRecord>): boolean {
  */
 export function updateField(nodes: ReadonlyMap<string, NodeRecord>, _settings: WorldSettings | null, playheadMs: number, nowS: number): FieldFrame {
   const rebuilt = rebuildIfNeeded(nodes)
+  ensureAttention()
+  const attention = attentionVersion()
+  const touched = attention !== lastAttention
+  lastAttention = attention
   const n = frame.ids.length
   const interval = n > 150 ? 0.12 : 0
-  if (!rebuilt && playheadMs === frame.playheadMs && frame.version > 0) return frame
+  if (!rebuilt && !touched && playheadMs === frame.playheadMs && frame.version > 0) return frame
   if (!rebuilt && nowS - lastCompute < interval) return frame
   lastCompute = nowS
 
   const states: NoteState[] = new Array(n)
-  for (let i = 0; i < n; i++) states[i] = noteState(frame.records[i], playheadMs, frame.degree[i])
+  for (let i = 0; i < n; i++) states[i] = noteState(frame.records[i], playheadMs, frame.degree[i], lastTouch(frame.ids[i], playheadMs))
   const hf = buildHeightfield(
     frame.ids.map((id, i) => ({ xz: frame.layout.get(id)!, state: states[i] })),
     frame.extent,
@@ -129,6 +142,8 @@ export function updateField(nodes: ReadonlyMap<string, NodeRecord>, _settings: W
     frame.centers[i * 3 + 1] = sampleHeight(hf, x, z) + lift(s, frame.records[i].thermo?.mass ?? 1)
     frame.centers[i * 3 + 2] = z
     frame.sigma[i] = s.sigma
+    frame.amp[i] = s.amp
+    frame.width[i] = s.width
     frame.order[i] = s.order
     frame.condense[i] = s.condense
     frame.born[i] = s.born ? 1 : 0
@@ -149,4 +164,5 @@ export function resetField(): void {
   frame = empty()
   lastNodes = null
   lastCompute = -Infinity
+  lastAttention = -1
 }

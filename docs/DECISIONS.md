@@ -640,3 +640,19 @@ The user asked for the world to be "particles and waves instead of rigid bodies"
 - Currents for very large worlds are uncapped (40 × links).
 - Image cards use the first image only.
 - Splat scenes keep their terrarium scale (small against the field).
+
+### Milestone 2b: refining the field (2026-10-22)
+User: "exactly what I'm talking about… make it nicer, refine it"; keep the old design as a backup view; no Anthropic API calls for now (no credit). Nothing in this pass calls the API.
+
+- **World view** is a top-level Settings section (Field (topographic) / Classic (structure), per device) and a palette command. `setWorldView` drops field-incompatible modes and asks the orbit rig to reframe.
+  - **Bug fixed:** React's dev double-mount took the reframe on the first mount, then restored the old pivot on the second. A requested reframe now stays pending until a frame renders (`requestEstablishingShot`).
+  - **Verified in the pane:** field → classic frames the notes' band (target y 387); classic → field frames the layout (target y 6).
+  - `__wv.orbit()` reports the camera and the last establishing outcome.
+- **Attention** (`world/field/attention.ts`): inspect, dwell and enter events give a note its order back. Order decays from the latest touch at or before the playhead, so the field stays a pure function of (playhead, log). The index reloads on the repo's `events`/`import`/`wipe` changes. Clouds ease toward their target (rate 6/s) on screen only; births and condensation still jump on a scrub.
+- **Topographic land:**
+  - Each note tints the ground under its rise with its archetype colour (64² tint grid).
+  - Contours every 1.5 u, with an index contour every 7.5 u drawn brighter and larger.
+- **Detail patch:** a 190² grain patch over 64 u, snapped to its grain, follows the point where the view meets the ground. It fades in within ~120 u while the coarse land's grains shrink. Land grains are capped at 4 px and cloud grains at 5 px (smaller world sizes), so close views read as fine sand rather than pebbles.
+- **Field entropy** in the timeline: in the field, S is the summed differential entropy of the born clouds, Σ ½·3·ln(2πe σ²). It rises as notes age and falls when you return to them. Classic still shows the engine's S.
+- **Tests:** 647 pass (new: attention, entropy, timeline readouts in both worlds).
+- **Noted, not fixed:** a read-only follower tab took ~45 s to load in the pane, before and after this work. To check in the writer tab.

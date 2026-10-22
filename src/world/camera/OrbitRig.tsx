@@ -7,7 +7,8 @@ import { setPostFocus } from '../post/postMode.ts'
 import { establishingShot } from './establish.ts'
 import { fieldShot } from '../field/layout.ts'
 import { fieldLayoutFor } from '../field/runtime.ts'
-import { registerOrbitControls, takeOrbitPivot } from './flyTo.ts'
+import { getOrbitControls, registerOrbitControls, takeOrbitPivot } from './flyTo.ts'
+import { registerDevApi } from '../../app/devApi.ts'
 import { updateProximity } from './proximity.ts'
 
 // Free orbit around the world (the default mode). Mounted only while the mode wants it, so
@@ -36,7 +37,29 @@ const target = new Vector3()
 let mountedBefore = false
 /** The opening establishing shot is taken (or forfeited) once per page. */
 let established = false
+/** Why the last establishing attempt ended (dev hook). */
+let establishNote = 'none'
+
+/**
+ * A reframe asked for by switching worlds. It stays pending until a frame has rendered, so a
+ * remount in the same commit (React's dev double-mount) takes the shot again instead of
+ * restoring the previous view.
+ */
+let requested = false
+
+/** Frame the world afresh on the next orbit mount (after switching between field and classic). */
+export function requestEstablishingShot(): void {
+  established = false
+  requested = true
+}
 const _t = new Vector3()
+
+registerDevApi('orbit', () => {
+  const c = getOrbitControls()
+  const t = c?.getTarget(new Vector3())
+  const p = c?.getPosition(new Vector3())
+  return { established, note: establishNote, target: t?.toArray().map(Math.round), position: p?.toArray().map(Math.round) }
+})
 
 /**
  * Once the world has nodes, glide to the establishing shot (establish.ts), unless the user
@@ -47,10 +70,11 @@ function establishWhenLoaded(c: CameraControlsImpl, camera: Camera): () => void 
   let live = true
   const start = c.getTarget(new Vector3())
   const forfeit = () => {
+    establishNote = 'forfeit'
     established = true
   }
   const attempt = (transition: boolean) => {
-    if (!live || established) return
+    if (!live || (established && !requested)) return
     if (c.getTarget(_t).distanceToSquared(start) > 1e-6) return forfeit()
     const { nodes, settings } = useWorld.getState()
     if (!settings || nodes.size === 0) return
@@ -60,6 +84,7 @@ function establishWhenLoaded(c: CameraControlsImpl, camera: Camera): () => void 
         ? fieldShot(fieldLayoutFor(nodes), cam.fov ?? 50, cam.aspect || 1, ORBIT_LIMITS.maxDistance * 0.9)
         : establishingShot(nodes.values(), settings, cam.fov ?? 50, cam.aspect || 1, ORBIT_LIMITS.maxDistance * 0.9)
     if (!shot) return
+    establishNote = `shot ${useApp.getState().view.world} ${shot.target.map(Math.round).join(',')}`
     established = true
     void c.setLookAt(...shot.position, ...shot.target, transition)
   }
@@ -82,14 +107,14 @@ export function OrbitRig({ proximity = true }: { proximity?: boolean }) {
   useLayoutEffect(() => {
     const c = ref.current
     if (!c) return
-    if (mountedBefore) {
+    if (mountedBefore && !requested) {
       takeOrbitPivot(camera, pivot)
       const p = camera.position
       void c.setLookAt(p.x, p.y, p.z, pivot.x, pivot.y, pivot.z, false)
     }
     mountedBefore = true
     // Before registering: a fly parked while switching modes is applied there and wins.
-    const stopEstablish = established ? null : establishWhenLoaded(c, camera)
+    const stopEstablish = established && !requested ? null : establishWhenLoaded(c, camera)
     registerOrbitControls(c)
     return () => {
       stopEstablish?.()
@@ -102,6 +127,7 @@ export function OrbitRig({ proximity = true }: { proximity?: boolean }) {
   useFrame(() => {
     const c = ref.current
     if (!c) return
+    if (established) requested = false
     c.getTarget(target, false)
     // camY = targetY + d·cos(polar) ≥ FLOOR_Y  ⇒  polar ≤ acos((FLOOR_Y − targetY) / d)
     const d = Math.max(c.distance, 1e-3)
