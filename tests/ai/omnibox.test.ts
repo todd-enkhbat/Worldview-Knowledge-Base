@@ -94,7 +94,7 @@ describe('omnibox', () => {
     expect(rec.tags).toEqual(['information'])
     expect(useOmnibox.getState().spawnMs!).toBeLessThan(SPAWN_BUDGET_MS)
 
-    await until(() => live(rec.id).provenance?.state === 'refined')
+    await until(() => (live(rec.id).provenance as { state?: string } | undefined)?.state === 'refined')
     const r: NodeRecord = live(rec.id)
     expect(r.title).toBe(refined.title)
     expect(r.tags).toEqual(['information-theory'])
@@ -113,7 +113,7 @@ describe('omnibox', () => {
 
   it('keeps the provisional record (marked fallback) on a refusal', async () => {
     const rec = await submitOmnibox('Free will is an illusion', { fetch: refineFetch({ ok: false, reason: 'refusal' }) })
-    await until(() => live(rec.id).provenance?.state === 'fallback')
+    await until(() => (live(rec.id).provenance as { state?: string } | undefined)?.state === 'fallback')
     expect(live(rec.id).title).toBe('Free will is an illusion')
     expect(useOmnibox.getState()).toMatchObject({ stage: 'fallback' })
     expect(useOmnibox.getState().message).toMatch(/declined/)
@@ -122,7 +122,7 @@ describe('omnibox', () => {
   it('re-types the node when Claude reclassifies it', async () => {
     const rec = await submitOmnibox('Ada Lovelace', { fetch: refineFetch({ ok: true, model: 'm', output: { ...refined, archetype: 'idea', title: 'Poetical science' } }) })
     expect(rec.archetype).toBe('entity')
-    await until(() => live(rec.id).provenance?.state === 'refined')
+    await until(() => (live(rec.id).provenance as { state?: string } | undefined)?.state === 'refined')
     expect(live(rec.id).archetype).toBe('idea')
     expect(live(rec.id).entity).toBeUndefined()
   })

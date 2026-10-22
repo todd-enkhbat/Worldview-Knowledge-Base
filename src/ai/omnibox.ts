@@ -3,7 +3,7 @@ import { registerDevApi } from '../app/devApi.ts'
 import { useApp, useWorld } from '../app/store.ts'
 import { createNode, link, retypeNode, updateNode } from '../data/repo.ts'
 import { truncateToPrecision } from '../domain/time.ts'
-import type { NodeRecord, Provenance, TemporalPrecision } from '../domain/types.ts'
+import type { NodeRecord, OmniboxProvenance, Provenance, TemporalPrecision } from '../domain/types.ts'
 import { flyTo } from '../world/camera/flyTo.ts'
 import { nodeText } from './embedText.ts'
 import { semanticAnchorHint } from './layout.ts'
@@ -123,10 +123,11 @@ async function refine(record: NodeRecord, text: string, neighbours: Neighbour[] 
 
   // The user may have deleted or edited the node meanwhile: only touch it if it is still ours.
   const current = useWorld.getState().nodes.get(record.id)
-  if (!current || current.provenance?.state !== 'provisional') return
+  const prov = current ? omniboxOf(current) : undefined
+  if (!current || prov?.state !== 'provisional') return
 
   if (!result.ok) {
-    await updateNode(record.id, { provenance: { ...current.provenance, state: 'fallback' } }, { keepAnchor: true }).catch(() => {})
+    await updateNode(record.id, { provenance: { ...prov, state: 'fallback' } }, { keepAnchor: true }).catch(() => {})
     const why = result.reason === 'refusal' ? 'Claude declined to refine this; kept as typed.' : (result.message ?? `Refinement failed (${result.reason}); kept as typed.`)
     useOmnibox.setState({ stage: 'fallback', message: why })
     return
@@ -165,7 +166,7 @@ export async function applyRefinement(prev: NodeRecord, out: RefineOutput): Prom
       ? { epochMs: parsePartialIso(out.referenceDate.iso, out.referenceDate.precision), precision: out.referenceDate.precision, label: out.referenceDate.label || undefined }
       : null,
     thermo: { mass: clamp(out.mass, 0.25, 4), temperature: clamp(out.temperature, 0, 1) },
-    provenance: { source: 'omnibox', state: 'refined', raw: prev.provenance?.raw ?? '', refinedAt: now },
+    provenance: { source: 'omnibox', state: 'refined', raw: omniboxOf(prev)?.raw ?? '', refinedAt: now },
   }
   if (patch.referenceDate && !Number.isFinite(patch.referenceDate.epochMs)) patch.referenceDate = null
   if (patch.referenceDate && patch.referenceDate.label === undefined) delete patch.referenceDate.label
@@ -188,7 +189,13 @@ async function undoRefinement(snapshot: NodeRecord): Promise<void> {
   if (!cur) return
   if (cur.archetype !== snapshot.archetype) await retypeNode(snapshot.id, snapshot.archetype)
   const { id: _id, archetype: _a, anchorXZ: _x, createdAt: _c, deletedAt: _d, schemaVersion: _s, attachments: _att, ...rest } = snapshot
-  await updateNode(snapshot.id, { ...rest, provenance: { ...snapshot.provenance!, state: 'fallback' } }, { keepAnchor: true })
+  const prov = omniboxOf(snapshot)
+  await updateNode(snapshot.id, { ...rest, ...(prov ? { provenance: { ...prov, state: 'fallback' as const } } : {}) }, { keepAnchor: true })
+}
+
+/** The record's omnibox provenance, or undefined when it came from elsewhere (chat, import). */
+export function omniboxOf(rec: NodeRecord): OmniboxProvenance | undefined {
+  return rec.provenance?.source === 'omnibox' ? rec.provenance : undefined
 }
 
 registerDevApi('omnibox', (text: string, opts?: { refine?: boolean }) => submitOmnibox(text, opts))

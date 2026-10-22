@@ -37,7 +37,7 @@ export function canTransition(from: CameraMode, to: CameraMode): boolean {
 
 export const SPEEDS = [-10, -5, -2, -1, -0.5, -0.1, 0.1, 0.5, 1, 2, 5, 10] as const
 
-export type PanelId = 'inspector' | 'library' | 'palette' | 'settings' | 'trash' | 'demons' | 'stats' | 'picker' | 'omnibox'
+export type PanelId = 'inspector' | 'library' | 'palette' | 'settings' | 'trash' | 'demons' | 'stats' | 'picker' | 'omnibox' | 'chat'
 
 export interface EditorState {
   open: boolean
@@ -145,6 +145,7 @@ const closedPanels: Record<PanelId, boolean> = {
   stats: false,
   picker: false,
   omnibox: false,
+  chat: false,
 }
 
 let toastSeq = 0

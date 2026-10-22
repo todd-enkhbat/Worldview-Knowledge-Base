@@ -522,3 +522,42 @@ The five `LinkKind`s are kept, per the user. Before this, every link was one gre
 - `npm run check`: 616 tests pass. One run failed `durabilityUi › trash lists, restores and empties` under parallel load. That test passed alone (7/7) and on the next full run (616/616), so it looks flaky and is not related to this change.
 
 **The readability pass is built.** What's left is the user's: RD7 (open the world cold and give a verdict) and RD5/P (Safari perf with labels, links and rings on).
+
+### Milestone 1: chat intake and the Obsidian bridge (2026-10-21)
+User pivot (plan: `../Worldview-Knowledge-Base-main/plans/milestone-1-intake.md`): adding things must be as easy as talking. The chat is now the front door. `/` and TopBar "Add" open it, and it opens full screen for an interview on a first visit to an empty world. Nothing reaches the world until a card is kept.
+
+**How it works**
+- **Server** (`server/chat.ts`, `POST /api/chat`): a thin relay that holds the key, the system prompt and the tool list. It streams one turn as NDJSON `ChatStreamEvent`s (`src/ai/chat/protocol.ts`).
+  - Model: `claude-opus-5-5`, overridable with `CHAT_MODEL`. Adaptive thinking, effort `medium`, `max_tokens` 64k, top-level auto-caching (files are resent every turn).
+  - Refusals fall back server-side: `fallbacks: "default"` under the `server-side-fallback-2026-07-01` beta.
+  - **Deviation:** the plan said Sonnet 5.5 for the conversation. The Claude API reference defaults to Opus 5.5 unless the user names another model, so that is the default; `CHAT_MODEL=claude-sonnet-5-5` switches it.
+- **Tools.** All three are answered by the browser: `search_world` (semantic plus fuzzy over title, tags and text), `propose_notes` and `ask_user`.
+  - Inputs stream eagerly (`eager_input_streaming`), so the API does not validate them. The browser checks every input with zod. An invalid or truncated (`max_tokens`) input goes back as an `is_error` tool result, and the turn continues (at most 6 automatic turns).
+- **Session** (`src/ai/chat/session.ts`): the browser owns the conversation.
+  - It is append-only, so thinking blocks stay valid, and saved in the world kv as `chat.v1`.
+  - Searches are answered at once. Proposals and questions wait. When every card in a call is decided, the results go back without the user typing; otherwise they ride along with the next message.
+  - Cards kept after their results were sent are reported in the next message.
+  - Keep and Keep all go through `addNodes` as one undoable step, and links between proposals in the same call resolve. Edit sends a plain-words change request at once.
+- **Intake:**
+  - PDFs and images go to Claude as document and image blocks; text and markdown as `<file>` blocks. The limit is 20 MB a file.
+  - URLs in a message are fetched by the server (`server/fetchUrl.ts`, `POST /api/fetch-url`: http/https only, 5 MB, 15 s, HTML reduced to text) and sent as `<page>` blocks.
+  - A dropped or picked folder is imported as an Obsidian vault with no Claude involved. Drops anywhere on the world route here unless they are splat captures, which still become memories.
+- **Obsidian bridge** (`src/data/obsidian.ts`):
+  - Export ("Export vault" in the chat): one `.md` per note in a zip. Frontmatter carries title, id, kind, date, precision, tags, links as `"kind [[Note]]"` and source, plus a `hyperspace` JSON line with the rest of the record.
+  - Re-importing our own export is lossless (I4, `tests/data/obsidian.test.ts`). Bodies are kept verbatim, so edits made in Obsidian win.
+  - Foreign vaults are read from frontmatter (`date`/`created`, `tags`, `kind`/`type`, `links`), inline `#tags`, `[[wikilinks]]` (aliases, headings and embeds) and file dates. `.obsidian/` and `.trash/` are skipped.
+- **Dates before T0** (e.g. Boltzmann, 1844) become a display-only `referenceDate`, and the note enters at T0 (`fitDate`). Dates past the horizon are clamped.
+- **Repo:** a new `addNodes(drafts)` does a bulk, undoable add. It places every node first, then attaches links, so links within the batch validate. It keeps a given anchor when free and skips ids already present.
+- **Provenance** is now a union: omnibox, or intake (`chat`/`file`/`url`/`obsidian` with `ref`, `quote`, `model`, `keptAt`).
+
+**Verified**
+- `npm run check`: 81 files, 629 tests. New: protocol and relay with a stubbed client, the URL reader, the vault round trip and foreign vaults, and the session (search auto-answered; nothing written before Keep (I5); link resolution; one-step undo; invalid inputs; no key (I7); pre-T0 dates).
+- Live: one `curl` turn against `/api/chat` returned thinking, text and a `propose_notes` call with an inferred date marked `certain: false`.
+- In the pane: the panel, chips, cards, the uncertain-date marker, the kept state and the question buttons render, from sample state that was not saved. The panel is read-only correctly while another tab is the writer.
+
+**Not done or not verified**
+- The plan's default engine switch (server store as default) was deferred. The data layer is unchanged and the HTTP store already makes it cloud-ready.
+- The conversation lives in kv, which world archives do not export.
+- `.docx`, email and calendar are deferred.
+- I1 (10 notes in 5 minutes), I2 (a 20-page PDF in under 60 s), I3 (a live URL) and I6 (asks rather than guesses) were not measured end to end in the UI; that needs the writer tab and real use.
+- No cost estimate in Settings yet: the token counts show in the chat footer only.

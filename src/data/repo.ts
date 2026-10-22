@@ -10,6 +10,7 @@ import type {
   Attachment,
   InteractionEvent,
   InteractionKind,
+  Link,
   LinkKind,
   NodeRecord,
   WorldSettings,
@@ -536,6 +537,83 @@ export function createNode(draft: NodeDraftInput, opts: CreateNodeOptions = {}):
       app.pushToast({ message: `Created ${record.title}`, undo: () => undoCreate(id) })
     }
     return record
+  })
+}
+
+/**
+ * Add many nodes as one undoable step (vault import, "Keep all" in the chat). A draft with an
+ * `anchorXZ` keeps it when it is still free (nudged otherwise); one without is placed as
+ * createNode would. Ids already in the world are skipped, so re-importing merges. Links are
+ * kept as given; a link to a node that is neither live nor in this batch is dropped.
+ */
+export function addNodes(drafts: readonly NodeDraftInput[], opts: { label?: string; announce?: boolean } = {}): Promise<NodeRecord[]> {
+  return run(async () => {
+    requireWriter()
+    const settings = requireSettings()
+    const { store, now: clock } = repo()
+    const now = clock()
+    const w = useWorld.getState()
+    const batchIds = new Set(drafts.map((d) => d.id).filter((id): id is string => !!id))
+    const slugs = allRecords().map((r) => r.slug)
+    const added: NodeRecord[] = []
+    const wanted = new Map<string, Link[]>()
+    try {
+      // Phase 1: place every node, with links only to nodes that already exist.
+      for (const draft of drafts) {
+        if (draft.id && (w.nodes.has(draft.id) || w.trash.has(draft.id))) continue
+        const given = Object.fromEntries(Object.entries(draft).filter(([, v]) => v !== undefined)) as NodeDraftInput
+        const base = makeNodeDraft(draft.archetype, { ...given, title: draft.title.trim() }, { now })
+        const slug = slugify(draft.slug ?? base.title, slugs)
+        slugs.push(slug)
+        let record: NodeRecord = {
+          ...base,
+          id: given.id ?? base.id,
+          slug,
+          links: [],
+          anchorXZ: [0, 0],
+          deletedAt: null,
+          createdAt: given.createdAt ?? now,
+          updatedAt: given.updatedAt ?? now,
+          schemaVersion: SCHEMA_VERSION,
+        }
+        record.anchorXZ = given.anchorXZ ?? placeAnchor(record, liveAnchors(settings), placementOpts(settings))
+        record = settle(record, settings, now, 'nudge')
+        // Later drafts must see this one's anchor for spacing.
+        useWorld.getState().upsertLocal(record)
+        added.push(record)
+        const links = (given.links ?? []).filter((l) => batchIds.has(l.targetId) || useWorld.getState().nodes.has(l.targetId))
+        if (links.length) wanted.set(record.id, links)
+      }
+      // Phase 2: every target now exists, so the links validate.
+      for (let i = 0; i < added.length; i++) {
+        const links = wanted.get(added[i].id)?.filter((l) => useWorld.getState().nodes.has(l.targetId))
+        if (!links?.length) continue
+        added[i] = settle({ ...added[i], links }, settings, now, 'reject')
+        useWorld.getState().upsertLocal(added[i])
+      }
+      if (added.length) await store.putNodes(added)
+    } catch (e) {
+      const w2 = useWorld.getState()
+      for (const r of added) w2.removeLocal(r.id)
+      throw e
+    }
+    if (added.length && opts.announce !== false) {
+      const ids = added.map((r) => r.id)
+      useApp.getState().pushToast({
+        message: opts.label ?? `Added ${added.length} note${added.length === 1 ? '' : 's'}`,
+        undo: () => undoAddNodes(ids),
+      })
+    }
+    return added
+  })
+}
+
+function undoAddNodes(ids: readonly string[]): Promise<void> {
+  return run(async () => {
+    requireWriter()
+    const w = useWorld.getState()
+    const recs = ids.map((id) => w.nodes.get(id) ?? w.trash.get(id)).filter((r): r is NodeRecord => !!r)
+    if (recs.length) await purge(recs)
   })
 }
 

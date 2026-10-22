@@ -119,16 +119,33 @@ export interface NodeRecord {
 }
 
 /**
- * Omnibox origin. 'provisional' records were spawned from the raw text by heuristics in
+ * Where a record came from. Omnibox origin: 'provisional' records were spawned from the raw text by heuristics in
  * under 1.5 s; 'refined' ones were rewritten by the model; 'fallback' means refinement
  * failed or was refused and the heuristic record was kept.
  */
-export interface Provenance {
+export type Provenance = OmniboxProvenance | IntakeProvenance
+
+export interface OmniboxProvenance {
   source: 'omnibox'
   state: 'provisional' | 'refined' | 'fallback'
   /** The text the user typed. */
   raw: string
   refinedAt?: number
+}
+
+/**
+ * Milestone 1 intake: a note kept from the chat (Claude proposed it from the conversation, a
+ * dropped file or a URL) or imported from an Obsidian vault.
+ */
+export interface IntakeProvenance {
+  source: 'chat' | 'file' | 'url' | 'obsidian'
+  /** File name, URL or vault-relative path the note came from (absent for plain conversation). */
+  ref?: string
+  /** The supporting passage Claude quoted from the source, if any. */
+  quote?: string
+  /** Model that proposed it (absent for a vault import). */
+  model?: string
+  keptAt: number
 }
 
 export type QualityTier = 'auto' | 'high' | 'medium' | 'low'

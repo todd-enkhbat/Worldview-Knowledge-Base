@@ -1,6 +1,7 @@
 import { resolve } from 'node:path'
 import type { Plugin } from 'vite'
 import { createApiHandler } from './api.ts'
+import { createChat } from './chat.ts'
 import { createRefiner } from './refine.ts'
 import { openWorldDb, type WorldDb } from './worldDb.ts'
 
@@ -22,7 +23,8 @@ export function hyperspaceEngine(opts: EnginePluginOptions = {}): Plugin {
     const dataDir = resolve(root, opts.dataDir ?? 'data')
     db ??= openWorldDb(resolve(dataDir, 'world.sqlite'))
     const refine = opts.apiKey ? createRefiner({ apiKey: opts.apiKey }) : undefined
-    attach(createApiHandler({ db, blobDir: resolve(dataDir, 'blobs'), refine }))
+    const chat = opts.apiKey ? createChat({ apiKey: opts.apiKey }) : undefined
+    attach(createApiHandler({ db, blobDir: resolve(dataDir, 'blobs'), refine, chat }))
   }
   return {
     name: 'hyperspace-engine',

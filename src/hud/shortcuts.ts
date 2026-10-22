@@ -176,7 +176,7 @@ export function runShortcut(id: ShortcutId): void {
       openPicker()
       break
     case 'omnibox':
-      app.togglePanel('omnibox', true)
+      app.togglePanel('chat', true)
       break
     case 'library':
       app.togglePanel('library')

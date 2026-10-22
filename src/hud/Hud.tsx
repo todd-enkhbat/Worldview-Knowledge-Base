@@ -21,6 +21,7 @@ import { UndoToast } from './UndoToast.tsx'
 import { useGlobalShortcuts } from './shortcuts.ts'
 import { LinkLegend } from './LinkLegend.tsx'
 import { OrientationHint } from './OrientationHint.tsx'
+import { Chat } from './Chat.tsx'
 
 // DOM overlay over the canvas. The root lets the pointer through to the world; panels and
 // controls take it back. Layout: a top strip (TopBar, then durability Banners) and below it
@@ -67,6 +68,7 @@ export function Hud() {
           <CommandPalette />
           <SceneDrop />
           <Omnibox />
+          <Chat />
         </>
       )}
 

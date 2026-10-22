@@ -4,6 +4,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { join } from 'node:path'
 import { pipeline } from 'node:stream/promises'
 import type { AssetMeta, InteractionEvent, NodeRecord, WorldSettings } from '../src/domain/types.ts'
+import { fetchReadable } from './fetchUrl.ts'
 import { bytesF32, EMBEDDING_DIM, StoreInputError, type WorldDb } from './worldDb.ts'
 
 // HTTP surface of the SQLite engine, mounted by the Vite plugin under /api on the app's own
@@ -20,6 +21,8 @@ export interface ApiOptions {
   db: WorldDb
   blobDir: string
   refine?: (body: unknown) => Promise<unknown>
+  /** Streams one chat turn as NDJSON (server/chat.ts). */
+  chat?: (body: unknown, res: ServerResponse) => Promise<void>
   now?: () => number
 }
 
@@ -174,6 +177,20 @@ export function createApiHandler(opts: ApiOptions): Handler {
       }
     }
 
+    if (seg[0] === 'chat' && method === 'POST') {
+      if (!opts.chat) return send(res, 503, { error: 'chat is not configured (no ANTHROPIC_API_KEY)' }), true
+      await opts.chat(await readJson<unknown>(req, 64 * 1024 * 1024), res)
+      return true
+    }
+    if (seg[0] === 'fetch-url' && method === 'POST') {
+      const b = await readJson<{ url?: unknown }>(req, 64 * 1024)
+      if (typeof b.url !== 'string') throw new HttpError(400, 'url is required')
+      try {
+        return send(res, 200, await fetchReadable(b.url)), true
+      } catch (e) {
+        throw new HttpError(422, e instanceof Error ? e.message : String(e))
+      }
+    }
     if (seg[0] === 'refine' && method === 'POST') {
       if (!opts.refine) return send(res, 503, { error: 'refinement is not configured (no ANTHROPIC_API_KEY)' }), true
       return send(res, 200, await opts.refine(await readJson<unknown>(req, 1024 * 1024))), true

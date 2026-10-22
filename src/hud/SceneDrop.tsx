@@ -5,6 +5,7 @@ import { truncateToPrecision } from '../domain/time.ts'
 import { titleFromFileName } from '../world/splats/ingest/ingest.ts'
 import { startIngest, useIngestJobs } from '../world/splats/ingest/jobs.ts'
 import { ACCEPTED_EXTENSIONS, extensionOf } from '../world/splats/ingest/sniff.ts'
+import { entriesOf, intake } from './chatIntake.ts'
 
 // "New memory from a splat file": drop a capture anywhere on the world (or TopBar → + Scene)
 // and it becomes a memory, dated by the file's modification day (usually the capture day),
@@ -96,10 +97,11 @@ export function SceneDrop() {
       e.preventDefault()
       const files = Array.from(e.dataTransfer?.files ?? [])
       const splats = files.filter(isSplatFile)
-      if (splats.length === 0) {
-        if (files.length) setError(`Not a splat capture (${ACCEPTED_EXTENSIONS.join(' ')}): ${files[0].name}`)
-        return
-      }
+      // Everything that is not a capture goes to the chat: files to read, folders as vaults.
+      const entries = entriesOf(e.dataTransfer)
+      const rest = files.filter((f) => !isSplatFile(f))
+      if (rest.length || entries.some((x) => x.isDirectory)) void intake(rest, entries)
+      if (splats.length === 0) return
       setError(null)
       // One at a time: each ingest takes the transcode worker and the Spark LoD worker.
       void (async () => {
@@ -139,7 +141,7 @@ export function SceneDrop() {
         <div className="pointer-events-none fixed inset-3 z-40 flex items-center justify-center border-2 border-dashed border-brass/80 bg-void/60">
           <div className="hud-panel px-6 py-4 text-center">
             <p className="hud-label m-0 mb-1">New memory</p>
-            <p className="m-0 text-[13px] text-bone">Drop a Gaussian-splat capture to build its terrarium</p>
+            <p className="m-0 text-[13px] text-bone">Drop files, a notes folder or a splat capture</p>
             <p className="m-0 mt-1 text-[11px] text-concrete">{ACCEPTED_EXTENSIONS.join(' ')}</p>
           </div>
         </div>

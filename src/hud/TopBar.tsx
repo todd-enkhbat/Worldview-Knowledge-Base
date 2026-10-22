@@ -47,8 +47,8 @@ export function TopBar() {
           className={BTN}
           disabled={!writer}
           aria-keyshortcuts="/"
-          title={writer ? 'Type anything: it becomes a node, refined by Claude (/)' : 'Read-only: another tab is the writer'}
-          onClick={() => useApp.getState().togglePanel('omnibox', true)}
+          title={writer ? 'Talk, drop files or paste a link: Claude proposes notes (/)' : 'Read-only: another tab is the writer'}
+          onClick={() => useApp.getState().togglePanel('chat', true)}
         >
           / Add
         </button>
