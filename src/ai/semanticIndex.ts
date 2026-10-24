@@ -1,7 +1,6 @@
 import { create } from 'zustand'
 import { registerDevApi } from '../app/devApi.ts'
 import { useWorld } from '../app/store.ts'
-import { getEnginePreference } from '../data/engine.ts'
 import { getStore, isRepoReady, subscribeRepo } from '../data/repo.ts'
 import type { NodeRecord } from '../domain/types.ts'
 import { nodeText, queryText, textHash } from './embedText.ts'
@@ -92,6 +91,8 @@ export function embedTexts(texts: string[]): Promise<Float32Array[]> {
 // ─── the index ───────────────────────────────────────────────────────────────────────
 
 let vectors: VectorStore | null = null
+/** Bumped by stopSemantic: a pass that started under an older generation stops at its next await. */
+let generation = 0
 /** In-memory copy of every vector (UMAP, local KNN, neighbour lookups). */
 const cache = new Map<string, Float32Array>()
 const hashes = new Map<string, string>()
@@ -129,19 +130,39 @@ export async function enableSemantic(): Promise<void> {
 
 export function disableSemantic(): void {
   localStorage.removeItem(SEMANTIC_PREF_KEY)
+  stopSemantic()
+}
+
+/**
+ * Stop indexing in this page without changing the browser's preference, and forget which
+ * store it was writing to (the next start picks the store again). For a page that swaps the
+ * world store, like a sandbox: the indexer must never sync one world's notes against another
+ * world's embeddings, because a sync drops every embedding whose note it cannot see.
+ */
+export function stopSemantic(): void {
+  generation++
   unsubscribe?.()
   unsubscribe = null
+  if (timer) clearTimeout(timer)
+  timer = null
   worker?.terminate()
   worker = null
   modelConfig = null
+  vectors = null
+  cache.clear()
+  hashes.clear()
   useSemantic.setState({ phase: 'off', download: 0, error: null })
 }
 
 /** Called at boot (when enabled) and by enableSemantic. Idempotent. */
 export async function startSemantic(): Promise<void> {
   if (!isRepoReady()) return
+  // Throwaway in-memory worlds (tests, sandboxes) are never indexed: their embeddings would
+  // land in, and their sync would prune, the real world's vector store.
+  if (getStore().info.kind === 'memory') return
   if (!vectors) {
-    vectors = getStore().info.kind === 'sqlite' || getEnginePreference() === 'sqlite' ? serverVectorStore() : localVectorStore()
+    // The store actually open decides where vectors live, not the engine preference.
+    vectors = getStore().info.kind === 'sqlite' ? serverVectorStore() : localVectorStore()
     useSemantic.setState({ backend: vectors.kind })
   }
   if (!unsubscribe) {
@@ -182,18 +203,25 @@ function sync(): Promise<void> {
 }
 
 async function runSync(): Promise<void> {
-  const store = vectors!
+  const store = vectors
+  if (!store) return
+  const gen = generation
+  // A stop (or a swap of the world store) after any await ends this pass before it writes.
+  const stale = () => gen !== generation || vectors !== store
   if (hashes.size === 0) {
     const [meta, all] = await Promise.all([store.meta(), store.all()])
+    if (stale()) return
     for (const m of meta) hashes.set(m.id, m.hash)
     for (const [id, v] of all) cache.set(id, v)
   }
   const config = await ensureModel()
+  if (stale()) return
   const live = [...useWorld.getState().nodes.values()]
   const liveIds = new Set(live.map((n) => n.id))
   // Drop embeddings of nodes that are gone (trash included: they leave the layout).
   for (const id of [...hashes.keys()]) {
     if (!liveIds.has(id)) {
+      if (stale()) return
       await store.delete(id)
       hashes.delete(id)
       cache.delete(id)
@@ -214,8 +242,10 @@ async function runSync(): Promise<void> {
   for (let i = 0; i < todo.length; i += BATCH) {
     const batch = todo.slice(i, i + BATCH)
     const vs = await embedTexts(batch.map((b) => b.text))
+    if (stale()) return
     useSemantic.setState({ phase: 'indexing', download: 1 })
     for (let j = 0; j < batch.length; j++) {
+      if (stale()) return
       await store.put(batch[j].n.id, vs[j], batch[j].hash)
       hashes.set(batch[j].n.id, batch[j].hash)
       cache.set(batch[j].n.id, vs[j])
