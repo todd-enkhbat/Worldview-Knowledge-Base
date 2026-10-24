@@ -674,3 +674,18 @@ Toward "the same but more detailed, where we can see scenes and videos or spaces
   - 120 Hz: median 8.3 ms, p99 9.7 ms.
   - `npm run check`: 86 files, 648 tests.
 - **Not verified:** video cards. This world has no video notes, and the pane tab is read-only, so I could not add one. Needs a real check in the writer tab: drop a video in the chat or the editor, keep it, and zoom near it.
+
+### Milestone 2d: verifying media, an index guard, and the slow load (2026-10-24)
+- **`#/sandbox/field` (dev only):** the real WorldPage on a throwaway in-memory world. It has the demo plus a generated 3 s canvas video ("Waves at the pier"), a generated sunset photo, and a link between them. It swaps the page's store for `createMemoryStore()` (no writer lock, no sync, no backups) after boot. The test video is drawn on a timer, because animation frames are throttled in hidden panes.
+- **Index guard (`ce1c417`):** running that sandbox exposed a real hazard. The semantic indexer prunes every embedding whose note is not in the open world, and it kept writing to the SQLite server's vector store after the swap. It deleted the real world's 14 embeddings and wrote 34 sandbox ones.
+  - **Now:** in-memory worlds are never indexed. The vector store follows the store actually open, not the engine preference. `stopSemantic()` pauses without changing the preference, and a pass aborts at its next await after a stop or swap.
+  - **Repaired:** the 34 strays were deleted (only ids absent from the real world, live or trashed). The real world re-indexed its 14 notes locally (EmbeddingGemma, no API).
+  - **Verified:** 14/14 embedded, 0 strays.
+- **Photo and video cards:**
+  - **Before:** both rendered but read as dark and muddy. They were additive grains that don't write depth, so the post fog treated them as sky. The video texture also never updated in a throttled view (VideoTexture relies on `requestVideoFrameCallback`), and labels sat on top of the cards.
+  - **Now:** cards are their own draw of solid, depth-writing grains (`field-cards`). The video card is solid too, with an sRGB texture, and it uploads a frame whenever `currentTime` advances. Notes with a picture or video are labelled underneath (`LabelCandidate.sides`).
+  - **Verified in the sandbox:** the sunset card shows sky, sun and water. The video card shows the gradient, the "WAVES" text and the disc moving between frames.
+- **Pending originals survive a reload:** chat files are copied to a per-browser IndexedDB store (`hyperspace-intake`, 14-day expiry) as well as memory, and a keep looks there (`src/ai/chat/originals.ts`).
+- **Slow load:** it was the hidden preview pane, not the app. Startup marks (`__wv.timings()`) show data ready at ~55 ms and all modules loaded by ~90 ms. The canvas then waits for layout and animation callbacks a hidden pane doesn't deliver; with the pane painting, the scene mounted at 3.5 s, including a 3 s video recording. A visible tab is unaffected.
+- **Dev hooks:** `__wv.field(filter)`, `__wv.fieldMedia()`, `__wv.orbit()`, `__wv.timings()`.
+- `npm run check`: 88 files, 652 tests.

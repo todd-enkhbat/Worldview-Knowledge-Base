@@ -12,6 +12,8 @@ export interface LabelCandidate {
   w: number
   h: number
   priority: number
+  /** Sides to try, in order (default above, right, left, below). */
+  sides?: readonly LabelSide[]
 }
 
 export type LabelSide = 'above' | 'right' | 'left' | 'below'
@@ -69,7 +71,7 @@ export function placeLabels(cands: readonly LabelCandidate[], opts: PlaceOptions
   }
   for (const c of order) {
     if (out.length >= max) break
-    for (const side of SIDES) {
+    for (const side of c.sides ?? SIDES) {
       const b = sideBox(c.x, c.y, c.w, c.h, side, lift)
       if (fits(b.left, b.top, c.w, c.h)) {
         out.push({ id: c.id, left: b.left, top: b.top, w: c.w, h: c.h, side })

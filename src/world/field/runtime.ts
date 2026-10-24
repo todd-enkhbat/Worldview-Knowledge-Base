@@ -1,6 +1,8 @@
 import type { NodeRecord, WorldSettings } from '../../domain/types.ts'
 import { isSemanticReady, semanticVectors } from '../../ai/semanticIndex.ts'
 import { setPoseTable } from '../poses.ts'
+import { registerDevApi } from '../../app/devApi.ts'
+import { markOnce } from '../../app/timings.ts'
 import { computeFieldLayout, layoutBounds, type XZ } from './layout.ts'
 import { attentionVersion, ensureAttention, lastTouch } from './attention.ts'
 import { activeRipples, buildHeightfield, lift, noteState, sampleHeight, type Heightfield, type NoteState, type Ripple } from './state.ts'
@@ -156,6 +158,7 @@ export function updateField(nodes: ReadonlyMap<string, NodeRecord>, _settings: W
     playheadMs,
   }
   setPoseTable({ index: frame.index, pos: frame.centers, born: frame.born })
+  if (n) markOnce('field-first-frame')
   return frame
 }
 
@@ -166,3 +169,16 @@ export function resetField(): void {
   lastCompute = -Infinity
   lastAttention = -1
 }
+
+registerDevApi('field', (filter?: string) =>
+  frame.ids
+    .map((_, i) => ({
+      title: frame.records[i].title,
+      center: Array.from(frame.centers.subarray(i * 3, i * 3 + 3), (v) => Math.round(v * 10) / 10),
+      sigma: Math.round(frame.sigma[i] * 100) / 100,
+      born: frame.born[i],
+      condense: Math.round(frame.condense[i] * 100) / 100,
+      media: frame.records[i].attachments.map((a) => a.mime),
+    }))
+    .filter((n) => !filter || n.title.toLowerCase().includes(filter.toLowerCase())),
+)

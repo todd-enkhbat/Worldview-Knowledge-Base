@@ -21,7 +21,8 @@ import { LAYER } from '../layers.ts'
 import { LINK_STYLE, buildTypedLinks } from '../links/style.ts'
 import { getFieldFrame, type FieldFrame } from './runtime.ts'
 import { RIPPLE_Y, buildTint, type NoteState } from './state.ts'
-import { FieldVideos, sceneReveal } from './FieldMedia.tsx'
+import { FieldVideos, fieldMediaStatus, sceneReveal } from './FieldMedia.tsx'
+import { registerDevApi } from '../../app/devApi.ts'
 
 // The particle world (milestone 2). Three point layers, all GPU-animated from small textures
 // the runtime fills each frame:
@@ -265,6 +266,11 @@ function gauss(r: () => number): number {
 /** An image note's picture as IMAGE_GRID² linear-ish RGB, from its thumbnail. */
 const pictures = new Map<string, Float32Array | null>()
 
+registerDevApi('fieldMedia', () => ({
+  pictures: [...pictures].map(([id, p]) => ({ id, loaded: !!p })),
+  videos: fieldMediaStatus(),
+}))
+
 async function loadPicture(blobId: string): Promise<Float32Array | null> {
   if (!isRepoReady() || typeof createImageBitmap !== 'function' || typeof OffscreenCanvas !== 'function') return null
   try {
@@ -414,6 +420,10 @@ export function FieldLayer() {
     () => new ShaderMaterial({ vertexShader: CLOUD_VERT, fragmentShader: SOFT_DOT, uniforms: common, transparent: true, depthWrite: false, blending: AdditiveBlending }),
     [common],
   )
+  const cardMat = useMemo(
+    () => new ShaderMaterial({ vertexShader: CLOUD_VERT, fragmentShader: SOLID_DOT, uniforms: common, transparent: false, depthWrite: true }),
+    [common],
+  )
   const currentMat = useMemo(
     () => new ShaderMaterial({ vertexShader: CURRENT_VERT, fragmentShader: SOFT_DOT, uniforms: common, transparent: true, depthWrite: false, blending: AdditiveBlending }),
     [common],
@@ -423,9 +433,10 @@ export function FieldLayer() {
       landMat.dispose()
       detailMat.dispose()
       cloudMat.dispose()
+      cardMat.dispose()
       currentMat.dispose()
     },
-    [landMat, detailMat, cloudMat, currentMat],
+    [landMat, detailMat, cloudMat, cardMat, currentMat],
   )
 
   // Land and detail patch: jittered grids, built once.
@@ -457,7 +468,7 @@ export function FieldLayer() {
   }, [nodes])
 
   // Clouds and currents rebuild when the set of notes or the layout changes.
-  const { clouds, currents } = useMemo(() => {
+  const { clouds, cards, currents } = useMemo(() => {
     void structure
     void pictureVersion
     const frame = getFieldFrame()
@@ -509,18 +520,32 @@ export function FieldLayer() {
         }
       }
     }
-    const cg = new BufferGeometry()
-    cg.setAttribute('aNote', new BufferAttribute(aNote, 1))
-    cg.setAttribute('aOff', new BufferAttribute(aOff, 3))
-    cg.setAttribute('aColor', new BufferAttribute(aColor, 3))
-    cg.setAttribute('aRand', new BufferAttribute(aRand, 3))
-    cg.setAttribute('aPlane', new BufferAttribute(aPlane, 2))
-    cg.setAttribute('position', new BufferAttribute(new Float32Array(total * 3), 3))
-    const clouds = new Points(cg, cloudMat)
-    clouds.frustumCulled = false
-    clouds.layers.set(LAYER.SOLID)
-    clouds.raycast = () => {}
-    clouds.name = 'field-clouds'
+    // Two draws: soft additive clouds, and photo cards as solid grains that write depth (so
+    // post fog sees them as near and they read as pictures, not glow).
+    const part = (card: boolean, material: ShaderMaterial, name: string) => {
+      const idx: number[] = []
+      for (let q = 0; q < total; q++) if ((aRand[q * 3 + 2] > 0.5) === card) idx.push(q)
+      const pick = (src: Float32Array, k: number) => {
+        const out = new Float32Array(idx.length * k)
+        idx.forEach((q, j) => out.set(src.subarray(q * k, q * k + k), j * k))
+        return out
+      }
+      const g = new BufferGeometry()
+      g.setAttribute('aNote', new BufferAttribute(pick(aNote, 1), 1))
+      g.setAttribute('aOff', new BufferAttribute(pick(aOff, 3), 3))
+      g.setAttribute('aColor', new BufferAttribute(pick(aColor, 3), 3))
+      g.setAttribute('aRand', new BufferAttribute(pick(aRand, 3), 3))
+      g.setAttribute('aPlane', new BufferAttribute(pick(aPlane, 2), 2))
+      g.setAttribute('position', new BufferAttribute(new Float32Array(idx.length * 3), 3))
+      const p = new Points(g, material)
+      p.frustumCulled = false
+      p.layers.set(LAYER.SOLID)
+      p.raycast = () => {}
+      p.name = name
+      return p
+    }
+    const clouds = part(false, cloudMat, 'field-clouds')
+    const cards = part(true, cardMat, 'field-cards')
 
     const links = buildTypedLinks(new Map(frame.records.map((r) => [r.id, r])))
     const m = links.length * CURRENT_GRAINS
@@ -547,14 +572,15 @@ export function FieldLayer() {
     currents.layers.set(LAYER.SOLID)
     currents.raycast = () => {}
     currents.name = 'field-currents'
-    return { clouds, currents }
-  }, [structure, pictureVersion, cloudMat, currentMat])
+    return { clouds, cards, currents }
+  }, [structure, pictureVersion, cloudMat, cardMat, currentMat])
   useEffect(
     () => () => {
       clouds.geometry.dispose()
+      cards.geometry.dispose()
       currents.geometry.dispose()
     },
-    [clouds, currents],
+    [clouds, cards, currents],
   )
 
   const seen = useRef({ version: -1, structure: -1 })
@@ -659,6 +685,7 @@ export function FieldLayer() {
       <primitive object={land} />
       <primitive object={detail} />
       <primitive object={clouds} />
+      <primitive object={cards} />
       <primitive object={currents} />
       <FieldVideos notes={common} />
     </group>

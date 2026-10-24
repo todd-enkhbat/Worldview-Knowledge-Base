@@ -1,3 +1,5 @@
+import { useEffect } from 'react'
+import { markOnce } from '../app/timings.ts'
 import { Hud } from '../hud/Hud.tsx'
 import { CameraRig } from './camera/index.tsx'
 import { DustLayer } from './dust/DustLayer.tsx'
@@ -21,6 +23,7 @@ import { Worldline } from './worldline/index.ts'
 // the scene renders with a provisional T0 and the HUD shows FirstRun on top.
 
 function Scene() {
+  useEffect(() => markOnce('scene-mounted'), [])
   // The playhead clock (frame priority −3), then the pose writer (−2): physics worker
   // frames, or the static anchors when workers are unavailable.
   usePlayheadClock()

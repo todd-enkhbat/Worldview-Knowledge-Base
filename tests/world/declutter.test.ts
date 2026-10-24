@@ -65,3 +65,10 @@ describe('label helpers', () => {
     expect(labelSize('abcdefghij', 'IDEA').w).toBeGreaterThanOrEqual(84)
   })
 })
+
+describe('preferred sides', () => {
+  it('tries a candidate’s own side order first', () => {
+    const out = placeLabels([{ id: 'm', x: 400, y: 300, w: 100, h: 30, priority: 1, sides: ['below', 'above'] }], { width: 800, height: 600 })
+    expect(out[0].side).toBe('below')
+  })
+})

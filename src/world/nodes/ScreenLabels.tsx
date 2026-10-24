@@ -182,6 +182,8 @@ export function ScreenLabels({ records, byId, always = false }: Props) {
           y: p.y,
           w: Math.min(sz.w, full ? 420 : sz.w),
           h: sz.h,
+          // A note showing a picture or a video above it is labelled underneath instead.
+          ...(rec.attachments.some((a) => a.kind === 'image' || a.mime.startsWith('video/')) ? { sides: ['below', 'right', 'left', 'above'] as const } : {}),
           priority: (timeFocusYear !== null && yearOf(rec.temporalOrigin) === timeFocusYear ? 2e5 : 0) + labelPriority({
             selected: rec.id === selectedId,
             hovered: rec.id === hoveredId,

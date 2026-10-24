@@ -3,6 +3,7 @@ import { create } from 'zustand'
 import { useWorld } from '../../app/store.ts'
 import { registerDevApi } from '../../app/devApi.ts'
 import { addAttachment, addNodes, getStore, isRepoReady, link, updateNode } from '../../data/repo.ts'
+import { findOriginal, rememberOriginal } from './originals.ts'
 import { proposalToDraft, searchWorld, URL_RE, urlToIntake, type IntakeItem } from './apply.ts'
 import { TOOL_INPUTS, type AskUserInput, type ChatStreamEvent, type ProposedNote, type ToolName } from './protocol.ts'
 
@@ -81,24 +82,16 @@ export const useChat = create<ChatState>()(() => ({
 }))
 
 // ─── originals ───────────────────────────────────────────────────────────────────────
-// Files the user added this session, by name, so a kept note can store the original. They
-// live in memory until kept; after a reload a card says its file must be dropped again.
-
-const originals = new Map<string, File>()
-
-function rememberOriginal(file: File): void {
-  originals.set(file.name, file)
-  const rel = (file as File & { webkitRelativePath?: string }).webkitRelativePath
-  if (rel) originals.set(rel, file)
-}
+// Files the user added, by name (originals.ts: memory plus browser storage, so a card kept
+// after a reload still gets its file).
 
 /** The originals a proposal should keep: its attach list, plus its source if that is a file. */
-function originalsFor(note: ProposedNote): { found: File[]; missing: string[] } {
+async function originalsFor(note: ProposedNote): Promise<{ found: File[]; missing: string[] }> {
   const names = [...new Set([...(note.attach ?? []), ...(note.source.ref && !/^https?:\/\//.test(note.source.ref) ? [note.source.ref] : [])])]
   const found: File[] = []
   const missing: string[] = []
   for (const n of names) {
-    const f = originals.get(n) ?? originals.get(n.split('/').pop()!)
+    const f = await findOriginal(n)
     if (f && !found.includes(f)) found.push(f)
     else if (!f && (note.attach ?? []).includes(n)) missing.push(n)
   }
@@ -362,7 +355,7 @@ async function keepCards(toolId: string, keys: readonly string[]): Promise<void>
       const extra = proposalToDraft(c.note, id, new Map([...useWorld.getState().nodes.keys()].map((k) => [k, k])), settings, now, useChat.getState().model ?? 'claude')
       if (extra.embeds?.length) await updateNode(id, { embeds: [...(target.embeds ?? []), ...extra.embeds] }, { keepAnchor: true })
       for (const l of extra.links ?? []) if (!target.links.some((x) => x.targetId === l.targetId)) await link(id, l.targetId, l.kind).catch(() => {})
-      const { found, missing } = originalsFor(c.note)
+      const { found, missing } = await originalsFor(c.note)
       const failed = [...missing]
       for (const f of found) await addAttachment(id, f, f.name).catch(() => failed.push(f.name))
       setCard(toolId, c.key, { status: 'kept', id, error: failed.length ? `Not attached (add ${failed.length === 1 ? 'it' : 'them'} again): ${failed.join(', ')}` : undefined })
@@ -387,7 +380,7 @@ async function keepCards(toolId: string, keys: readonly string[]): Promise<void>
   }
   for (const c of chosen) {
     const id = fresh.get(c.key)!
-    const { found, missing } = originalsFor(c.note)
+    const { found, missing } = await originalsFor(c.note)
     const failed: string[] = [...missing]
     for (const f of found) await addAttachment(id, f, f.name).catch(() => failed.push(f.name))
     setCard(toolId, c.key, {

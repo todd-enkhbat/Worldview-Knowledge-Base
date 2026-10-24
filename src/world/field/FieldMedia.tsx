@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
-import { BoxGeometry, BufferAttribute, BufferGeometry, Group, Mesh, MeshBasicMaterial, Points, ShaderMaterial, Vector3, VideoTexture } from 'three'
+import { BoxGeometry, BufferAttribute, BufferGeometry, Group, Mesh, MeshBasicMaterial, Points, SRGBColorSpace, ShaderMaterial, Vector3, VideoTexture } from 'three'
 import { useWorld } from '../../app/store.ts'
 import type { Attachment, NodeRecord } from '../../domain/types.ts'
 import { useStoredBlobUrl } from '../../hud/fields/SceneField.tsx'
@@ -27,6 +27,20 @@ const VIDEO_PLAY_D = 140
 const VIDEO_COLS = 96
 
 const _v = new Vector3()
+
+/** Live video cards (dev hook __wv.fieldMedia()). */
+const liveVideos = new Map<string, { video: HTMLVideoElement; show: () => number; url: () => string | null }>()
+export function fieldMediaStatus() {
+  return [...liveVideos].map(([id, v]) => ({
+    id,
+    url: !!v.url(),
+    paused: v.video.paused,
+    readyState: v.video.readyState,
+    size: [v.video.videoWidth, v.video.videoHeight],
+    time: Math.round(v.video.currentTime * 100) / 100,
+    show: Math.round(v.show() * 100) / 100,
+  }))
+}
 
 /** 0 far … 1 near, from camera distance. */
 const nearness = (d: number) => 1 - Math.min(1, Math.max(0, (d - NEAR_D) / (FAR_D - NEAR_D)))
@@ -135,8 +149,9 @@ varying float vAlpha;
 void main() {
   vec2 d = gl_PointCoord * 2.0 - 1.0;
   if (dot(d, d) > 1.0) discard;
+  if (vAlpha < 0.05) discard;
   vec3 c = texture2D(uVideo, vUv).rgb;
-  gl_FragColor = vec4(c * 1.15, vAlpha * 0.95);
+  gl_FragColor = vec4(c, 1.0);
 }
 `
 
@@ -169,6 +184,7 @@ function FieldVideo({ rec, video: att, notes }: { rec: NodeRecord; video: Attach
   const dpr = useThree((s) => s.viewport.dpr)
   const [aspect, setAspect] = useState(16 / 9)
   const show = useRef(0)
+  const lastTime = useRef(-1)
 
   const video = useMemo(() => {
     const v = document.createElement('video')
@@ -192,7 +208,16 @@ function FieldVideo({ rec, video: att, notes }: { rec: NodeRecord; video: Attach
     }
   }, [url, video])
 
-  const texture = useMemo(() => new VideoTexture(video), [video])
+  useEffect(() => {
+    liveVideos.set(rec.id, { video, show: () => show.current, url: () => url })
+    return () => void liveVideos.delete(rec.id)
+  }, [rec.id, video, url])
+
+  const texture = useMemo(() => {
+    const t = new VideoTexture(video)
+    t.colorSpace = SRGBColorSpace
+    return t
+  }, [video])
   const material = useMemo(
     () =>
       new ShaderMaterial({
@@ -208,8 +233,9 @@ function FieldVideo({ rec, video: att, notes }: { rec: NodeRecord; video: Attach
           uShow: { value: 0 },
           uVideo: { value: texture },
         },
-        transparent: true,
-        depthWrite: false,
+        // Solid grains that write depth, like photo cards: post fog sees them as near.
+        transparent: false,
+        depthWrite: true,
       }),
     [notes, texture],
   )
@@ -249,6 +275,12 @@ function FieldVideo({ rec, video: att, notes }: { rec: NodeRecord; video: Attach
     const playing = !video.paused
     if (want > 0 && url && !playing) void video.play().catch(() => {})
     else if (want === 0 && playing) video.pause()
+    // Upload a frame whenever the video has moved on. VideoTexture's own frame callback is not
+    // fired in throttled (hidden or background) views, which left cards black.
+    if (video.readyState >= 2 && video.currentTime !== lastTime.current) {
+      lastTime.current = video.currentTime
+      texture.needsUpdate = true
+    }
   }, -1)
 
   return <primitive object={points} />
