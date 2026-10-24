@@ -1,13 +1,15 @@
 import { useEffect } from 'react'
 import { useThree } from '@react-three/fiber'
 import { Vector3 } from 'three'
-import { useApp } from '../../app/store.ts'
+import { useApp, useWorld } from '../../app/store.ts'
+import { flyIn } from '../splats/index.tsx'
 import { getFieldFrame } from './runtime.ts'
 
 // Hover and click in the field: grains have no meshes to raycast, so picking is in screen
 // space: the born note whose cloud centre is nearest the pointer, within its on-screen cloud
 // (at least PICK_PX). A click is a press and release that barely moved, so orbit drags never
-// select; a click on empty land clears the selection.
+// select; a click on empty land clears the selection. A double-click on a note that holds a
+// captured scene walks into it.
 
 const PICK_PX = 26
 const CLICK_SLOP = 5
@@ -67,6 +69,12 @@ export function FieldPicker() {
       if (useApp.getState().mode !== 'orbit') return
       useApp.getState().select(pick(e.clientX, e.clientY))
     }
+    // Double-click a note that holds a captured scene: walk into it.
+    const enter = (e: MouseEvent) => {
+      if (useApp.getState().mode !== 'orbit') return
+      const id = pick(e.clientX, e.clientY)
+      if (id && useWorld.getState().nodes.get(id)?.splat) void flyIn(id).catch(() => {})
+    }
     const leave = () => {
       if (hovered) useApp.getState().hover(null)
       hovered = null
@@ -76,11 +84,13 @@ export function FieldPicker() {
     canvas.addEventListener('pointerdown', press)
     canvas.addEventListener('pointerup', release)
     canvas.addEventListener('pointerleave', leave)
+    canvas.addEventListener('dblclick', enter)
     return () => {
       canvas.removeEventListener('pointermove', move)
       canvas.removeEventListener('pointerdown', press)
       canvas.removeEventListener('pointerup', release)
       canvas.removeEventListener('pointerleave', leave)
+      canvas.removeEventListener('dblclick', enter)
       canvas.style.cursor = ''
     }
   }, [gl, camera])

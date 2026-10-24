@@ -656,3 +656,21 @@ User: "exactly what I'm talking about… make it nicer, refine it"; keep the old
 - **Field entropy** in the timeline: in the field, S is the summed differential entropy of the born clouds, Σ ½·3·ln(2πe σ²). It rises as notes age and falls when you return to them. Classic still shows the engine's S.
 - **Tests:** 647 pass (new: attention, entropy, timeline readouts in both worlds).
 - **Noted, not fixed:** a read-only follower tab took ~45 s to load in the pane, before and after this work. To check in the writer tab.
+
+### Milestone 2c: scenes and videos in the field (2026-10-24)
+Toward "the same but more detailed, where we can see scenes and videos or spaces in time". No API use.
+
+- **Scenes** (`world/field/FieldMedia.tsx`, `FieldScenes`):
+  - A memory with a captured Gaussian-splat scene mounts the same `Diorama` as the classic world, on the land at its note. Its radius grows from 3.5 u (≥ 160 u away) to 10 u (≤ 45 u away), scaled by condensation.
+  - The note's cloud thins as you approach (up to 85 %; `sceneReveal` → a third row in the note texture) so the scene shows through.
+  - A depth stand-in box (`colorWrite` off, `renderOrder` 100, the classic trick) keeps post fog from treating the splats as sky.
+  - The scenes group sits outside the `field` group, and `field` is now in `WORLD_GROUP_NAMES`, so entering a scene hides the land but not the scene.
+- **Entering:** double-click a scene note in the field (`FieldPicker` → `flyIn`), or use the Inspector's Enter. Screen labels step aside while entering, inside and exiting.
+- **Videos** (`FieldVideos`): the nearest 3 born video notes within 140 u (re-ranked at 2.5 Hz) each mount a muted, looping `<video>` and a 96-column grain card facing you. The card samples the `VideoTexture` and frays at the edges as the note loses order. Videos pause and unmount when far; nothing decodes otherwise.
+- **Verified in the pane** (demo world; Tomatoes, Apartment and Lion hold scenes):
+  - The tomato capture stands on the land and grows as you approach.
+  - The Inspector's Enter flies into it with the field hidden, and Esc returns.
+  - A dispatched `dblclick` on the note enters too (`mode` → `entering`). The pane tool's double-click did not fire a DOM `dblclick`.
+  - 120 Hz: median 8.3 ms, p99 9.7 ms.
+  - `npm run check`: 86 files, 648 tests.
+- **Not verified:** video cards. This world has no video notes, and the pane tab is read-only, so I could not add one. Needs a real check in the writer tab: drop a video in the chat or the editor, keep it, and zoom near it.

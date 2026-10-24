@@ -150,14 +150,16 @@ export function ScreenLabels({ records, byId, always = false }: Props) {
 
     if (t - last.current >= RESAMPLE_SECONDS || t < last.current) {
       last.current = t
-      const { selectedId, hoveredId, timeFocusYear } = useApp.getState()
+      const { selectedId, hoveredId, timeFocusYear, mode } = useApp.getState()
+      // Inside a memory's scene (and on the way in or out) the world's labels step aside.
+      const inside = mode === 'entering' || mode === 'interior' || mode === 'exiting'
       const selNbrs = selectedId ? graph.get(selectedId) : undefined
       const cands: LabelCandidate[] = []
       let born = 0
       let inView = 0
       let worldText = 0
       let minWorldPx = Infinity
-      for (const rec of records) {
+      for (const rec of inside ? [] : records) {
         const row = table.index.get(rec.id)
         if (row === undefined || table.born[row] !== 1) continue
         born++

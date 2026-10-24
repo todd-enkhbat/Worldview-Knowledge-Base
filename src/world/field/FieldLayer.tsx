@@ -21,6 +21,7 @@ import { LAYER } from '../layers.ts'
 import { LINK_STYLE, buildTypedLinks } from '../links/style.ts'
 import { getFieldFrame, type FieldFrame } from './runtime.ts'
 import { RIPPLE_Y, buildTint, type NoteState } from './state.ts'
+import { FieldVideos, sceneReveal } from './FieldMedia.tsx'
 
 // The particle world (milestone 2). Three point layers, all GPU-animated from small textures
 // the runtime fills each frame:
@@ -56,8 +57,10 @@ const ARCHETYPE_COLOR: Record<Archetype, string> = {
 const NOTE_FETCH = /* glsl */ `
 uniform sampler2D uNotes;
 uniform float uN;
-vec4 noteA(float i) { return texture2D(uNotes, vec2((i + 0.5) / uN, 0.25)); }
-vec4 noteB(float i) { return texture2D(uNotes, vec2((i + 0.5) / uN, 0.75)); }
+// Rows: A = centre, sigma · B = order, born, highlight, condense · C = reveal (a scene showing through).
+vec4 noteA(float i) { return texture2D(uNotes, vec2((i + 0.5) / uN, 1.0 / 6.0)); }
+vec4 noteB(float i) { return texture2D(uNotes, vec2((i + 0.5) / uN, 0.5)); }
+vec4 noteC(float i) { return texture2D(uNotes, vec2((i + 0.5) / uN, 5.0 / 6.0)); }
 `
 
 const SOFT_DOT = /* glsl */ `
@@ -203,7 +206,7 @@ void main() {
   float size = (aRand.z > 0.5 ? 0.34 : 0.14 + 0.22 * aRand.y) * (1.0 + 0.5 * hl);
   gl_PointSize = clamp(size * uPixel / -mv.z, 1.0, 5.0);
   vColor = aColor * (aRand.z > 0.5 ? 1.0 : 1.9) * (1.0 + 1.2 * hl);
-  vAlpha = (aRand.z > 0.5 ? 0.9 : 0.45 + 0.5 * order) * cond;
+  vAlpha = (aRand.z > 0.5 ? 0.9 : 0.45 + 0.5 * order) * cond * (1.0 - noteC(aNote).x);
 }
 `
 
@@ -341,7 +344,7 @@ export function FieldLayer() {
   const [pictureVersion, setPictureVersion] = useState(0)
 
   const notesTex = useMemo(() => {
-    const t = new DataTexture(new Float32Array(8), 1, 2, RGBAFormat, FloatType)
+    const t = new DataTexture(new Float32Array(12), 1, 3, RGBAFormat, FloatType)
     t.magFilter = NearestFilter
     t.minFilter = NearestFilter
     t.needsUpdate = true
@@ -628,7 +631,7 @@ export function FieldLayer() {
     }
     const k = 1 - Math.exp(-EASE * Math.min(dt, 0.1))
     const rows = Math.max(1, n)
-    const data = new Float32Array(rows * 2 * 4)
+    const data = new Float32Array(rows * 3 * 4)
     for (let i = 0; i < n; i++) {
       // A scrub that crosses a birth or death shows at once; within a life, ease.
       const jump = frame.born[i] === 0 || frame.condense[i] < 1
@@ -638,8 +641,13 @@ export function FieldLayer() {
       sh.hl[i] += (hlTarget - sh.hl[i]) * Math.min(1, k * 2)
       data.set([frame.centers[i * 3], frame.centers[i * 3 + 1], frame.centers[i * 3 + 2], sh.sigma[i]], i * 4)
       data.set([sh.order[i], frame.born[i], sh.hl[i], frame.condense[i]], (rows + i) * 4)
+      const rec = frame.records[i]
+      if (rec.splat) {
+        look.pt.set(frame.centers[i * 3], frame.centers[i * 3 + 1], frame.centers[i * 3 + 2])
+        data[(2 * rows + i) * 4] = sceneReveal(rec, look.pt.distanceTo(cam.position))
+      }
     }
-    notesTex.image = { data, width: rows, height: 2 } as unknown as typeof notesTex.image
+    notesTex.image = { data, width: rows, height: 3 } as unknown as typeof notesTex.image
     notesTex.needsUpdate = true
     common.uN.value = rows
     s.version = frame.version
@@ -652,6 +660,7 @@ export function FieldLayer() {
       <primitive object={detail} />
       <primitive object={clouds} />
       <primitive object={currents} />
+      <FieldVideos notes={common} />
     </group>
   )
 }

@@ -13,6 +13,7 @@ import { usePhysicsPoses } from './time/usePhysicsPoses.ts'
 import { YearRings } from './time/YearRings.tsx'
 import { FieldLayer } from './field/FieldLayer.tsx'
 import { FieldPicker } from './field/FieldPicker.tsx'
+import { FieldScenes } from './field/FieldMedia.tsx'
 import { useApp } from '../app/store.ts'
 import { Worldline } from './worldline/index.ts'
 
@@ -34,6 +35,8 @@ function Scene() {
       <>
         <EnvironmentScene graph={graph} classic={false} />
         <FieldLayer />
+        {/* Outside the 'field' group: the fly-in hides the field but not the scene it enters. */}
+        <FieldScenes />
         <FieldPicker />
         <NodeLayer labelsOnly />
         <LinkHover />

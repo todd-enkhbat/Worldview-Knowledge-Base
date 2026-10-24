@@ -395,7 +395,7 @@ export function cameraOnReturn(plan: FlightPlan, s: FlightState, out: CameraPose
 // ─── the world group (hidden inside a diorama and while framing) ─────────────────────
 
 /** Top-level scene groups that make up "the world" (environment, nodes, links, dust, overlays). */
-export const WORLD_GROUP_NAMES: ReadonlySet<string> = new Set(['environment', 'node-layer', 'links', 'dust', 'overlays'])
+export const WORLD_GROUP_NAMES: ReadonlySet<string> = new Set(['environment', 'node-layer', 'links', 'dust', 'overlays', 'field'])
 
 let hiddenByUs: Object3D[] = []
 
