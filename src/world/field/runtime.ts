@@ -5,7 +5,7 @@ import { registerDevApi } from '../../app/devApi.ts'
 import { markOnce } from '../../app/timings.ts'
 import { computeFieldLayout, layoutBounds, type XZ } from './layout.ts'
 import { attentionVersion, ensureAttention, lastTouch } from './attention.ts'
-import { activeRipples, buildHeightfield, lift, noteState, sampleHeight, type Heightfield, type NoteState, type Ripple } from './state.ts'
+import { activeRipples, buildHeightfield, landResolution, lift, noteState, sampleHeight, type Heightfield, type NoteState, type Ripple } from './state.ts'
 
 // The field's per-frame state (milestone 2), outside React. It owns the layout (recomputed
 // when the records change, warm-started), evaluates every note at the playhead, builds the
@@ -63,6 +63,8 @@ let lastNodes: ReadonlyMap<string, NodeRecord> | null = null
 let lastSemantic = false
 let lastCompute = -Infinity
 let lastAttention = -1
+/** Last layout and per-evaluation cost (dev hook __wv.fieldStats()). */
+const stats = { layoutMs: 0, layoutN: 0, evalMs: 0 }
 
 export function getFieldFrame(): FieldFrame {
   return frame
@@ -80,7 +82,10 @@ function rebuildIfNeeded(nodes: ReadonlyMap<string, NodeRecord>): boolean {
   lastNodes = nodes
   lastSemantic = semantic
   const records = [...nodes.values()].filter((r) => r.deletedAt === null).sort((a, b) => (a.id < b.id ? -1 : 1))
+  const t0 = performance.now()
   const layout = computeFieldLayout({ records, vectors: semantic ? semanticVectors() : undefined, previous: frame.layout })
+  stats.layoutMs = Math.round(performance.now() - t0)
+  stats.layoutN = records.length
   const ids = records.map((r) => r.id)
   const index = new Map(ids.map((id, i) => [id, i]))
   const degree = new Int32Array(ids.length)
@@ -131,11 +136,13 @@ export function updateField(nodes: ReadonlyMap<string, NodeRecord>, _settings: W
   if (!rebuilt && nowS - lastCompute < interval) return frame
   lastCompute = nowS
 
+  const t1 = performance.now()
   const states: NoteState[] = new Array(n)
   for (let i = 0; i < n; i++) states[i] = noteState(frame.records[i], playheadMs, frame.degree[i], lastTouch(frame.ids[i], playheadMs))
   const hf = buildHeightfield(
     frame.ids.map((id, i) => ({ xz: frame.layout.get(id)!, state: states[i] })),
     frame.extent,
+    landResolution(frame.extent.half * 2).height,
   )
   for (let i = 0; i < n; i++) {
     const s = states[i]
@@ -150,6 +157,7 @@ export function updateField(nodes: ReadonlyMap<string, NodeRecord>, _settings: W
     frame.condense[i] = s.condense
     frame.born[i] = s.born ? 1 : 0
   }
+  stats.evalMs = Math.round((performance.now() - t1) * 10) / 10
   frame = {
     ...frame,
     version: frame.version + 1,
@@ -169,6 +177,8 @@ export function resetField(): void {
   lastCompute = -Infinity
   lastAttention = -1
 }
+
+registerDevApi('fieldStats', () => ({ ...stats, notes: frame.ids.length }))
 
 registerDevApi('field', (filter?: string) =>
   frame.ids

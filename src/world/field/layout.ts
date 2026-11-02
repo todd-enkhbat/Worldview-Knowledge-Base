@@ -146,8 +146,35 @@ export function computeFieldLayout({ records, vectors, previous }: FieldLayoutIn
       z[i] += fz[i] * k * step
     }
   }
-  for (let i = 0; i < n; i++) out.set(live[i].id, [Math.round(x[i] * 1000) / 1000, Math.round(z[i] * 1000) / 1000])
+  // Room to breathe: a note's cloud and rise are ~10–20 u across, so a big world would pack
+  // them into one blur. Scale the map (shape unchanged) so the median distance to the nearest
+  // neighbour is at least MIN_SPACING. Small worlds are already wider and are left alone.
+  const k = spacingScale(x, z)
+  for (let i = 0; i < n; i++) out.set(live[i].id, [Math.round(x[i] * k * 1000) / 1000, Math.round(z[i] * k * 1000) / 1000])
   return out
+}
+
+const MIN_SPACING = 18
+
+/** Factor that lifts the median nearest-neighbour distance to MIN_SPACING (≥ 1). */
+export function spacingScale(x: ArrayLike<number>, z: ArrayLike<number>): number {
+  const n = x.length
+  if (n < 3) return 1
+  // Sample up to 400 notes: the median is stable and this stays O(400·n).
+  const step = Math.max(1, Math.floor(n / 400))
+  const nn: number[] = []
+  for (let i = 0; i < n; i += step) {
+    let best = Infinity
+    for (let j = 0; j < n; j++) {
+      if (j === i) continue
+      const d = (x[i] - x[j]) ** 2 + (z[i] - z[j]) ** 2
+      if (d < best) best = d
+    }
+    nn.push(Math.sqrt(best))
+  }
+  nn.sort((a, b) => a - b)
+  const median = nn[nn.length >> 1]
+  return median > 0 && median < MIN_SPACING ? MIN_SPACING / median : 1
 }
 
 /** Centre and radius of a layout (for the camera and the terrain extent). */

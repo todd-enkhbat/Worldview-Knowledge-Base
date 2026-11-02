@@ -3,7 +3,9 @@ import { useApp } from '../app/store.ts'
 import { bootData } from '../app/boot.ts'
 import { stopSemantic } from '../ai/semanticIndex.ts'
 import { createMemoryStore } from '../data/memoryStore.ts'
-import { addAttachment, closeRepo, completeFirstRun, createNode, initRepo, link } from '../data/repo.ts'
+import { addAttachment, addNodes, closeRepo, completeFirstRun, createNode, initRepo, link, type NodeDraftInput } from '../data/repo.ts'
+import { markOnce } from '../app/timings.ts'
+import type { Archetype } from '../domain/types.ts'
 import { MS_PER_YEAR } from '../domain/constants.ts'
 import WorldPage from '../world/WorldPage.tsx'
 
@@ -90,7 +92,34 @@ async function setup(): Promise<void> {
   const photo = await createNode({ archetype: 'memory', title: 'Sunset over the bay', temporalOrigin: now - 1.4 * MS_PER_YEAR, temporalPrecision: 'month' }, { announce: false })
   await addAttachment(photo.id, await makeImage(), 'sunset.png')
   await link(video.id, photo.id, 'relates')
+  const n = Number(new URLSearchParams(location.hash.split('?')[1] ?? '').get('n') ?? 0)
+  if (n > 0) await addSynthetic(Math.min(n, 5000), now)
   useApp.getState().setView({ world: 'field' })
+}
+
+/** `?n=800`: that many synthetic notes, to see how the field holds up at scale. */
+async function addSynthetic(n: number, now: number): Promise<void> {
+  const kinds: Archetype[] = ['idea', 'idea', 'idea', 'entity', 'lens', 'document', 'memory', 'document']
+  const tags = Array.from({ length: 40 }, (_, i) => `topic-${i}`)
+  let seed = 12345
+  const rand = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff)
+  const ids = Array.from({ length: n }, () => crypto.randomUUID())
+  const kinds2 = ['supports', 'relates', 'derives', 'influenced-by', 'contradicts'] as const
+  const drafts: NodeDraftInput[] = ids.map((id, i) => ({
+    id,
+    archetype: kinds[Math.floor(rand() * kinds.length)],
+    title: `Synthetic note ${i + 1}`,
+    contentMd: 'x'.repeat(Math.floor(rand() * 1200)),
+    tags: [tags[Math.floor(rand() * tags.length)], ...(rand() < 0.4 ? [tags[Math.floor(rand() * tags.length)]] : [])],
+    temporalOrigin: now - rand() * 29 * MS_PER_YEAR,
+    temporalPrecision: 'month',
+    // About 1.5 links each, to earlier notes, like a world that grew.
+    links: i === 0 ? [] : Array.from({ length: Math.floor(rand() * 3.2) }, () => ({ targetId: ids[Math.floor(rand() * i)], kind: kinds2[Math.floor(rand() * kinds2.length)], createdAt: now })),
+  }))
+  for (const d of drafts) d.links = d.links!.filter((l, k, a) => a.findIndex((x) => x.targetId === l.targetId) === k)
+  markOnce('synthetic-start')
+  await addNodes(drafts, { announce: false })
+  markOnce('synthetic-added')
 }
 
 export default function FieldSandbox() {

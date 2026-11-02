@@ -20,7 +20,7 @@ import type { Archetype, LinkKind } from '../../domain/types.ts'
 import { LAYER } from '../layers.ts'
 import { LINK_STYLE, buildTypedLinks } from '../links/style.ts'
 import { getFieldFrame, type FieldFrame } from './runtime.ts'
-import { RIPPLE_Y, buildTint, type NoteState } from './state.ts'
+import { RIPPLE_Y, buildTint, landResolution, type NoteState } from './state.ts'
 import { FieldVideos, fieldMediaStatus, sceneReveal } from './FieldMedia.tsx'
 import { registerDevApi } from '../../app/devApi.ts'
 
@@ -36,7 +36,6 @@ const LAND_GRID = 300
 /** The detail patch: a finer land that follows where you look, for close views. */
 const DETAIL_GRID = 190
 const DETAIL_SIZE = 64
-const TINT_RES = 64
 /** How fast displayed clouds ease toward what time says (per second). */
 const EASE = 6
 const MAX_GRAINS = 260_000
@@ -440,7 +439,9 @@ export function FieldLayer() {
   )
 
   // Land and detail patch: jittered grids, built once.
-  const land = useMemo(() => landPoints(LAND_GRID, landMat, 'field-land', 7), [landMat])
+  // The grain grid follows the land's size (a bigger world gets more grains, within budget).
+  const [grains, setGrains] = useState(LAND_GRID)
+  const land = useMemo(() => landPoints(grains, landMat, 'field-land', 7), [grains, landMat])
   const detail = useMemo(() => landPoints(DETAIL_GRID, detailMat, 'field-land-detail', 11), [detailMat])
   useEffect(
     () => () => {
@@ -605,6 +606,8 @@ export function FieldLayer() {
       landMat.uniforms.uRes.value = hf.res
       landMat.uniforms.uExtent.value = [hf.x0, hf.z0, hf.size, 0]
       landMat.uniforms.uPatch.value = [hf.x0, hf.z0, hf.size, 1]
+      const res = landResolution(hf.size)
+      if (res.grains !== grains) setGrains(res.grains)
       const tint = buildTint(
         frame.ids.map((id, i) => ({
           xz: frame.layout.get(id)!,
@@ -612,11 +615,11 @@ export function FieldLayer() {
           rgb: TINT_RGB[frame.records[i].archetype],
         })),
         hf,
-        TINT_RES,
+        res.tint,
       )
-      tintTex.image = { data: tint, width: TINT_RES, height: TINT_RES } as unknown as typeof tintTex.image
+      tintTex.image = { data: tint, width: res.tint, height: res.tint } as unknown as typeof tintTex.image
       tintTex.needsUpdate = true
-      landMat.uniforms.uTintRes.value = TINT_RES
+      landMat.uniforms.uTintRes.value = res.tint
       const rip = landMat.uniforms.uRipples.value as number[]
       rip.fill(0)
       frame.ripples.forEach((r, i) => rip.splice(i * 4, 4, r.x, r.z, r.age, r.amp))

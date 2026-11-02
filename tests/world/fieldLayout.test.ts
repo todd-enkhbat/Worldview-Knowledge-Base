@@ -47,3 +47,36 @@ describe('field layout', () => {
     expect(dist(sem, 'e', 'f')).toBeLessThan(dist(plain, 'e', 'f'))
   })
 })
+
+describe('field layout at scale', () => {
+  it('gives a big world room: median nearest-neighbour spacing ≥ 18 u', () => {
+    let seed = 7
+    const r = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff)
+    const big = Array.from({ length: 600 }, (_, i) => rec(`n${i}`, [r() * 160 - 80, r() * 160 - 80], i > 0 ? [`n${Math.floor(r() * i)}`] : [], [`t${i % 25}`]))
+    const layout = computeFieldLayout({ records: big })
+    const pts = [...layout.values()]
+    const nn = pts.map((p, i) => Math.min(...pts.map((q, j) => (i === j ? Infinity : Math.hypot(p[0] - q[0], p[1] - q[1])))))
+    nn.sort((a, b) => a - b)
+    expect(nn[nn.length >> 1]).toBeGreaterThanOrEqual(17.9)
+  })
+
+  it('does not keep inflating across warm-started re-layouts', () => {
+    let seed = 11
+    const r = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff)
+    const world = Array.from({ length: 300 }, (_, i) => rec(`n${i}`, [r() * 120 - 60, r() * 120 - 60], i > 0 ? [`n${Math.floor(r() * i)}`] : []))
+    const radius = (m: Map<string, [number, number]>) => Math.max(...[...m.values()].map(([x, z]) => Math.hypot(x, z)))
+    let layout = computeFieldLayout({ records: world })
+    const first = radius(layout)
+    for (let k = 0; k < 5; k++) {
+      world.push(rec(`extra${k}`, [0, 0], ['n0']))
+      layout = computeFieldLayout({ records: world, previous: layout })
+    }
+    expect(radius(layout) / first).toBeLessThan(1.25)
+  })
+
+  it('leaves a small world’s scale alone', async () => {
+    const { spacingScale } = await import('../../src/world/field/layout.ts')
+    expect(spacingScale([0, 30, 60], [0, 0, 0])).toBe(1)
+    expect(spacingScale([0, 9, 18], [0, 0, 0])).toBe(2)
+  })
+})

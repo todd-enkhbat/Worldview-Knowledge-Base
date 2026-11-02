@@ -689,3 +689,20 @@ Toward "the same but more detailed, where we can see scenes and videos or spaces
 - **Slow load:** it was the hidden preview pane, not the app. Startup marks (`__wv.timings()`) show data ready at ~55 ms and all modules loaded by ~90 ms. The canvas then waits for layout and animation callbacks a hidden pane doesn't deliver; with the pane painting, the scene mounted at 3.5 s, including a 3 s video recording. A visible tab is unaffected.
 - **Dev hooks:** `__wv.field(filter)`, `__wv.fieldMedia()`, `__wv.orbit()`, `__wv.timings()`.
 - `npm run check`: 88 files, 652 tests.
+
+### Milestone 2e: the field at scale (2026-11-02)
+`#/sandbox/field?n=1000` adds that many synthetic notes to the throwaway world: random kinds, 40 tags, dates over 29 years, and ~1.5 links each to earlier notes. Measured with `__wv.fieldStats()`, `__wv.timings()` and a 180-frame sample:
+
+| 1,034 notes | Before | After |
+|---|---|---|
+| Layout (cold) | 255 ms | 275 ms |
+| Field evaluation (≤ 8 Hz above 150 notes) | 2.5 ms | 3.3 ms |
+| Frame time median / p99 (120 Hz) | 8.3 / 9.3 ms | 8.3 / 10.5 ms |
+| Map span | ±177 u | ±437 u |
+
+- **Problem:** performance was fine, but density wasn't. A ~355 u disc left ~10 u per note, while a note's cloud and rise are 10–20 u across, so 1,000 notes merged into one blur.
+- **Fix — spacing:** `spacingScale` scales the finished layout, shape unchanged, so the median nearest-neighbour distance is at least 18 u. It samples ≤ 400 notes, so it stays O(400·n). Small worlds are already wider and keep scale 1. Warm-started re-layouts do not inflate (tested: < 25 % over five rounds of additions).
+- **Fix — land resolution:** the land now follows the map's size via `landResolution(size)`. The height grid keeps cells ≤ ~3 u (128–512²), the grain grid keeps grains ≤ ~2.5 u apart (300–560²), and the tint grid is half the height grid.
+- **Result:** at 1,000 notes each note reads as its own cloud (ideas blue, memories warm, entities pale).
+- **Dev server:** this session started it through the preview pane (`.claude/launch.json` → `npm --prefix ../Worldview-Knowledge-Base run dev`); it had stopped during the break.
+- `npm run check`: 88 files, 655 tests.

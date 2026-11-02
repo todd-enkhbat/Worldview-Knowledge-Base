@@ -141,6 +141,16 @@ export function buildTint(
   return acc
 }
 
+/**
+ * Grid resolutions for a land `size` world units across: the height grid keeps cells ≤ ~3 u
+ * (a rise is ~8–12 u wide), the grain grid keeps grains ≤ ~2.5 u apart, both capped so a
+ * huge world stays within budget (512² cells, 560² grains).
+ */
+export function landResolution(size: number): { height: number; grains: number; tint: number } {
+  const height = Math.min(512, Math.max(128, Math.ceil(size / 3)))
+  return { height, grains: Math.min(560, Math.max(300, Math.ceil(size / 2.5))), tint: Math.max(64, height >> 1) }
+}
+
 /** Bilinear height at a world point (0 outside the grid). */
 export function sampleHeight(hf: Heightfield, x: number, z: number): number {
   const fx = ((x - hf.x0) / hf.size) * (hf.res - 1)
