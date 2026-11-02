@@ -27,13 +27,12 @@ import {
   type PackedSplats,
 } from '@sparkjsdev/spark'
 import type { Quat, SplatBlock } from '../../domain/types.ts'
-import { registerDevApi } from '../../app/devApi.ts'
 import { LAYER, RENDER_ORDER } from '../layers.ts'
 import { TESSERACT } from '../nodes/geometry.ts'
 import { terrariumFarScale } from '../nodes/instancing.ts'
 import { readPose } from '../poses.ts'
 import { loadSplatBytes } from './assets.ts'
-import { FLIGHT, fitBox, isWorldHidden, toQuaternion, type Box, type DioramaFit } from './flyIn.ts'
+import { FLIGHT, fitBox, isWorldHidden, type Box, type DioramaFit } from './flyIn.ts'
 import { getSpark, whenSpark } from './sparkRegistry.ts'
 import { crystalProgress, publishCrystal, type CrystalPhase, type SplatTier } from './tiers.ts'
 
@@ -98,9 +97,6 @@ function disposeMesh(m: SplatMesh | null): void {
 interface Clip {
   edit: SplatEdit
   box: SplatEditSdf
-  /** The field's soft rim: an upright cylinder whose edge fades the scene out (off elsewhere). */
-  fade: SplatEdit
-  rim: SplatEditSdf
 }
 
 /** Clip a mesh to a native-units box: alpha × 0 outside (inverted SDF), as in S1. */
@@ -109,37 +105,7 @@ function addClip(mesh: SplatMesh): Clip {
   const box = new SplatEditSdf({ type: SplatEditSdfType.BOX, invert: true, opacity: 0 })
   edit.add(box)
   mesh.add(edit)
-  const fade = new SplatEdit({ rgbaBlendMode: SplatEditRgbaBlendMode.MULTIPLY, sdfSmooth: 0, softEdge: 1 })
-  const rim = new SplatEditSdf({ type: SplatEditSdfType.CYLINDER, invert: true, opacity: 0 })
-  fade.add(rim)
-  fade.visible = false
-  mesh.add(fade)
-  return { edit, box, fade, rim }
-}
-
-/** Where the rim starts fading and how wide the fade is, as fractions of the narrower footprint half-width. */
-export const RIM = { radius: 0.72, soft: 0.5 }
-
-/**
- * Fade a mesh out toward the edge of its footprint, round, so a scene stands in the field
- * without box walls: an upright (world-up) cylinder in native units, centred on the box.
- */
-function setRim(clip: Clip | null, box: Box | null, upFix: Quat, enabled: boolean): void {
-  if (!clip) return
-  clip.fade.visible = enabled && box !== null
-  if (!box) return
-  const q = toQuaternion(upFix)
-  const e = new Matrix4().makeRotationFromQuaternion(q).elements
-  const h = [Math.abs(box.max[0] - box.min[0]) / 2, Math.abs(box.max[1] - box.min[1]) / 2, Math.abs(box.max[2] - box.min[2]) / 2]
-  // Half-widths of the box seen in the world frame (x and z rows of the up-fix rotation).
-  const ext = (r: number) => Math.abs(e[r]) * h[0] + Math.abs(e[4 + r]) * h[1] + Math.abs(e[8 + r]) * h[2]
-  const w = Math.max(1e-4, Math.min(ext(0), ext(2)))
-  clip.rim.position.set((box.min[0] + box.max[0]) / 2, (box.min[1] + box.max[1]) / 2, (box.min[2] + box.max[2]) / 2)
-  // Native → world is the up-fix rotation, so its inverse turns the cylinder upright in the world.
-  clip.rim.quaternion.copy(q).invert()
-  clip.rim.scale.set(1, 1e4, 1)
-  clip.rim.radius = RIM.radius * w
-  clip.fade.softEdge = RIM.soft * w
+  return { edit, box }
 }
 
 function setClip(clip: Clip | null, crop: Box | null, enabled: boolean): void {
@@ -254,9 +220,8 @@ export class DioramaInstance {
   private framingBox: Box | null = null
   private framingFrom: 'interior' | 'proxy' | 'crop' | null = null
   private phaseSince = 0
-  /** The particle field's look: a soft round rim, and an opacity it fades in with. */
-  private rim = false
-  private fieldOpacity = 1
+  /** The particle field draws the scene as grains (field/sceneGrains.ts); its splats wait for a flight. */
+  private hiddenInField = false
 
   constructor(id: string, block: SplatBlock) {
     this.id = id
@@ -279,7 +244,6 @@ export class DioramaInstance {
   lift(stage: Object3D): void {
     this.lifted = true
     stage.add(this.content)
-    this.applyClips()
     this.updateVisibility()
   }
 
@@ -291,7 +255,6 @@ export class DioramaInstance {
     this.content.scale.setScalar(1)
     if (this.anchor && !this.disposed) this.anchor.add(this.content)
     else this.content.removeFromParent()
-    this.applyClips()
     this.updateVisibility()
   }
 
@@ -389,53 +352,18 @@ export class DioramaInstance {
     this.fitGroup.visible = true
   }
 
+  /** Hide the splats while the scene stands in the particle field (flights still show them). */
+  setHiddenInField(hidden: boolean): void {
+    if (hidden === this.hiddenInField) return
+    this.hiddenInField = hidden
+    this.updateVisibility()
+  }
+
   private applyClips(): void {
+    const crop = this.block.crop
     const enabled = this.framing === null
-    const rim = enabled && this.rim && !this.lifted
-    // In the field an uncropped scene is clipped to its measured bounds too: its far floaters
-    // (sky, stray splats) would otherwise hang around it.
-    const crop = this.block.crop ?? (rim ? this.loadedBounds : null)
     setClip(this.proxyClip, crop, enabled)
     setClip(this.interiorClip, crop, enabled)
-    setRim(this.proxyClip, crop ?? this.loadedBounds, this.block.upFix, rim)
-    setRim(this.interiorClip, crop ?? this.loadedBounds, this.block.upFix, rim)
-  }
-
-  /**
-   * The scene's shape in its shell, as fractions of DIORAMA_HALF: how far its floor is below
-   * the shell centre, and the half-width of its narrower side (both 1 before it is fitted).
-   */
-  shape(): { floor: number; footprint: number } {
-    const fit = this.fit
-    if (!fit) return { floor: 1, footprint: 1 }
-    const e = new Matrix4().makeRotationFromQuaternion(fit.quaternion).elements
-    const ext = (r: number) => (Math.abs(e[r]) * fit.half.x + Math.abs(e[4 + r]) * fit.half.y + Math.abs(e[8 + r]) * fit.half.z) * fit.scale
-    return { floor: ext(1) / DIORAMA_HALF, footprint: Math.min(ext(0), ext(2)) / DIORAMA_HALF }
-  }
-
-  /** Re-apply the rim after RIM changed (dev tuning). */
-  refreshRim(): void {
-    this.applyClips()
-  }
-
-  /** The field rim as applied (dev hooks). */
-  rimStatus(): { on: boolean; radius: number; soft: number } | null {
-    const c = this.proxyClip
-    return c ? { on: c.fade.visible, radius: c.rim.radius, soft: c.fade.softEdge } : null
-  }
-
-  /**
-   * In the particle field a scene has no glass case: it fades out at a soft round rim and
-   * fades in (opacity) as you come near. Flights and framing show it whole.
-   */
-  setFieldLook(rim: boolean, opacity: number): void {
-    const o = Math.max(0, Math.min(1, opacity))
-    if (rim === this.rim && Math.abs(o - this.fieldOpacity) < 1e-3) return
-    const rimChanged = rim !== this.rim
-    this.rim = rim
-    this.fieldOpacity = o
-    if (rimChanged) this.applyClips()
-    this.updateVisibility()
   }
 
   // ── loading ──
@@ -689,23 +617,21 @@ export class DioramaInstance {
 
   private updateVisibility(): void {
     const proxyReady = this.proxyState === 'ready' && this.proxy !== null
-    const shown = this.tier === 'proxy' || this.tier === 'focused' || this.lifted
+    const shown = (this.tier === 'proxy' || this.tier === 'focused' || this.lifted) && !(this.hiddenInField && !this.lifted)
     const live = this.interiorReady
-    const field = this.lifted ? 1 : this.fieldOpacity
     if (this.proxy) {
-      this.proxy.visible = proxyReady && shown && !(live && this.blend >= 1) && field > 0.01
-      this.proxy.opacity = (live ? 1 - this.blend : 1) * field
+      this.proxy.visible = proxyReady && shown && !(live && this.blend >= 1)
+      this.proxy.opacity = live ? 1 - this.blend : 1
     }
     if (this.interior) {
       // While the LoD tree grows the interior must render (at opacity 0); once live it is
       // hidden at blend 0 and its tree survives (lodCleanupTimeoutMs = Infinity while focused).
-      this.interior.visible = this.interiorPhase === 'growing' || (live && this.blend > 0)
-      this.interior.opacity = live ? this.blend * field : 0
+      this.interior.visible = !(this.hiddenInField && !this.lifted) && (this.interiorPhase === 'growing' || (live && this.blend > 0))
+      this.interior.opacity = live ? this.blend : 0
     }
     if (this.impostor) {
       const placeholder = shown && !proxyReady && !(live && this.blend > 0)
-      // The field has no flat stand-in: the note's cloud carries the scene's colours instead.
-      this.impostor.visible = !this.lifted && !this.rim && (this.tier === 'impostor' || placeholder)
+      this.impostor.visible = !this.lifted && !this.hiddenInField && (this.tier === 'impostor' || placeholder)
     }
   }
 
@@ -733,14 +659,6 @@ export function getDiorama(id: string | null | undefined): DioramaInstance | und
 export function listDioramas(): IterableIterator<DioramaInstance> {
   return dioramas.values()
 }
-
-// Tune the field rim live (dev): __wv.sceneRim(radius, soft) as fractions of the footprint.
-registerDevApi('sceneRim', (radius?: number, soft?: number) => {
-  if (typeof radius === 'number') RIM.radius = radius
-  if (typeof soft === 'number') RIM.soft = soft
-  for (const d of dioramas.values()) d.refreshRim()
-  return { ...RIM }
-})
 
 // ─── component ──────────────────────────────────────────────────────────────────────
 

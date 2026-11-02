@@ -757,3 +757,27 @@ Feedback: every name plate showed from afar, crowding the view. The 3D scenes we
    - `__wv.fieldLayers({land, clouds, …})`: hide layers.
 
 `npm run check`: 89 files, 668 tests.
+
+### Milestone 2h: scenes as grains (2026-11-02)
+This replaces 2g's way of drawing scenes. Feedback: "still doesnt work". Up close, the photoreal splats never sat right among the grains:
+- Land grains buried them, and packing the grains bigger under them (2g) made the nearby land balloon into white blobs.
+- Post fog took them for sky through the gaps and darkened them.
+- Every stand-in for depth (box, disc) showed its own edge.
+
+**The field now draws a scene the way it draws everything, as particles** (`field/sceneGrains.ts`):
+- Up to 60k of the proxy's own splat centres, in their own colours (sRGB → linear).
+  - Only visible splats (opacity ≥ 0.25) inside the crop count.
+  - Each grain is sized from its splat's scale.
+  - They use the same shell fit as the diorama.
+- The grains are solid and write depth like the land, so nothing buries them and fog reads them as near.
+- They condense in a fixed random order as you approach (presence 45–190 u), so from afar a scene is a partial, colour-true cluster.
+- Toward the rim (0.55–1.05 of the narrower half-width) they thin out grain by grain.
+- The scene's cloud still clears near. The land still levels into a still clearing tinted with the scene's colours.
+
+**The photoreal diorama stays mounted in the same frame but hidden in the field** (`setHiddenInField`):
+- `flyIn` lifts it out as before. Double-click walks in.
+- `field-scenes` joined `WORLD_GROUP_NAMES`, so the grains step aside inside a scene.
+
+**Removed:** 2g's Spark rim edits, measured-bounds clip, depth disc, grain packing and `__wv.sceneRim`.
+
+**Verified on your world (read-only):** from afar, Tomatoes / Lion / Apartment show as red / dark / grey grain clusters. Up close, Apartment and Tomatoes stand as grain sculptures in their clearings. Walk-in shows the photoreal tomatoes with no grains over them, and fly-out returns.
