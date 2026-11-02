@@ -167,7 +167,10 @@ void main() {
   float index = 1.0 - smoothstep(0.0, 0.06, abs(fract(level / 5.0 + 0.5) - 0.5) * 5.0);
   float onLand = smoothstep(0.25, 1.2, h);
   float contour = max(line * 0.55, index) * onLand;
-  gl_PointSize = clamp((0.16 + 0.16 * aRand.y) * uPatch.w * (1.0 + 0.6 * contour) * uPixel / -mv.z, 1.0, 4.0);
+  // Under a scene the grains pack close (no gaps): its floor meets solid ground, and post fog
+  // reads the scene as standing on land, not as sky seen through the gaps.
+  float pack = max(under, 0.8 * pool);
+  gl_PointSize = clamp((0.16 + 0.16 * aRand.y) * uPatch.w * (1.0 + 0.6 * contour) * (1.0 + 1.8 * pack) * uPixel / -mv.z, 1.0, 4.0 + 6.0 * pack);
 
   float lift = smoothstep(0.0, 16.0, h);
   vec3 low = vec3(0.045, 0.055, 0.08);

@@ -749,7 +749,8 @@ Feedback: every name plate showed from afar, crowding the view. The 3D scenes we
    - **Size and presence:** `sceneStand` gives radius 9 × (0.7 + 0.3·condense), so a new scene is readable at once. Presence (opacity) eases in with distance (45–150 u).
    - **Clearing:** `sceneStand` levels the land to the land under the scene, raised toward the hills on a ring past its rim, so the scene stands among its neighbours. The note's cloud is centred in the scene, with spread ≤ 0.6 × radius. From afar the cloud *is* the scene, in the thumbnail's colours (centre-weighted). Near, the cloud clears completely.
    - **Land:** levels out under the scene, runs on unbroken beneath it (flat, no swell), and takes the scene's centre-weighted colour around it.
-   - **Fog:** a depth-only disc sits just under the ground (0.75 × radius, near only). Without it, fog took the scene for sky through the gaps between grains and darkened it. A sunk or thinned land under the scene read as a pit, so the land stays.
+   - **Fog:** under a scene the grains pack close (up to 2.8× larger, no gaps). Without that, fog took the scene for sky through the gaps between grains and darkened it.
+     - Tried and dropped: a depth disc (a black pool around narrow subjects), and a sunk or thinned land (a pit).
 3. **Dev hooks:**
    - `__wv.fieldScenes()`: each scene's footprint, shape, opacity and rim.
    - `__wv.sceneRim(r, soft)`: tune the rim live.

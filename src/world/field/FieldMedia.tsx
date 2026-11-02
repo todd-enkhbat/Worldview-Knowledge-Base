@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
-import { BufferAttribute, BufferGeometry, CircleGeometry, Group, Mesh, MeshBasicMaterial, Points, SRGBColorSpace, ShaderMaterial, Vector3, VideoTexture } from 'three'
+import { BufferAttribute, BufferGeometry, Group, Points, SRGBColorSpace, ShaderMaterial, Vector3, VideoTexture } from 'three'
 import { useWorld } from '../../app/store.ts'
 import { registerDevApi } from '../../app/devApi.ts'
 import type { Attachment, NodeRecord } from '../../domain/types.ts'
 import { useStoredBlobUrl } from '../../hud/fields/SceneField.tsx'
-import { LAYER, RENDER_ORDER } from '../layers.ts'
+import { LAYER } from '../layers.ts'
 import { DIORAMA_HALF, Diorama, getDiorama } from '../splats/index.tsx'
 import { getFieldFrame, type FieldFrame } from './runtime.ts'
 import { sceneStand } from './state.ts'
@@ -85,25 +85,6 @@ registerDevApi('fieldScenes', () => [...sceneStatus].map(([id, f]) => ({ id, ...
 function FieldScene({ rec }: { rec: NodeRecord }) {
   const group = useRef<Group>(null)
   const last = useRef<SceneFootprint | null>(null)
-  // A depth-only disc just under the ground beneath the scene. Splats write no depth and the
-  // land is grains with gaps, so post fog took most of a scene for distant sky and darkened it.
-  // Round and inside the scene's footprint, it leaves no edge of its own.
-  const plate = useMemo(() => {
-    const m = new Mesh(new CircleGeometry(1, 48), new MeshBasicMaterial({ colorWrite: false }))
-    m.rotation.x = -Math.PI / 2
-    m.renderOrder = RENDER_ORDER.DEPTH_PROXY
-    m.layers.set(LAYER.SOLID)
-    m.raycast = () => {}
-    m.name = 'field-scene-plate'
-    return m
-  }, [])
-  useEffect(
-    () => () => {
-      plate.geometry.dispose()
-      ;(plate.material as MeshBasicMaterial).dispose()
-    },
-    [plate],
-  )
   useEffect(() => {
     sceneStatus.set(rec.id, () => {
       const d = getDiorama(rec.id)
@@ -129,7 +110,6 @@ function FieldScene({ rec }: { rec: NodeRecord }) {
     const d = getDiorama(rec.id)
     if (i === undefined || !f.born[i]) {
       g.visible = false
-      plate.visible = false
       d?.setFieldLook(true, 0)
       return
     }
@@ -140,21 +120,16 @@ function FieldScene({ rec }: { rec: NodeRecord }) {
     // Stand just on the levelled ground: the floor covers the grains, the land runs on under it.
     const floor = (d?.shape().floor ?? 1) * fp.radius
     g.position.set(fp.x, fp.ground + floor + 0.25, fp.z)
-    plate.visible = fp.presence > 0.3
-    plate.position.set(fp.x, fp.ground - 0.3, fp.z)
-    plate.scale.setScalar(fp.radius * 0.75)
     g.scale.setScalar(s)
     d?.setFieldLook(true, fp.presence)
   }, -1)
 
-  // No depth box here: one cut a hard-edged clearing into the fog. The plate stands in.
+  // No depth box here: one cut a hard-edged clearing into the fog. The packed grains under the
+  // scene give it its depth instead (FieldLayer).
   return (
-    <>
-      <group ref={group} name="field-scene" userData={{ nodeId: rec.id }}>
-        <Diorama id={rec.id} block={rec.splat!} />
-      </group>
-      <primitive object={plate} />
-    </>
+    <group ref={group} name="field-scene" userData={{ nodeId: rec.id }}>
+      <Diorama id={rec.id} block={rec.splat!} />
+    </group>
   )
 }
 
