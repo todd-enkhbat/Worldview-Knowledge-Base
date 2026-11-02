@@ -85,6 +85,30 @@ body,
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* A note's picture, video or scene, shown in its label (world/nodes/peek.ts). */
+.wv-label-peek {
+  margin: 1px 0 4px;
+  background: color-mix(in srgb, var(--color-bone) 8%, var(--color-void));
+  overflow: hidden;
+  pointer-events: auto;
+  cursor: pointer;
+}
+.wv-label-peek img,
+.wv-label-peek video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.wv-label-peek:hover {
+  outline: 1px solid var(--color-ember);
+}
+.wv-label-peek.is-missing {
+  display: none;
+}
+.wv-label:not(.is-shown) .wv-label-peek {
+  pointer-events: none;
+}
 @media (prefers-reduced-motion: reduce) {
   .wv-label {
     transition: none;

@@ -4,7 +4,7 @@ import { useWorld } from '../../app/store.ts'
 import { registerDevApi } from '../../app/devApi.ts'
 import { addAttachment, addNodes, getStore, isRepoReady, link, updateNode } from '../../data/repo.ts'
 import { findOriginal, rememberOriginal } from './originals.ts'
-import { proposalToDraft, searchWorld, URL_RE, urlToIntake, type IntakeItem } from './apply.ts'
+import { proposalToDraft, searchWorld, stagedProposal, URL_RE, urlToIntake, type IntakeItem } from './apply.ts'
 import { TOOL_INPUTS, type AskUserInput, type ChatStreamEvent, type ProposedNote, type ToolName } from './protocol.ts'
 
 // The chat intake session (milestone 1). The browser owns the conversation: it is
@@ -438,6 +438,37 @@ export function stage(items: readonly IntakeItem[]): void {
 
 export function unstage(index: number): void {
   useChat.setState((st) => ({ staged: st.staged.filter((_, i) => i !== index) }))
+}
+
+/**
+ * Keep the staged files and links as notes as they are, one each, without Claude (nothing is
+ * sent anywhere). One undoable step; the originals are attached. Returns how many were kept.
+ */
+export async function keepStaged(): Promise<number> {
+  const settings = useWorld.getState().settings
+  const staged = useChat.getState().staged
+  const now = Date.now()
+  const kept = staged.flatMap((item, k) => {
+    const note = stagedProposal(item, `s${k}`, now)
+    return note ? [{ item, note, id: crypto.randomUUID() }] : []
+  })
+  if (!settings || !kept.length) return 0
+  useChat.setState({ error: null })
+  try {
+    const drafts = kept.map((k) => proposalToDraft(k.note, k.id, new Map(), settings, now, 'none'))
+    await addNodes(drafts, { label: drafts.length === 1 ? `Kept ${drafts[0].title}` : `Kept ${drafts.length} files` })
+  } catch (e) {
+    useChat.setState({ error: e instanceof Error ? e.message : String(e) })
+    return 0
+  }
+  const failed: string[] = []
+  for (const k of kept) if (k.item.file) await addAttachment(k.id, k.item.file, k.item.file.name).catch(() => failed.push(k.item.name))
+  const done = new Set(kept.map((k) => k.item))
+  useChat.setState((st) => ({
+    staged: st.staged.filter((i) => !done.has(i)),
+    error: failed.length ? `Not attached (add ${failed.length === 1 ? 'it' : 'them'} again): ${failed.join(', ')}` : null,
+  }))
+  return kept.length
 }
 
 /** Start the interview when there is no conversation yet. */

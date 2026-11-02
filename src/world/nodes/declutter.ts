@@ -14,6 +14,8 @@ export interface LabelCandidate {
   priority: number
   /** Sides to try, in order (default above, right, left, below). */
   sides?: readonly LabelSide[]
+  /** A smaller box to try on every side when the full one fits nowhere (a peek label's title alone). */
+  compact?: { w: number; h: number }
 }
 
 export type LabelSide = 'above' | 'right' | 'left' | 'below'
@@ -25,6 +27,8 @@ export interface PlacedLabel {
   w: number
   h: number
   side: LabelSide
+  /** Placed at its compact size. */
+  compact?: true
 }
 
 /** Box for a label on one side of its anchor. */
@@ -69,15 +73,19 @@ export function placeLabels(cands: readonly LabelCandidate[], opts: PlaceOptions
     }
     return true
   }
-  for (const c of order) {
-    if (out.length >= max) break
+  const tryPlace = (c: LabelCandidate, w: number, h: number, compact: boolean) => {
     for (const side of c.sides ?? SIDES) {
-      const b = sideBox(c.x, c.y, c.w, c.h, side, lift)
-      if (fits(b.left, b.top, c.w, c.h)) {
-        out.push({ id: c.id, left: b.left, top: b.top, w: c.w, h: c.h, side })
-        break
+      const b = sideBox(c.x, c.y, w, h, side, lift)
+      if (fits(b.left, b.top, w, h)) {
+        out.push({ id: c.id, left: b.left, top: b.top, w, h, side, ...(compact ? { compact: true as const } : {}) })
+        return true
       }
     }
+    return false
+  }
+  for (const c of order) {
+    if (out.length >= max) break
+    if (!tryPlace(c, c.w, c.h, false) && c.compact) tryPlace(c, c.compact.w, c.compact.h, true)
   }
   return out
 }

@@ -9,6 +9,8 @@ import type { Archetype, NodeRecord } from '../../domain/types.ts'
 import { getPoseTable } from '../poses.ts'
 import { clipTitle, countOverlaps, labelPriority, labelSize, placeLabels, sideBox, type LabelCandidate, type PlacedLabel } from './declutter.ts'
 import { MIN_WORLD_TEXT_PX, worldTextPx } from './labels.tsx'
+import { flyIn } from '../splats/index.tsx'
+import { PEEK_H, PEEK_W, peekKey, peekLabelSize, peekOf, peekUrl, type Peek } from './peek.ts'
 
 // <ScreenLabels/>: constant-size HTML labels for every born node whose in-world text would be
 // too small to read. One absolutely positioned overlay over the canvas; one pooled div per
@@ -54,6 +56,8 @@ interface Slot {
   key: string
   shown: boolean
   hiddenAt: number
+  /** The note's picture, video or scene (peek.ts), when it has one. */
+  peek: { key: string; box: HTMLDivElement; media: HTMLImageElement | HTMLVideoElement; url: string | null } | null
 }
 
 function makeSlot(root: HTMLElement): Slot {
@@ -65,7 +69,68 @@ function makeSlot(root: HTMLElement): Slot {
   title.className = 'wv-label-title'
   el.append(tag, title)
   root.append(el)
-  return { el, title, tag, key: '', shown: false, hiddenAt: 0 }
+  return { el, title, tag, key: '', shown: false, hiddenAt: 0, peek: null }
+}
+
+function dropPeek(s: Slot): void {
+  if (!s.peek) return
+  if (s.peek.media instanceof HTMLVideoElement) {
+    s.peek.media.pause()
+    s.peek.media.removeAttribute('src')
+    s.peek.media.load()
+  }
+  if (s.peek.url) URL.revokeObjectURL(s.peek.url)
+  s.peek.box.remove()
+  s.peek = null
+}
+
+/** Show `peek` in the slot (or none), loading its bytes once per key. */
+function setPeek(s: Slot, id: string, peek: Peek | null): void {
+  const key = peek ? peekKey(peek) : ''
+  if ((s.peek?.key ?? '') === key) return
+  dropPeek(s)
+  if (!peek) return
+  const box = document.createElement('div')
+  box.className = 'wv-label-peek'
+  box.style.width = `${PEEK_W}px`
+  box.style.height = `${PEEK_H}px`
+  box.title = peek.kind === 'scene' ? 'Open this scene (double-click to walk in)' : `Open this ${peek.kind === 'video' ? 'video' : 'picture'}`
+  box.addEventListener('click', (e) => {
+    e.stopPropagation()
+    useApp.getState().select(id)
+  })
+  if (peek.kind === 'scene') box.addEventListener('dblclick', (e) => {
+    e.stopPropagation()
+    void flyIn(id).catch(() => {})
+  })
+  let media: HTMLImageElement | HTMLVideoElement
+  if (peek.kind === 'video') {
+    const v = document.createElement('video')
+    v.muted = true
+    v.loop = true
+    v.playsInline = true
+    v.autoplay = true
+    media = v
+  } else {
+    const img = document.createElement('img')
+    img.alt = ''
+    img.decoding = 'async'
+    media = img
+  }
+  box.append(media)
+  s.el.prepend(box)
+  const slot = { key, box, media, url: null as string | null }
+  s.peek = slot
+  void peekUrl(peek).then((url) => {
+    if (s.peek !== slot) {
+      if (url) URL.revokeObjectURL(url)
+      return
+    }
+    if (!url) return void box.classList.add('is-missing')
+    slot.url = url
+    media.src = url
+    if (media instanceof HTMLVideoElement) void media.play().catch(() => {})
+  })
 }
 
 interface Props {
@@ -123,6 +188,7 @@ export function ScreenLabels({ records, byId, always = false }: Props) {
     rootRef.current = root
     const map = slots.current
     return () => {
+      for (const s of map.values()) dropPeek(s)
       root.remove()
       rootRef.current = null
       map.clear()
@@ -175,16 +241,19 @@ export function ScreenLabels({ records, byId, always = false }: Props) {
         const full = rec.id === hoveredId || rec.id === selectedId
         const title = full ? rec.title : clipTitle(rec.title)
         const tag = `${TAG[rec.archetype]} · ${formatByPrecision(rec.temporalOrigin, rec.temporalPrecision)}`
-        const sz = labelSize(title, tag)
+        const peek = peekOf(rec)
+        const plain = labelSize(title, tag)
+        const sz = peek ? peekLabelSize(plain) : plain
         cands.push({
           id: rec.id,
           x: p.x,
           y: p.y,
           w: Math.min(sz.w, full ? 420 : sz.w),
           h: sz.h,
-          // A note showing a picture or a video above it is labelled underneath instead.
-          ...(rec.attachments.some((a) => a.kind === 'image' || a.mime.startsWith('video/')) ? { sides: ['below', 'right', 'left', 'above'] as const } : {}),
-          priority: (timeFocusYear !== null && yearOf(rec.temporalOrigin) === timeFocusYear ? 2e5 : 0) + labelPriority({
+          // A note with a picture, video or scene is labelled underneath, clear of its cloud,
+          // and a little ahead of plain notes: it is the one you cannot read from grains alone.
+          ...(peek ? { sides: ['below', 'right', 'left', 'above'] as const, compact: { w: Math.min(plain.w, full ? 420 : plain.w), h: plain.h } } : {}),
+          priority: (peek ? 3000 : 0) + (timeFocusYear !== null && yearOf(rec.temporalOrigin) === timeFocusYear ? 2e5 : 0) + labelPriority({
             selected: rec.id === selectedId,
             hovered: rec.id === hoveredId,
             linkedToSelection: !!selNbrs?.has(rec.id),
@@ -220,6 +289,8 @@ export function ScreenLabels({ records, byId, always = false }: Props) {
           s.el.classList.toggle('is-year', inYear)
           s.el.style.width = `${p.w}px`
         }
+        // Where there is no room for the picture, the title alone.
+        setPeek(s, rec.id, p.compact ? null : peekOf(rec))
         if (!s.shown) {
           s.shown = true
           s.el.classList.add('is-shown')
@@ -232,6 +303,7 @@ export function ScreenLabels({ records, byId, always = false }: Props) {
           s.hiddenAt = t
           s.el.classList.remove('is-shown')
         } else if (t - s.hiddenAt > 1) {
+          dropPeek(s)
           s.el.remove()
           slots.current.delete(id)
         }

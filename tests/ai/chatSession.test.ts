@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useApp, useWorld } from '../../src/app/store.ts'
 import { createMemoryStore } from '../../src/data/memoryStore.ts'
 import { closeRepo, completeFirstRun, createNode, initRepo } from '../../src/data/repo.ts'
-import { _rememberOriginalForTests, keepAll, keepCard, loadChat, resetChat, send, skipCard, useChat } from '../../src/ai/chat/session.ts'
-import { importVault } from '../../src/ai/chat/apply.ts'
+import { _rememberOriginalForTests, keepAll, keepCard, keepStaged, loadChat, resetChat, send, skipCard, stage, useChat } from '../../src/ai/chat/session.ts'
+import { importVault, stagedProposal } from '../../src/ai/chat/apply.ts'
 import type { ChatStreamEvent } from '../../src/ai/chat/protocol.ts'
 
 const T0 = Date.UTC(1990, 4, 17)
@@ -187,5 +187,36 @@ describe('chat session', () => {
     // ![[portrait.png]] attaches the vault's file as the note's original.
     expect(r.attached).toBe(1)
     expect(useWorld.getState().nodes.get(b.id)!.attachments.map((a) => a.name)).toEqual(['portrait.png'])
+  })
+
+  it('keeps dropped files as notes as they are, without Claude', async () => {
+    const f = vi.fn(async () => {
+      throw new Error('no network')
+    })
+    vi.stubGlobal('fetch', f)
+    const may = Date.UTC(2024, 4, 3, 12)
+    const photo = new File([new Uint8Array([0xff, 0xd8, 0xff, 0xe0])], 'beach_with_mum.jpg', { type: 'image/jpeg', lastModified: may })
+    const clip = new File([new Uint8Array([0, 0, 0, 0x18, 0x66, 0x74, 0x79, 0x70])], 'first steps.mp4', { type: 'video/mp4', lastModified: may })
+    const paper = new File(['%PDF-1.4'], 'thesis.pdf', { type: 'application/pdf', lastModified: may })
+    stage([
+      { name: photo.name, kind: 'image', bytes: photo.size, blocks: [], file: photo },
+      { name: clip.name, kind: 'file', bytes: clip.size, blocks: [], file: clip },
+      { name: paper.name, kind: 'pdf', bytes: paper.size, blocks: [], file: paper },
+      { name: 'Vault · notes', kind: 'text', bytes: 0, blocks: [{ type: 'text', text: 'imported' }] },
+    ])
+    expect(await keepStaged()).toBe(3)
+    expect(f).not.toHaveBeenCalled()
+    const nodes = [...useWorld.getState().nodes.values()]
+    const by = (t: string) => nodes.find((n) => n.title === t)!
+    expect(by('beach with mum')).toMatchObject({ archetype: 'memory', attachments: [{ name: 'beach_with_mum.jpg', kind: 'image' }] })
+    expect(by('first steps')).toMatchObject({ archetype: 'memory', attachments: [{ name: 'first steps.mp4' }] })
+    expect(by('thesis')).toMatchObject({ archetype: 'document', attachments: [{ name: 'thesis.pdf' }] })
+    expect(new Date(by('thesis').temporalOrigin).getUTCFullYear()).toBe(2024)
+    // Only the message about the vault is left for Claude.
+    expect(useChat.getState().staged.map((s) => s.name)).toEqual(['Vault · notes'])
+  })
+
+  it('makes no proposal from an item with nothing to keep', () => {
+    expect(stagedProposal({ name: 'x', kind: 'text', bytes: 0, blocks: [] }, 'k')).toBeNull()
   })
 })

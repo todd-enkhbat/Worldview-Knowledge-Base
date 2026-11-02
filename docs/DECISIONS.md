@@ -706,3 +706,24 @@ Toward "the same but more detailed, where we can see scenes and videos or spaces
 - **Result:** at 1,000 notes each note reads as its own cloud (ideas blue, memories warm, entities pale).
 - **Dev server:** this session started it through the preview pane (`.claude/launch.json` → `npm --prefix ../Worldview-Knowledge-Base run dev`); it had stopped during the break.
 - `npm run check`: 88 files, 655 tests.
+
+### Milestone 2f: seeing the things themselves (2026-11-02)
+Feedback: pictures and videos looked like "a whole lotta nothing". Two causes:
+1. **Grains are an impression, not a view.** A scene stands ~3.5 u wide on the land and is seen from ~150 u away. That's a smudge.
+2. **Nothing got in without Claude.** A dropped file was only staged for Claude to read, and with no API credit it never became a note. The user's world had 3 scenes and no pictures or videos at all.
+
+Fixes:
+- **Peeks** (`world/nodes/peek.ts`, `ScreenLabels`): the screen label of a note that holds media shows the thing itself in a 132 × 84 px box.
+  - What it shows, in order: a scene's thumbnail, else the first picture's thumbnail, else the first video, playing muted.
+  - The size stays constant at any distance, and the grains stay as the in-world impression.
+  - Click opens the note in the Inspector (lightbox, player, the scene's Enter). Double-click on a scene walks in.
+  - Placement: these labels prefer to sit below the note and get a small priority lift (+3000).
+  - When the full box fits nowhere, `placeLabels` tries the label's `compact` size (title only).
+  - Object URLs are revoked, and videos stopped, when a label goes.
+- **Keep as notes** (`keepStaged`, `stagedProposal`): a button by the staged files puts each one in the world as it is.
+  - Nothing is sent to Claude or anywhere else.
+  - Title comes from the file name; the date is the file's own (marked uncertain).
+  - A picture or video becomes a memory; anything else becomes a document.
+  - The original is attached, and the whole thing is one undo.
+- Verified on your world (read-only tab): Lion, Tomatoes and Apartment show their scenes; clicking Tomatoes opens it.
+- Verified in the sandbox: a kept PNG showed as a picture peek next to the sandbox's video peek.

@@ -14,6 +14,7 @@ import {
   skipCard,
   startInterview,
   unstage,
+  keepStaged,
   useChat,
   type Card,
 } from '../ai/chat/session.ts'
@@ -372,6 +373,17 @@ export function Chat() {
                   </button>
                 </span>
               ))}
+              {staged.some((s) => s.file || s.url) && (
+                <button
+                  type="button"
+                  className={`${BTN} px-1.5 py-0`}
+                  disabled={busy || !writer}
+                  title="Put each file in your world as its own note, as it is: no AI, nothing sent anywhere. You can rename and date them in the Inspector."
+                  onClick={() => void keepStaged()}
+                >
+                  Keep as notes
+                </button>
+              )}
             </div>
           )}
           <div className="flex items-end gap-1">

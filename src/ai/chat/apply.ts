@@ -87,6 +87,32 @@ export function proposalToDraft(
   }
 }
 
+const VIDEO_NAME = /\.(mp4|m4v|mov|webm|mkv|avi)$/i
+
+/**
+ * A staged file or link kept as it is, without Claude: titled from its name, dated by the
+ * file's own date (a guess, so marked uncertain), and a memory when it is a picture or a video.
+ */
+export function stagedProposal(item: IntakeItem, key: string, now = Date.now()): ProposedNote | null {
+  const f = item.file
+  if (!f && !item.url) return null
+  const visual = item.kind === 'image' || !!f?.type.startsWith('video/') || VIDEO_NAME.test(item.name)
+  const title = (f ? f.name.replace(/\.[^.]+$/, '') : item.name).replace(/_+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120) || 'Untitled'
+  const d = new Date(f?.lastModified || now)
+  const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return {
+    key,
+    kind: visual ? 'memory' : 'document',
+    title,
+    body: '',
+    date: { iso, precision: 'day', certain: false },
+    tags: [],
+    links: [],
+    source: { ref: item.url ?? f?.name },
+    ...(f ? { attach: [f.name] } : {}),
+  }
+}
+
 /** The video id of a YouTube watch, short or embed link, or null. */
 export function youtubeId(url: string): string | null {
   try {

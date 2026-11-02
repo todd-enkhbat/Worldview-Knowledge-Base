@@ -72,3 +72,12 @@ describe('preferred sides', () => {
     expect(out[0].side).toBe('below')
   })
 })
+
+describe('compact fallback', () => {
+  it('places a peek label at its compact size when the full one fits nowhere', () => {
+    const big = { id: 'p', x: 400, y: 300, w: 140, h: 700, priority: 1, compact: { w: 100, h: 34 } }
+    const out = placeLabels([big], { width: 800, height: 600 })
+    expect(out).toMatchObject([{ id: 'p', w: 100, h: 34, compact: true }])
+    expect(placeLabels([{ ...big, h: 120 }], { width: 800, height: 600 })[0].compact).toBeUndefined()
+  })
+})
