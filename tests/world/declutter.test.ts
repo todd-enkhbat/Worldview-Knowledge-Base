@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { clipTitle, countOverlaps, labelPriority, labelSize, placeLabels, type LabelCandidate } from '../../src/world/nodes/declutter.ts'
+import { clipTitle, countOverlaps, fieldLabelLevel, LABEL_NEAR, labelPriority, labelSize, PEEK_NEAR, pickLandmarks, placeLabels, SCENE_SHOWN, type LabelCandidate } from '../../src/world/nodes/declutter.ts'
 
 const c = (id: string, x: number, y: number, priority: number, w = 100, h = 30): LabelCandidate => ({ id, x, y, w, h, priority })
 const view = { width: 800, height: 600 }
@@ -79,5 +79,32 @@ describe('compact fallback', () => {
     const out = placeLabels([big], { width: 800, height: 600 })
     expect(out).toMatchObject([{ id: 'p', w: 100, h: 34, compact: true }])
     expect(placeLabels([{ ...big, h: 120 }], { width: 800, height: 600 })[0].compact).toBeUndefined()
+  })
+})
+
+describe('field labels by distance', () => {
+  const base = { degree: 0, pinned: false, landmark: false }
+  it('names notes only as you come near, the picture last', () => {
+    expect(fieldLabelLevel({ ...base, distance: 200 })).toBe('none')
+    expect(fieldLabelLevel({ ...base, distance: LABEL_NEAR - 1 })).toBe('title')
+    expect(fieldLabelLevel({ ...base, distance: PEEK_NEAR - 1 })).toBe('peek')
+  })
+
+  it('names hubs a little farther, landmarks from anywhere, and pinned notes in full', () => {
+    expect(fieldLabelLevel({ ...base, degree: 5, distance: LABEL_NEAR + 50 })).toBe('title')
+    expect(fieldLabelLevel({ ...base, landmark: true, distance: 900 })).toBe('title')
+    expect(fieldLabelLevel({ ...base, pinned: true, distance: 900 })).toBe('peek')
+  })
+
+  it('gives a nearby scene its name alone, so no picture covers the scene itself', () => {
+    expect(fieldLabelLevel({ ...base, scene: true, distance: 20 })).toBe('title')
+    expect(fieldLabelLevel({ ...base, scene: true, pinned: true, distance: 20 })).toBe('title')
+    expect(fieldLabelLevel({ ...base, scene: true, pinned: true, distance: SCENE_SHOWN + 10 })).toBe('peek')
+  })
+
+  it('picks the best-connected notes as landmarks', () => {
+    const d = new Map([['a', 1], ['b', 4], ['c', 2], ['d', 4], ['e', 3]])
+    expect([...pickLandmarks(d)]).toEqual(['b', 'd', 'e'])
+    expect(pickLandmarks(new Map([['a', 1]])).size).toBe(0)
   })
 })

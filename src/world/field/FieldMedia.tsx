@@ -1,27 +1,28 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
-import { BoxGeometry, BufferAttribute, BufferGeometry, Group, Mesh, MeshBasicMaterial, Points, SRGBColorSpace, ShaderMaterial, Vector3, VideoTexture } from 'three'
+import { BufferAttribute, BufferGeometry, CircleGeometry, Group, Mesh, MeshBasicMaterial, Points, SRGBColorSpace, ShaderMaterial, Vector3, VideoTexture } from 'three'
 import { useWorld } from '../../app/store.ts'
+import { registerDevApi } from '../../app/devApi.ts'
 import type { Attachment, NodeRecord } from '../../domain/types.ts'
 import { useStoredBlobUrl } from '../../hud/fields/SceneField.tsx'
-import { LAYER } from '../layers.ts'
-import { DIORAMA_HALF, Diorama } from '../splats/index.tsx'
-import { getFieldFrame } from './runtime.ts'
+import { LAYER, RENDER_ORDER } from '../layers.ts'
+import { DIORAMA_HALF, Diorama, getDiorama } from '../splats/index.tsx'
+import { getFieldFrame, type FieldFrame } from './runtime.ts'
+import { sceneStand } from './state.ts'
 
 // Spaces and moving pictures in the field (milestone 2): notes that hold a captured scene
 // or a video show it, the closer you come the more.
-//   scenes  a memory's Gaussian-splat diorama stands on the land at the note, small from afar
-//           and growing as you approach, while the note's cloud thins away to reveal it.
-//           Double-click to walk in (FieldPicker → flyIn).
+//   scenes  a memory's Gaussian-splat diorama condenses out of its note: from afar the note is
+//           a cloud in the scene's colours over land stained by them; coming near, the scene
+//           fades in standing on a levelled clearing, its edge a soft round rim that dissolves
+//           into the grains (no case, no box), while the cloud thins away. Double-click to walk
+//           in (FieldPicker → flyIn).
 //   videos  a card of grains that samples the playing video (muted, looping), facing you.
 //           Only the nearest few play; the rest show nothing beyond their cloud.
 
-/** Scene radius on the land (world units), far and near. */
-const SCENE_FAR = 3.5
-const SCENE_NEAR = 10
-/** Within this distance a scene is fully grown and its cloud gone. */
+/** Within NEAR_D a scene is fully present and its cloud gone; beyond FAR_D it is only colour. */
 const NEAR_D = 45
-const FAR_D = 160
+const FAR_D = 150
 const MAX_VIDEOS = 3
 const VIDEO_PLAY_D = 140
 const VIDEO_COLS = 96
@@ -42,59 +43,124 @@ export function fieldMediaStatus() {
   }))
 }
 
-/** 0 far … 1 near, from camera distance. */
-const nearness = (d: number) => 1 - Math.min(1, Math.max(0, (d - NEAR_D) / (FAR_D - NEAR_D)))
+/** 0 far … 1 near, from camera distance, eased. */
+export function nearness(d: number): number {
+  const t = 1 - Math.min(1, Math.max(0, (d - NEAR_D) / (FAR_D - NEAR_D)))
+  return t * t * (3 - 2 * t)
+}
 
 // ─── scenes ──────────────────────────────────────────────────────────────────────────
 
+export interface SceneFootprint {
+  x: number
+  z: number
+  /** Radius of the scene's shell on the land (world units). */
+  radius: number
+  /** Land height the scene stands on: the land is levelled to it around the scene. */
+  ground: number
+  /** 0 … 1: how present the scene is (nearness × condensation). */
+  presence: number
+}
+
+/** Where a born scene note stands, for the scene itself and for the land it levels and stains. */
+export function sceneFootprint(f: FieldFrame, i: number, cam: Vector3): SceneFootprint {
+  const x = f.centers[i * 3]
+  const z = f.centers[i * 3 + 2]
+  const c = f.condense[i]
+  const { radius, ground } = sceneStand(f.heightfield, x, z, c)
+  _v.set(x, f.centers[i * 3 + 1], z)
+  return {
+    x,
+    z,
+    radius,
+    ground,
+    presence: nearness(_v.distanceTo(cam)) * (0.85 + 0.15 * c),
+  }
+}
+
+/** Scenes standing in the field (dev hook __wv.fieldScenes()). */
+const sceneStatus = new Map<string, () => unknown>()
+registerDevApi('fieldScenes', () => [...sceneStatus].map(([id, f]) => ({ id, ...(f() as object) })))
+
 function FieldScene({ rec }: { rec: NodeRecord }) {
   const group = useRef<Group>(null)
-  // A depth stand-in so post fog sees the scene as near, not as sky (splats write no depth).
-  const proxy = useMemo(() => {
-    const m = new Mesh(new BoxGeometry(DIORAMA_HALF * 1.6, DIORAMA_HALF * 1.6, DIORAMA_HALF * 1.6), new MeshBasicMaterial({ colorWrite: false, transparent: true }))
-    m.renderOrder = 100
+  const last = useRef<SceneFootprint | null>(null)
+  // A depth-only disc just under the ground beneath the scene. Splats write no depth and the
+  // land is grains with gaps, so post fog took most of a scene for distant sky and darkened it.
+  // Round and inside the scene's footprint, it leaves no edge of its own.
+  const plate = useMemo(() => {
+    const m = new Mesh(new CircleGeometry(1, 48), new MeshBasicMaterial({ colorWrite: false }))
+    m.rotation.x = -Math.PI / 2
+    m.renderOrder = RENDER_ORDER.DEPTH_PROXY
     m.layers.set(LAYER.SOLID)
     m.raycast = () => {}
+    m.name = 'field-scene-plate'
     return m
   }, [])
   useEffect(
     () => () => {
-      proxy.geometry.dispose()
-      ;(proxy.material as MeshBasicMaterial).dispose()
+      plate.geometry.dispose()
+      ;(plate.material as MeshBasicMaterial).dispose()
     },
-    [proxy],
+    [plate],
   )
+  useEffect(() => {
+    sceneStatus.set(rec.id, () => {
+      const d = getDiorama(rec.id)
+      const g = group.current
+      return {
+        title: rec.title,
+        footprint: last.current,
+        shape: d?.shape(),
+        at: g ? [g.position.x, g.position.y, g.position.z].map((v) => Math.round(v * 10) / 10) : null,
+        scale: g?.scale.x,
+        proxy: d?.proxy ? { visible: d.proxy.visible, opacity: d.proxy.opacity } : null,
+        rim: d?.rimStatus(),
+      }
+    })
+    return () => void sceneStatus.delete(rec.id)
+  }, [rec.id, rec.title])
 
   useFrame((state) => {
     const g = group.current
     if (!g) return
     const f = getFieldFrame()
     const i = f.index.get(rec.id)
+    const d = getDiorama(rec.id)
     if (i === undefined || !f.born[i]) {
       g.visible = false
+      plate.visible = false
+      d?.setFieldLook(true, 0)
       return
     }
     g.visible = true
-    _v.set(f.centers[i * 3], f.centers[i * 3 + 1], f.centers[i * 3 + 2])
-    const near = nearness(_v.distanceTo(state.camera.position))
-    const radius = (SCENE_FAR + (SCENE_NEAR - SCENE_FAR) * near) * f.condense[i]
-    const s = Math.max(1e-3, radius / DIORAMA_HALF)
-    // Stand on the land under the cloud: the cloud centre floats a little above its rise.
-    g.position.set(_v.x, _v.y - f.sigma[i] * 0.6 + radius * 0.35, _v.z)
+    const fp = sceneFootprint(f, i, state.camera.position)
+    last.current = fp
+    const s = Math.max(1e-3, fp.radius / DIORAMA_HALF)
+    // Stand just on the levelled ground: the floor covers the grains, the land runs on under it.
+    const floor = (d?.shape().floor ?? 1) * fp.radius
+    g.position.set(fp.x, fp.ground + floor + 0.25, fp.z)
+    plate.visible = fp.presence > 0.3
+    plate.position.set(fp.x, fp.ground - 0.3, fp.z)
+    plate.scale.setScalar(fp.radius * 0.75)
     g.scale.setScalar(s)
+    d?.setFieldLook(true, fp.presence)
   }, -1)
 
+  // No depth box here: one cut a hard-edged clearing into the fog. The plate stands in.
   return (
-    <group ref={group} name="field-scene" userData={{ nodeId: rec.id }}>
-      <Diorama id={rec.id} block={rec.splat!} />
-      <primitive object={proxy} />
-    </group>
+    <>
+      <group ref={group} name="field-scene" userData={{ nodeId: rec.id }}>
+        <Diorama id={rec.id} block={rec.splat!} />
+      </group>
+      <primitive object={plate} />
+    </>
   )
 }
 
 /** How much a scene note's cloud should thin (0 none … 1 gone), by id, for FieldLayer. */
 export function sceneReveal(rec: NodeRecord, dist: number): number {
-  return rec.splat ? 0.85 * nearness(dist) : 0
+  return rec.splat ? Math.min(1, 1.2 * nearness(dist)) : 0
 }
 
 export function FieldScenes() {

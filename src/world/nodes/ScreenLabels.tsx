@@ -7,7 +7,7 @@ import { formatByPrecision } from '../../domain/time.ts'
 import { yearOf } from '../time/timeScale.ts'
 import type { Archetype, NodeRecord } from '../../domain/types.ts'
 import { getPoseTable } from '../poses.ts'
-import { clipTitle, countOverlaps, labelPriority, labelSize, placeLabels, sideBox, type LabelCandidate, type PlacedLabel } from './declutter.ts'
+import { clipTitle, countOverlaps, fieldLabelLevel, labelPriority, labelSize, pickLandmarks, placeLabels, sideBox, type LabelCandidate, type LabelLevel, type PlacedLabel } from './declutter.ts'
 import { MIN_WORLD_TEXT_PX, worldTextPx } from './labels.tsx'
 import { flyIn } from '../splats/index.tsx'
 import { PEEK_H, PEEK_W, peekKey, peekLabelSize, peekOf, peekUrl, type Peek } from './peek.ts'
@@ -177,6 +177,9 @@ export function ScreenLabels({ records, byId, always = false }: Props) {
     }
     return nbrs
   }, [byId])
+  const landmarks = useMemo(() => pickLandmarks(new Map([...graph].map(([id, s]) => [id, s.size]))), [graph])
+  /** Each shown label's level in the field (title only, or with its picture). */
+  const levels = useRef(new Map<string, LabelLevel>())
 
   useEffect(() => {
     const parent = gl.domElement.parentElement
@@ -225,6 +228,7 @@ export function ScreenLabels({ records, byId, always = false }: Props) {
       let inView = 0
       let worldText = 0
       let minWorldPx = Infinity
+      levels.current.clear()
       for (const rec of inside ? [] : records) {
         const row = table.index.get(rec.id)
         if (row === undefined || table.born[row] !== 1) continue
@@ -239,9 +243,16 @@ export function ScreenLabels({ records, byId, always = false }: Props) {
           continue
         }
         const full = rec.id === hoveredId || rec.id === selectedId
+        const inFocusYear = timeFocusYear !== null && yearOf(rec.temporalOrigin) === timeFocusYear
+        // The field names things as you come near, not all at once (classic hands over to plaques).
+        const level: LabelLevel = always
+          ? fieldLabelLevel({ distance: p.d, degree: graph.get(rec.id)?.size ?? 0, pinned: full || !!selNbrs?.has(rec.id) || inFocusYear, landmark: landmarks.has(rec.id), scene: !!rec.splat?.proxyAssetId })
+          : 'peek'
+        if (level === 'none') continue
+        levels.current.set(rec.id, level)
         const title = full ? rec.title : clipTitle(rec.title)
         const tag = `${TAG[rec.archetype]} · ${formatByPrecision(rec.temporalOrigin, rec.temporalPrecision)}`
-        const peek = peekOf(rec)
+        const peek = level === 'peek' ? peekOf(rec) : null
         const plain = labelSize(title, tag)
         const sz = peek ? peekLabelSize(plain) : plain
         cands.push({
@@ -290,7 +301,7 @@ export function ScreenLabels({ records, byId, always = false }: Props) {
           s.el.style.width = `${p.w}px`
         }
         // Where there is no room for the picture, the title alone.
-        setPeek(s, rec.id, p.compact ? null : peekOf(rec))
+        setPeek(s, rec.id, p.compact || levels.current.get(rec.id) !== 'peek' ? null : peekOf(rec))
         if (!s.shown) {
           s.shown = true
           s.el.classList.add('is-shown')

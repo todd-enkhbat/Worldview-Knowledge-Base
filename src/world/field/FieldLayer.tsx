@@ -16,12 +16,13 @@ import {
 } from 'three'
 import { useApp, useWorld } from '../../app/store.ts'
 import { getStore, isRepoReady } from '../../data/repo.ts'
-import type { Archetype, LinkKind } from '../../domain/types.ts'
+import type { Archetype, LinkKind, NodeRecord } from '../../domain/types.ts'
 import { LAYER } from '../layers.ts'
 import { LINK_STYLE, buildTypedLinks } from '../links/style.ts'
 import { getFieldFrame, type FieldFrame } from './runtime.ts'
 import { RIPPLE_Y, buildTint, landResolution, type NoteState } from './state.ts'
-import { FieldVideos, fieldMediaStatus, sceneReveal } from './FieldMedia.tsx'
+import { FieldVideos, fieldMediaStatus, sceneFootprint, sceneReveal, type SceneFootprint } from './FieldMedia.tsx'
+import { loadSplatBytes } from '../splats/assets.ts'
 import { registerDevApi } from '../../app/devApi.ts'
 
 // The particle world (milestone 2). Three point layers, all GPU-animated from small textures
@@ -42,6 +43,8 @@ const MAX_GRAINS = 260_000
 const IMAGE_GRID = 56
 const CURRENT_GRAINS = 40
 const MAX_RIPPLES = 16
+/** Scenes the land levels and stains at once (the nearest). */
+const MAX_SCENES = 8
 
 const ARCHETYPE_COLOR: Record<Archetype, string> = {
   idea: '#9fd3e6',
@@ -102,6 +105,8 @@ uniform float uTime;
 uniform float uPixel;
 uniform vec4 uRipples[${MAX_RIPPLES}]; // x, z, age (years), amp
 uniform float uRippleSpeed;
+uniform vec4 uScenes[${MAX_SCENES}];    // x, z, radius, presence
+uniform vec4 uSceneLand[${MAX_SCENES}]; // scene colour (linear rgb), ground height
 attribute vec2 aUV;
 attribute vec2 aRand;
 varying vec3 vColor;
@@ -123,6 +128,24 @@ void main() {
   vec2 huv = (xz - uExtent.xy) / uExtent.z;
   float h = bilinear(uHeight, uRes, huv).r;
   vec4 tint = bilinear(uTint, uTintRes, huv);
+  // Scenes: the land levels into a clearing for each and runs on under it unbroken (the scene
+  // stands just on it, its floor covering the grains, its rim fading back into them). Under and
+  // around the scene the grains take its colours, faintly even from afar.
+  float under = 0.0;
+  float pool = 0.0;
+  vec3 stain = vec3(0.0);
+  float stainW = 0.0;
+  for (int k = 0; k < ${MAX_SCENES}; k++) {
+    vec4 sc = uScenes[k];
+    if (sc.z <= 0.0) continue;
+    float dist = length(xz - sc.xy);
+    h = mix(h, uSceneLand[k].w, 1.0 - smoothstep(1.05 * sc.z, 2.1 * sc.z, dist));
+    under = max(under, (1.0 - smoothstep(0.25 * sc.z, 0.75 * sc.z, dist)) * sc.w);
+    pool = max(pool, (1.0 - smoothstep(0.6 * sc.z, 1.9 * sc.z, dist)) * sc.w);
+    float w = (1.0 - smoothstep(0.3 * sc.z, 2.2 * sc.z, dist)) * (0.3 + 0.7 * sc.w);
+    stain += uSceneLand[k].rgb * w;
+    stainW = max(stainW, w);
+  }
   // A slow ambient swell, then every recent birth's wave front.
   float swell = 0.45 * sin(0.07 * xz.x + 0.35 * uTime) * cos(0.06 * xz.y - 0.27 * uTime);
   float crest = 0.0;
@@ -134,7 +157,7 @@ void main() {
     float fade = 1.0 - r.z / ${RIPPLE_Y.toFixed(2)};
     crest += r.w * fade * exp(-pow(dist - front, 2.0) / 40.0);
   }
-  vec3 p = vec3(xz.x, h + swell + crest * 1.6 + aRand.x * 0.2 * uPatch.w, xz.y);
+  vec3 p = vec3(xz.x, h + (swell + crest * 1.6) * (1.0 - under) + aRand.x * 0.2 * uPatch.w, xz.y);
   vec4 mv = modelViewMatrix * vec4(p, 1.0);
   gl_Position = projectionMatrix * mv;
 
@@ -153,6 +176,8 @@ void main() {
   vec3 ground = mix(mix(low, mid, smoothstep(0.0, 0.45, lift)), high, smoothstep(0.45, 1.0, lift));
   // The land takes the colour of the notes that raised it.
   ground = mix(ground, tint.rgb * (0.35 + 0.65 * lift), tint.a * (0.35 + 0.45 * lift));
+  // Strongest under the scene, where its rim fades into the land, so floor and ground meet.
+  if (stainW > 0.0) ground = mix(ground, stain / max(stainW, 1e-3) * (0.5 + 0.7 * aRand.x), min(0.85, 0.3 * stainW * stainW + 0.7 * max(under, 0.75 * pool)));
   vColor = ground * (0.75 + 0.5 * aRand.y)
     + vec3(1.0, 0.72, 0.38) * contour * (0.25 + 0.4 * index)
     + vec3(1.0, 0.8, 0.5) * min(crest, 1.0) * 0.9;
@@ -262,18 +287,59 @@ function gauss(r: () => number): number {
   return Math.sqrt(-2 * Math.log(Math.max(1e-9, r()))) * Math.cos(2 * Math.PI * r())
 }
 
-/** An image note's picture as IMAGE_GRID² linear-ish RGB, from its thumbnail. */
+/** An image or scene note's picture as IMAGE_GRID² linear-ish RGB, from its thumbnail. */
 const pictures = new Map<string, Float32Array | null>()
+
+/** A note's picture key: its first image, else its scene's thumbnail. */
+function pictureKey(r: NodeRecord): { key: string; src: string } | null {
+  const img = r.attachments.find((a) => a.kind === 'image')
+  if (img) return { key: img.blobId, src: img.thumbBlobId ?? img.blobId }
+  if (r.splat?.thumbAssetId) return { key: sceneKey(r.splat.thumbAssetId), src: sceneKey(r.splat.thumbAssetId) }
+  return null
+}
+
+/** Centre weight of a picture's pixel: a scene's subject is in the middle, its backdrop at the edge. */
+const centreWeight = (i: number, g: number) => {
+  const x = ((i % g) + 0.5) / g - 0.5
+  const y = (Math.floor(i / g) + 0.5) / g - 0.5
+  return Math.exp(-(x * x + y * y) / (2 * 0.2 * 0.2))
+}
+
+/** A pixel of a g×g picture, near its centre (Gaussian, σ = 0.2 of its width). */
+function centredPixel(r: () => number, g: number): number {
+  const at = (v: number) => Math.min(g - 1, Math.max(0, Math.floor((0.5 + 0.2 * v) * g)))
+  return at(gauss(r)) + at(gauss(r)) * g
+}
+
+/** Centre-weighted mean colour of a picture, brightened a little (what a scene stains the land with). */
+export function meanColour(pic: Float32Array): [number, number, number] {
+  const out = [0, 0, 0]
+  const n = pic.length / 3
+  const g = Math.round(Math.sqrt(n))
+  let wsum = 0
+  for (let i = 0; i < n; i++) {
+    const w = centreWeight(i, g)
+    wsum += w
+    for (let c = 0; c < 3; c++) out[c] += pic[i * 3 + c] * w
+  }
+  const m = out.map((v) => v / Math.max(1e-9, wsum))
+  const peak = Math.max(m[0], m[1], m[2], 1e-3)
+  const k = Math.min(1.2, 0.3 / peak)
+  return [m[0] * k, m[1] * k, m[2] * k]
+}
 
 registerDevApi('fieldMedia', () => ({
   pictures: [...pictures].map(([id, p]) => ({ id, loaded: !!p })),
   videos: fieldMediaStatus(),
 }))
 
-async function loadPicture(blobId: string): Promise<Float32Array | null> {
+/** Key of a scene note's picture (its thumbnail) in `pictures`. */
+const sceneKey = (assetId: string) => `scene:${assetId}`
+
+async function loadPicture(key: string): Promise<Float32Array | null> {
   if (!isRepoReady() || typeof createImageBitmap !== 'function' || typeof OffscreenCanvas !== 'function') return null
   try {
-    const blob = await getStore().getBlob(blobId)
+    const blob = key.startsWith('scene:') ? new Blob([(await loadSplatBytes(key.slice(6))) as Uint8Array<ArrayBuffer>]) : await getStore().getBlob(key)
     if (!blob) return null
     const bmp = await createImageBitmap(blob)
     const g = IMAGE_GRID
@@ -397,6 +463,8 @@ export function FieldLayer() {
           uPixel: common.uPixel,
           uRipples: { value: Array.from({ length: MAX_RIPPLES }, () => [0, 0, 0, 0]).flat() },
           uRippleSpeed: { value: 70 },
+          uScenes: { value: new Array<number>(MAX_SCENES * 4).fill(0) },
+          uSceneLand: { value: new Array<number>(MAX_SCENES * 4).fill(0) },
         },
         transparent: false,
         depthWrite: true,
@@ -455,11 +523,11 @@ export function FieldLayer() {
   useEffect(() => {
     let live = true
     for (const r of nodes.values()) {
-      const img = r.attachments.find((a) => a.kind === 'image')
-      if (!img || pictures.has(img.blobId)) continue
-      pictures.set(img.blobId, null)
-      void loadPicture(img.thumbBlobId ?? img.blobId).then((pic) => {
-        pictures.set(img.blobId, pic)
+      const pk = pictureKey(r)
+      if (!pk || pictures.has(pk.key)) continue
+      pictures.set(pk.key, null)
+      void loadPicture(pk.src).then((pic) => {
+        pictures.set(pk.key, pic)
         if (live && pic) setPictureVersion((v) => v + 1)
       })
     }
@@ -489,8 +557,10 @@ export function FieldLayer() {
       const rec = frame.records[i]
       const r = rng(hash(rec.id))
       const base = new Color(ARCHETYPE_COLOR[rec.archetype]).convertSRGBToLinear()
-      const img = rec.attachments.find((a) => a.kind === 'image')
-      const pic = img ? pictures.get(img.blobId) : null
+      const pk = pictureKey(rec)
+      const pic = pk ? pictures.get(pk.key) : null
+      // A scene's cloud is the scene unresolved: nearly all its grains take its colours.
+      const share = rec.splat && !budgets[i].image ? 0.9 : 0.6
       const count = Math.round(budgets[i].cloud * scale)
       for (let c = 0; c < count; c++, k++) {
         aNote[k] = i
@@ -498,8 +568,8 @@ export function FieldLayer() {
         aOff[k * 3] = gauss(r)
         aOff[k * 3 + 1] = gauss(r) * 0.65
         aOff[k * 3 + 2] = gauss(r)
-        if (pic && r() < 0.6) {
-          const p = Math.floor(r() * IMAGE_GRID * IMAGE_GRID) * 3
+        if (pic && r() < share) {
+          const p = (rec.splat ? centredPixel(r, IMAGE_GRID) : Math.floor(r() * IMAGE_GRID * IMAGE_GRID)) * 3
           col.setRGB(pic[p], pic[p + 1], pic[p + 2])
         } else {
           col.copy(base).multiplyScalar(0.7 + 0.5 * r())
@@ -584,6 +654,15 @@ export function FieldLayer() {
     [clouds, cards, currents],
   )
 
+  // Dev: __wv.fieldLayers({ land: false, clouds: false, … }) hides layers to see what is where.
+  useEffect(() => {
+    const layers = { land, detail, clouds, cards, currents }
+    registerDevApi('fieldLayers', (want: Partial<Record<keyof typeof layers, boolean>> = {}) => {
+      for (const [k, v] of Object.entries(want)) if (k in layers) layers[k as keyof typeof layers].visible = v
+      return Object.fromEntries(Object.entries(layers).map(([k, p]) => [k, p.visible]))
+    })
+  }, [land, detail, clouds, cards, currents])
+
   const seen = useRef({ version: -1, structure: -1 })
   // What is on screen eases toward what time says (attention re-condensing, a sudden scrub),
   // without changing what time says: the runtime's frame stays a pure function of the playhead.
@@ -639,6 +718,25 @@ export function FieldLayer() {
     ;(landMat.uniforms.uPatch.value as number[])[3] = 1 - 0.5 * near
     detailMat.uniforms.uPatchFade.value = Math.min(0.999, near)
     detail.visible = near > 0.01
+
+    // Scenes on the land: the nearest few level, clear and stain it (sceneFootprint).
+    const sc = landMat.uniforms.uScenes.value as number[]
+    const sl = landMat.uniforms.uSceneLand.value as number[]
+    sc.fill(0)
+    const feet: { fp: SceneFootprint; i: number; d: number }[] = []
+    for (let i = 0; i < frame.ids.length; i++) {
+      if (!frame.records[i].splat || !frame.born[i]) continue
+      const fp = sceneFootprint(frame, i, cam.position)
+      feet.push({ fp, i, d: Math.hypot(fp.x - cam.position.x, fp.z - cam.position.z) })
+    }
+    feet.sort((a, b) => a.d - b.d)
+    feet.slice(0, MAX_SCENES).forEach(({ fp, i }, k) => {
+      const pk = pictureKey(frame.records[i])
+      const pic = pk ? pictures.get(pk.key) : null
+      const c = pic ? meanColour(pic) : TINT_RGB.memory
+      sc.splice(k * 4, 4, fp.x, fp.z, fp.radius, fp.presence)
+      sl.splice(k * 4, 4, c[0], c[1], c[2], fp.ground)
+    })
 
     // Clouds: ease sigma, order and highlight toward their targets.
     const n = frame.ids.length

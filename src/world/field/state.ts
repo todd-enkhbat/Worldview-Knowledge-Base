@@ -208,3 +208,29 @@ export function fieldEntropy(sigma: ArrayLike<number>, born: ArrayLike<number>):
 
 /** How far the land lifts a note's cloud above its bump. */
 export const lift = (state: NoteState, mass: number) => 2.5 + mass + state.sigma * 0.9
+
+// ─── scenes on the land ──────────────────────────────────────────────────────────────
+
+/** A scene's radius on the land (world units), at full condensation. */
+export const SCENE_RADIUS = 9
+
+/**
+ * Where a scene note stands: its shell radius (a new scene is readable at once; condensation
+ * only firms it up) and its clearing, the land under it raised toward the hills around it
+ * (sampled on a ring past its rim) so it stands among its neighbours instead of in a hollow
+ * they hide. The land shader levels the ground to this height around the scene.
+ */
+export function sceneStand(hf: Heightfield, x: number, z: number, condense: number): { radius: number; ground: number } {
+  const radius = SCENE_RADIUS * (0.7 + 0.3 * condense)
+  let ring = 0
+  for (let k = 0; k < 8; k++) {
+    const a = (k / 8) * Math.PI * 2
+    ring = Math.max(ring, sampleHeight(hf, x + Math.cos(a) * radius * 1.8, z + Math.sin(a) * radius * 1.8))
+  }
+  return { radius, ground: Math.max(sampleHeight(hf, x, z), 0.8 * ring) }
+}
+
+/** A scene note's cloud centre height: inside its scene, so the cloud is the scene unresolved. */
+export const sceneCentreY = (stand: { radius: number; ground: number }) => stand.ground + stand.radius * 0.5
+/** A scene note's cloud spread: about its scene, however young the note. */
+export const sceneSigma = (sigma: number, radius: number) => Math.min(sigma, radius * 0.6)

@@ -7,11 +7,12 @@ import { KIND_PRECEDENCE, LINK_STYLE, buildTypedLinks } from '../world/links/sty
 
 const KEY = 'hyperspace.linkLegend'
 
+/** Folded unless you opened it: the key is there when you want it, not in the way. */
 function readOpen(): boolean {
   try {
-    return globalThis.localStorage?.getItem(KEY) !== 'closed'
+    return globalThis.localStorage?.getItem(KEY) === 'open'
   } catch {
-    return true
+    return false
   }
 }
 
@@ -52,7 +53,7 @@ export function LinkLegend() {
   }
   if (nodes.size === 0) return null
   return (
-    <div data-label-avoid className="hud-panel pointer-events-auto absolute bottom-3 left-3 z-10 px-2 py-1.5">
+    <div data-label-avoid className="hud-panel pointer-events-auto absolute bottom-3 right-3 z-10 px-2 py-1.5">
       <button type="button" className="hud-label flex w-full items-center justify-between gap-3" aria-expanded={open} onClick={toggle}>
         <span>Links</span>
         <span aria-hidden="true">{open ? '−' : '+'}</span>

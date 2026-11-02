@@ -5,7 +5,7 @@ import { registerDevApi } from '../../app/devApi.ts'
 import { markOnce } from '../../app/timings.ts'
 import { computeFieldLayout, layoutBounds, type XZ } from './layout.ts'
 import { attentionVersion, ensureAttention, lastTouch } from './attention.ts'
-import { activeRipples, buildHeightfield, landResolution, lift, noteState, sampleHeight, type Heightfield, type NoteState, type Ripple } from './state.ts'
+import { activeRipples, buildHeightfield, landResolution, lift, noteState, sampleHeight, sceneCentreY, sceneSigma, sceneStand, type Heightfield, type NoteState, type Ripple } from './state.ts'
 
 // The field's per-frame state (milestone 2), outside React. It owns the layout (recomputed
 // when the records change, warm-started), evaluates every note at the playhead, builds the
@@ -147,10 +147,12 @@ export function updateField(nodes: ReadonlyMap<string, NodeRecord>, _settings: W
   for (let i = 0; i < n; i++) {
     const s = states[i]
     const [x, z] = frame.layout.get(frame.ids[i])!
+    // A scene note's cloud sits in its scene (FieldMedia stands the scene on the same clearing).
+    const stand = frame.records[i].splat?.proxyAssetId ? sceneStand(hf, x, z, s.condense) : null
     frame.centers[i * 3] = x
-    frame.centers[i * 3 + 1] = sampleHeight(hf, x, z) + lift(s, frame.records[i].thermo?.mass ?? 1)
+    frame.centers[i * 3 + 1] = stand ? sceneCentreY(stand) : sampleHeight(hf, x, z) + lift(s, frame.records[i].thermo?.mass ?? 1)
     frame.centers[i * 3 + 2] = z
-    frame.sigma[i] = s.sigma
+    frame.sigma[i] = stand ? sceneSigma(s.sigma, stand.radius) : s.sigma
     frame.amp[i] = s.amp
     frame.width[i] = s.width
     frame.order[i] = s.order

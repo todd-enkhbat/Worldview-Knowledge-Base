@@ -727,3 +727,32 @@ Fixes:
   - The original is attached, and the whole thing is one undo.
 - Verified on your world (read-only tab): Lion, Tomatoes and Apartment show their scenes; clicking Tomatoes opens it.
 - Verified in the sandbox: a kept PNG showed as a picture peek next to the sandbox's video peek.
+
+### Milestone 2g: calm from afar, scenes standing in the field (2026-11-02)
+Feedback: every name plate showed from afar, crowding the view. The 3D scenes weren't part of the world.
+
+**Labels by distance** (`fieldLabelLevel`, `pickLandmarks` in `declutter.ts`; field only):
+- A note shows its name within 80 u (+12 u per link, up to 5), and its picture within 60 u.
+- From anywhere, only these show: up to 3 landmarks (the best-connected notes with ≥ 2 links), and anything selected, hovered, linked to the selection or in the focused year.
+- Near (< 85 u), a scene's label is its name alone, because the scene is there to see.
+- The link legend is folded by default and moved bottom-right. It was covering the Nearby card.
+
+**Scenes in the field:**
+1. **Why they didn't fit:**
+   - Scenes sat in a glass-case cube, so they had hard box edges.
+   - A depth box cut a rectangle into the fog.
+   - They were sized by condensation: two-week-old scenes were 1.7 u wide.
+   - The note's centre floated ~11 u above the scene, so Fly to framed empty air.
+   - One scene (Apartment) sat in a hollow hidden by its neighbours' hills.
+2. **Fixes:**
+   - **Soft round rim:** an inverted, upright Spark CYLINDER edit with a soft edge (`RIM` = 0.72 / 0.5 of the footprint) dissolves each scene into the grains. Uncropped scenes are also clipped to their measured bounds. The glass impostor is off in the field.
+   - **Size and presence:** `sceneStand` gives radius 9 × (0.7 + 0.3·condense), so a new scene is readable at once. Presence (opacity) eases in with distance (45–150 u).
+   - **Clearing:** `sceneStand` levels the land to the land under the scene, raised toward the hills on a ring past its rim, so the scene stands among its neighbours. The note's cloud is centred in the scene, with spread ≤ 0.6 × radius. From afar the cloud *is* the scene, in the thumbnail's colours (centre-weighted). Near, the cloud clears completely.
+   - **Land:** levels out under the scene, runs on unbroken beneath it (flat, no swell), and takes the scene's centre-weighted colour around it.
+   - **Fog:** a depth-only disc sits just under the ground (0.75 × radius, near only). Without it, fog took the scene for sky through the gaps between grains and darkened it. A sunk or thinned land under the scene read as a pit, so the land stays.
+3. **Dev hooks:**
+   - `__wv.fieldScenes()`: each scene's footprint, shape, opacity and rim.
+   - `__wv.sceneRim(r, soft)`: tune the rim live.
+   - `__wv.fieldLayers({land, clouds, …})`: hide layers.
+
+`npm run check`: 89 files, 668 tests.

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { NodeRecord } from '../../src/domain/types.ts'
-import { activeRipples, buildHeightfield, noteState, sampleHeight, YEAR } from '../../src/world/field/state.ts'
+import { activeRipples, buildHeightfield, noteState, sampleHeight, SCENE_RADIUS, sceneCentreY, sceneSigma, sceneStand, YEAR } from '../../src/world/field/state.ts'
 
 const T = Date.UTC(2020, 0, 1)
 const rec = (t = T, mass = 1) => ({ id: 'a', temporalOrigin: t, thermo: { mass, temperature: 0.3 } }) as unknown as NodeRecord
@@ -59,5 +59,49 @@ describe('field entropy', () => {
     const tight = fieldEntropy([1, 1], [1, 1])!
     const spread = fieldEntropy([2, 1], [1, 1])!
     expect(spread - tight).toBeCloseTo(3 * Math.log(2), 10)
+  })
+})
+
+describe('scenes on the land', () => {
+  const flat = (h: number, bump?: { x: number; z: number; h: number; r: number }) => {
+    const res = 64
+    const hf = { res, x0: -50, z0: -50, size: 100, h: new Float32Array(res * res) }
+    for (let j = 0; j < res; j++)
+      for (let i = 0; i < res; i++) {
+        const x = -50 + (i / (res - 1)) * 100
+        const z = -50 + (j / (res - 1)) * 100
+        hf.h[j * res + i] = h + (bump && Math.hypot(x - bump.x, z - bump.z) < bump.r ? bump.h : 0)
+      }
+    return hf
+  }
+
+  it('makes a new scene readable at once and firms it up as it condenses', () => {
+    const young = sceneStand(flat(2), 0, 0, 0)
+    const old = sceneStand(flat(2), 0, 0, 1)
+    expect(young.radius).toBeGreaterThanOrEqual(0.7 * SCENE_RADIUS)
+    expect(old.radius).toBe(SCENE_RADIUS)
+    expect(young.ground).toBeCloseTo(2, 5)
+  })
+
+  it('raises a scene in a hollow toward the hills around it', () => {
+    // A ring of hills 12 high just past the scene's rim; the scene itself sits low.
+    const hf = flat(1)
+    const res = hf.res
+    for (let j = 0; j < res; j++)
+      for (let i = 0; i < res; i++) {
+        const d = Math.hypot(-50 + (i / (res - 1)) * 100, -50 + (j / (res - 1)) * 100)
+        if (d > 13 && d < 24) hf.h[j * res + i] = 12
+      }
+    const stand = sceneStand(hf, 0, 0, 1)
+    expect(sampleHeight(hf, 0, 0)).toBeCloseTo(1, 5)
+    expect(stand.ground).toBeGreaterThan(8)
+  })
+
+  it('puts a scene note’s cloud inside its scene, about its size', () => {
+    const stand = { radius: 9, ground: 3 }
+    expect(sceneCentreY(stand)).toBeGreaterThan(3)
+    expect(sceneCentreY(stand)).toBeLessThan(3 + 9)
+    expect(sceneSigma(40, 9)).toBeLessThanOrEqual(9)
+    expect(sceneSigma(2, 9)).toBe(2)
   })
 })

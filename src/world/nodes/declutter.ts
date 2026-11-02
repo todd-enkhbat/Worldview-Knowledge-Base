@@ -137,3 +137,41 @@ export function labelSize(title: string, tag: string): { w: number; h: number } 
   const gw = tag.length * 10 * 0.72
   return { w: Math.ceil(Math.max(tw, gw)) + 12, h: 34 }
 }
+
+// ─── the field: names appear as you come near ────────────────────────────────────────
+
+/** Within this distance (world units) a note shows its name; hubs a little farther. */
+export const LABEL_NEAR = 80
+/** Within this distance a note with a picture, video or scene shows it in its label. */
+export const PEEK_NEAR = 60
+/** Within this distance a scene stands visibly in the field, so its label is its name alone. */
+export const SCENE_SHOWN = 85
+/** Hubs named from anywhere, so a far view still has a few landmarks. */
+export const LANDMARKS = 3
+
+export type LabelLevel = 'none' | 'title' | 'peek'
+
+/**
+ * How much of a note's label the field shows. Selected, hovered, linked and in-focus-year
+ * notes are pinned (shown in full); landmarks show their name from anywhere; the rest appear
+ * as you approach, the picture last.
+ */
+export function fieldLabelLevel(p: { distance: number; degree: number; pinned: boolean; landmark: boolean; scene?: boolean }): LabelLevel {
+  // Near, a scene is there to see: a picture of it over it would only cover it.
+  if (p.scene && p.distance < SCENE_SHOWN) return p.pinned || p.distance < LABEL_NEAR + 12 * Math.min(p.degree, 5) || p.landmark ? 'title' : 'none'
+  if (p.pinned) return 'peek'
+  if (p.distance < PEEK_NEAR) return 'peek'
+  if (p.distance < LABEL_NEAR + 12 * Math.min(p.degree, 5) || p.landmark) return 'title'
+  return 'none'
+}
+
+/** The best-connected notes (at least two links each), most first, ties by id. */
+export function pickLandmarks(degrees: ReadonlyMap<string, number>, n = LANDMARKS): Set<string> {
+  return new Set(
+    [...degrees]
+      .filter(([, d]) => d >= 2)
+      .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))
+      .slice(0, n)
+      .map(([id]) => id),
+  )
+}
