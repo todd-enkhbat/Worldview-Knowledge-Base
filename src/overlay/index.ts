@@ -3,7 +3,9 @@ import { useWorld } from '../app/store.ts'
 import { getStore, isRepoReady, logEvent, subscribeRepo, useRepoStatus } from '../data/repo.ts'
 import type { InteractionEvent, NodeRecord, WorldSettings } from '../domain/types.ts'
 import { applyLedgerEvent, createLedger, foldLedger, isActiveDemon, kTEff, landauerCost, landauerJoules, matchDemon, planDemons, sortable } from './demon.ts'
-import type { DemonLedger, DemonLedgerEntry, DemonMatch, DemonPlan } from './demon.ts'
+import type { DemonLedger, DemonLedgerEntry, DemonMatch, DemonPlan, SemanticMatcher } from './demon.ts'
+import { embedTexts, isSemanticReady, useSemantic, vectorOf } from '../ai/semanticIndex.ts'
+import { queryText } from '../ai/embedText.ts'
 import { buildIndex } from './bm25.ts'
 import { EMPTY_PLAN, anchorOfFor, computeFields } from './fields.ts'
 import type { OverlayFields } from './fields.ts'
@@ -220,14 +222,47 @@ export function resetOverlays(): void {
 
 // ─── fields (per frame, cached) ──────────────────────────────────────────────────────
 
-let planCache: { nodes: ReadonlyMap<string, NodeRecord>; settings: WorldSettings | null; plan: DemonPlan } | null = null
+let planCache: { nodes: ReadonlyMap<string, NodeRecord>; settings: WorldSettings | null; semantic: number; plan: DemonPlan } | null = null
 
-/** The demon plan for the current records (recomputed only when records or settings change). */
+// ─── semantic matching ───────────────────────────────────────────────────────────────
+// Demon queries are embedded once each (async); until a query's vector arrives, its demon
+// matches by BM25 alone. Every arrival, and the index turning on or off, bumps semVersion
+// so the plan is recomputed.
+
+const queryVectors = new Map<string, Float32Array>()
+const embedding = new Set<string>()
+let semVersion = 0
+useSemantic.subscribe((s, p) => {
+  if ((s.phase === 'ready') !== (p.phase === 'ready') || s.indexed !== p.indexed) semVersion++
+})
+
+function semanticMatcher(nodes: ReadonlyMap<string, NodeRecord>): SemanticMatcher | undefined {
+  if (!isSemanticReady()) return undefined
+  const missing: string[] = []
+  for (const n of nodes.values()) {
+    const q = isActiveDemon(n) ? n.demon!.query.trim() : ''
+    if (q && !queryVectors.has(q) && !embedding.has(q)) missing.push(q)
+  }
+  if (missing.length) {
+    for (const q of missing) embedding.add(q)
+    void embedTexts(missing.map(queryText))
+      .then((vs) => {
+        missing.forEach((q, i) => queryVectors.set(q, vs[i]))
+        semVersion++
+      })
+      .catch((e: unknown) => console.warn('[overlay] demon query embedding', e))
+      .finally(() => missing.forEach((q) => embedding.delete(q)))
+  }
+  return { query: (q) => queryVectors.get(q), vector: vectorOf }
+}
+
+/** The demon plan for the current records (recomputed when records, settings or embeddings change). */
 export function getDemonPlan(): DemonPlan {
   const { nodes, settings } = useWorld.getState()
-  if (planCache && planCache.nodes === nodes && planCache.settings === settings) return planCache.plan
-  const plan = settings ? planDemons(nodes.values(), anchorOfFor(settings)) : EMPTY_PLAN
-  planCache = { nodes, settings, plan }
+  if (planCache && planCache.nodes === nodes && planCache.settings === settings && planCache.semantic === semVersion) return planCache.plan
+  const semantic = semVersion
+  const plan = settings ? planDemons(nodes.values(), anchorOfFor(settings), semanticMatcher(nodes)) : EMPTY_PLAN
+  planCache = { nodes, settings, semantic, plan }
   return plan
 }
 
@@ -255,7 +290,7 @@ export function previewDemon(demonId: string): DemonMatch | null {
   const demon = nodes.get(demonId)
   if (!demon || !settings || !isActiveDemon(demon)) return null
   const population = sortable(nodes.values())
-  return matchDemon(demon, population, buildIndex(population), anchorOfFor(settings))
+  return matchDemon(demon, population, buildIndex(population), anchorOfFor(settings), semanticMatcher(nodes))
 }
 
 /**

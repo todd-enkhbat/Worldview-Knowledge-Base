@@ -171,3 +171,43 @@ describe('Landauer ledger', () => {
     expect(d.demon!.radius).toBeGreaterThan(0)
   })
 })
+
+describe('semantic demon matching', () => {
+  const unit = (...v: number[]) => {
+    const n = Math.hypot(...v)
+    return Float32Array.from(v.map((x) => x / n))
+  }
+  const vectors = new Map<string, Float32Array>([
+    ['entropy', unit(1, 0, 0)],
+    ['arrow', unit(0.9, 0.3, 0)], // cos ≈ 0.95: about the same thing in other words
+    ['gibbs', unit(0.5, 0.86, 0)], // cos ≈ 0.5: weakly related
+    ['cooking', unit(0, 0, 1)], // cos 0
+  ])
+  const matcher = { query: (q: string) => vectors.get(q), vector: (id: string) => vectors.get(id) }
+
+  it('finds notes by meaning that share no words with the query, best first', () => {
+    const d = demon('d', 'entropy', [0, 0])
+    const notes = [
+      rec('arrow', { title: 'Why time only runs forward', anchorXZ: [1, 0] }),
+      rec('gibbs', { title: 'Free energy', anchorXZ: [0, 1] }),
+      rec('cooking', { title: 'Sourdough', anchorXZ: [1, 1] }),
+    ]
+    expect(planDemons([d, ...notes], anchorOf).matches.get('d')!.hits).toEqual([])
+    const m = planDemons([d, ...notes], anchorOf, matcher).matches.get('d')!
+    expect(m.hits.map((h) => h.id)).toEqual(['arrow', 'gibbs'])
+    expect(m.bitsPerMatch).toBeCloseTo(Math.log2(3 / 2))
+  })
+
+  it('keeps keyword hits and lifts the ones that also mean the query', () => {
+    const d = demon('d', 'entropy', [0, 0])
+    const notes = [rec('cooking', { title: 'Entropy in the kitchen', anchorXZ: [1, 0] }), rec('arrow', { title: 'Entropy and time', anchorXZ: [0, 1] })]
+    const hits = planDemons([d, ...notes], anchorOf, matcher).matches.get('d')!.hits
+    expect(hits.map((h) => h.id)).toEqual(['arrow', 'cooking'])
+  })
+
+  it('falls back to keywords while the query is not embedded yet', () => {
+    const d = demon('d', 'unembedded', [0, 0])
+    const n = rec('arrow', { title: 'unembedded words', anchorXZ: [1, 0] })
+    expect(planDemons([d, n], anchorOf, matcher).matches.get('d')!.hits.map((h) => h.id)).toEqual(['arrow'])
+  })
+})

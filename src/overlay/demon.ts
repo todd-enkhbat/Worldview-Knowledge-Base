@@ -3,6 +3,10 @@ import { buildIndex, search } from './bm25.ts'
 import type { Bm25Index, Hit } from './bm25.ts'
 
 // Maxwell's demons: standing BM25-lite queries that sort matching nodes onto a lattice.
+// With the semantic engine on, matching is hybrid: a node also matches when its embedding is
+// close to the query's (cosine ≥ SEMANTIC.MIN_COS), so a demon for "entropy" finds a note on
+// the arrow of time that never uses the word. Hybrid scores are a node's BM25 score over the
+// demon's best, plus SEMANTIC.WEIGHT × how far its cosine clears the threshold.
 //
 // Matching. A demon's candidates are the live, non-demon nodes whose ANCHOR (anchorXZ, Y of
 // temporalOrigin) lies within `radius` of the demon's anchor (3D). Anchors, not live poses,
@@ -34,6 +38,44 @@ export const DEMON = {
   /** Lattice pitch (world units), just over σ so sorted nodes do not overlap. */
   SPACING: 4,
 } as const
+
+export const SEMANTIC = {
+  /** Cosine (query vs note embedding) at which a note matches by meaning alone. */
+  MIN_COS: 0.45,
+  /** Weight of the semantic part of a hybrid score, against BM25 normalised to 1. */
+  WEIGHT: 2,
+} as const
+
+/** Embeddings for hybrid matching: unit vectors, so a dot product is the cosine. */
+export interface SemanticMatcher {
+  /** The query's vector, or undefined while it is not embedded yet (then BM25 alone). */
+  query(text: string): Float32Array | undefined
+  vector(id: string): Float32Array | undefined
+}
+
+const dot = (a: Float32Array, b: Float32Array) => {
+  let s = 0
+  for (let i = 0; i < a.length; i++) s += a[i] * b[i]
+  return s
+}
+
+/** BM25 hits merged with semantic ones (see the header). Pure; ties by id. */
+export function hybridHits(bm25: readonly Hit[], cands: readonly string[], q: Float32Array, vector: (id: string) => Float32Array | undefined): Hit[] {
+  const top = bm25.reduce((m, h) => Math.max(m, h.score), 0) || 1
+  const score = new Map<string, number>()
+  for (const h of bm25) score.set(h.id, h.score / top)
+  for (const id of cands) {
+    const v = vector(id)
+    if (!v || v.length !== q.length) continue
+    const c = dot(q, v)
+    if (c < SEMANTIC.MIN_COS) continue
+    score.set(id, (score.get(id) ?? 0) + (SEMANTIC.WEIGHT * (c - SEMANTIC.MIN_COS)) / (1 - SEMANTIC.MIN_COS))
+  }
+  return [...score]
+    .map(([id, s]) => ({ id, score: s }))
+    .filter((h) => h.score > 0)
+    .sort((a, b) => b.score - a.score || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+}
 
 export const LN2 = Math.LN2
 /** Boltzmann constant, J/K (exact SI). */
@@ -102,9 +144,11 @@ export function demonCandidates(demon: NodeRecord, population: readonly NodeReco
   return out
 }
 
-export function matchDemon(demon: NodeRecord, population: readonly NodeRecord[], index: Bm25Index, anchorOf: AnchorOf): DemonMatch {
+export function matchDemon(demon: NodeRecord, population: readonly NodeRecord[], index: Bm25Index, anchorOf: AnchorOf, semantic?: SemanticMatcher): DemonMatch {
   const cands = demonCandidates(demon, population, anchorOf)
-  const hits = demon.demon ? search(index, demon.demon.query, cands) : []
+  const bm25 = demon.demon ? search(index, demon.demon.query, cands) : []
+  const q = demon.demon && semantic?.query(demon.demon.query.trim())
+  const hits = q && semantic ? hybridHits(bm25, cands, q, (id) => semantic.vector(id)) : bm25
   return { demonId: demon.id, candidates: cands.length, hits, bitsPerMatch: matchBits(cands.length, hits.length) }
 }
 
@@ -142,7 +186,7 @@ export function latticeSlot(k: number, spacing: number = DEMON.SPACING): [number
 }
 
 /** Plan every active demon over the current records. */
-export function planDemons(nodes: Iterable<NodeRecord>, anchorOf: AnchorOf): DemonPlan {
+export function planDemons(nodes: Iterable<NodeRecord>, anchorOf: AnchorOf, semantic?: SemanticMatcher): DemonPlan {
   const all = [...nodes]
   const demons = all.filter(isActiveDemon).sort((a, b) => (a.id < b.id ? -1 : 1))
   const matches = new Map<string, DemonMatch>()
@@ -152,7 +196,7 @@ export function planDemons(nodes: Iterable<NodeRecord>, anchorOf: AnchorOf): Dem
   const index = buildIndex(population)
   const best = new Map<string, { demonId: string; score: number }>()
   for (const d of demons) {
-    const m = matchDemon(d, population, index, anchorOf)
+    const m = matchDemon(d, population, index, anchorOf, semantic)
     matches.set(d.id, m)
     for (const h of m.hits) {
       const prev = best.get(h.id)
