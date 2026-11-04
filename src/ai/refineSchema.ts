@@ -46,7 +46,7 @@ export const RefineOutput = z.object({
 export type RefineOutput = z.infer<typeof RefineOutput>
 
 export type RefineResult =
-  | { ok: true; output: RefineOutput; model: string }
+  | { ok: true; output: RefineOutput; model: string; usage?: { input: number; output: number; cacheRead: number; cacheWrite: number } }
   | { ok: false; reason: 'refusal' | 'invalid' | 'truncated' | 'error' | 'unavailable'; message?: string }
 
 const nullable = (s: object) => ({ anyOf: [s, { type: 'null' }] })

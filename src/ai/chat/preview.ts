@@ -1,4 +1,5 @@
 import { strFromU8, unzipSync } from 'fflate'
+import { isSqlite, sqlitePreview } from './sqliteReader.ts'
 
 // Readable previews of files Claude cannot take directly (milestone 1, "anything in the
 // world"). The original is always kept byte for byte; the preview is what Claude reads to
@@ -202,7 +203,7 @@ export const extOf = (name: string) => /\.([^./]+)$/.exec(name)?.[1]?.toLowerCas
 
 /**
  * A text preview for a file Claude cannot read natively, from its bytes. Returns null for
- * formats with no reader here (video, audio, databases, unknown binaries): the caller then
+ * formats with no reader here (video, audio, unknown binaries): the caller then
  * describes the file by name, type and size and Claude asks the user about it.
  */
 export function previewBytes(name: string, mime: string, bytes: Uint8Array): string | null {
@@ -214,5 +215,6 @@ export function previewBytes(name: string, mime: string, bytes: Uint8Array): str
   if (ext === 'ics' || mime === 'text/calendar') return icsPreview(text())
   if (ext === 'docx' || ext === 'pptx' || ext === 'xlsx') return officePreview(bytes, ext)
   if (ext === 'zip' || mime === 'application/zip') return zipPreview(bytes)
+  if (isSqlite(bytes)) return sqlitePreview(bytes)
   return null
 }

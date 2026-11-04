@@ -209,6 +209,23 @@ describe('archive round trip', () => {
     expect(await target.getKv('autoBackupDir')).toEqual({ device: 'target handle' })
   })
 
+  it('carries the chat conversation and other world kv, but never device kv or scratch', async () => {
+    const source = createMemoryStore()
+    await seedWorld(source)
+    await source.putKv('chat.v1', { messages: [{ role: 'user', content: 'hello' }] })
+    await source.putKv('autoBackupDir', { device: 'source handle' })
+    await source.putKv('checkpoint:1', { scratch: true })
+    const files = unzipSync(await exportBytes(source))
+    expect(JSON.parse(strFromU8(files['kv.json']))).toEqual({ 'chat.v1': { messages: [{ role: 'user', content: 'hello' }] } })
+
+    const target = createMemoryStore()
+    await target.putKv('chat.v1', { messages: [] })
+    await importArchive(target, new Blob([zipSync(files) as Uint8Array<ArrayBuffer>]), { backup: memoryBackup(), now: NOW })
+    expect(await target.getKv('chat.v1')).toEqual({ messages: [{ role: 'user', content: 'hello' }] })
+    expect(await target.getKv('autoBackupDir')).toBeUndefined()
+    expect(await target.getKv('checkpoint:1')).toBeUndefined()
+  })
+
   it('streams a 64 MB asset without any buffer over 8 MB in the exporter', async () => {
     const SIZE = 64 * 1024 * 1024
     const big = withZipSignatures(pseudoRandomBytes(SIZE, 99))

@@ -10,6 +10,7 @@ import { semanticAnchorHint } from './layout.ts'
 import { parseProvisional } from './provisional.ts'
 import type { RefineInput, RefineOutput, RefineResult } from './refineSchema.ts'
 import { embedTexts, isSemanticReady, nearest, type Neighbour } from './semanticIndex.ts'
+import { recordUsage } from './usage.ts'
 
 // The omnibox (PLAN Phase 4): type a line, and
 //   1. a provisional node spawns at once (heuristics; semantic placement when the index is
@@ -120,6 +121,8 @@ async function refine(record: NodeRecord, text: string, neighbours: Neighbour[] 
   } catch (e) {
     result = { ok: false, reason: 'unavailable', message: e instanceof Error ? e.message : String(e) }
   }
+
+  if (result.ok && result.usage) void recordUsage(result.model, result.usage)
 
   // The user may have deleted or edited the node meanwhile: only touch it if it is still ours.
   const current = useWorld.getState().nodes.get(record.id)

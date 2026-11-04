@@ -219,4 +219,19 @@ describe('chat session', () => {
   it('makes no proposal from an item with nothing to keep', () => {
     expect(stagedProposal({ name: 'x', kind: 'text', bytes: 0, blocks: [] }, 'k')).toBeNull()
   })
+
+  it('keeps what a file says as the body, but not the lines meant for Claude', () => {
+    const file = new File(['a,b'], 'table.csv')
+    const csv = stagedProposal(
+      { name: 'table.csv', kind: 'file', bytes: 3, file, blocks: [{ type: 'text', text: '<file name="table.csv" type="text/csv" size="3 B" original="kept">\n2 rows · a (text)\n</file>' }] },
+      'k',
+    )!
+    expect(csv.body).toBe('2 rows · a (text)')
+    const clip = new File(['x'], 'clip.mp4', { type: 'video/mp4' })
+    const video = stagedProposal(
+      { name: 'clip.mp4', kind: 'file', bytes: 1, file: clip, blocks: [{ type: 'text', text: '<file name="clip.mp4">\nA video of 0:03. You cannot watch the rest: ask what it is.\n</file>' }] },
+      'k',
+    )!
+    expect(video.body).toBe('')
+  })
 })

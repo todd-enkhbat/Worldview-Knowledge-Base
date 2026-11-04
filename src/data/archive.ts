@@ -13,6 +13,8 @@ import { backupsAvailable, pruneBackups, readBackup, writeBackup } from './opfs.
 //   events.jsonl    the interaction log
 //   assets/<id>     raw blob bytes (id percent-encoded)
 //   assets.json     AssetMeta[] for the entries above
+//   kv.json         world state kept in kv (the chat conversation, the Landauer ledger);
+//                   optional, so older archives import as they are
 //
 // Export pipes each blob's stream() through fflate's Zip + ZipPassThrough into a sink, chunk
 // by chunk, so the archive never exists as one buffer (on Chrome it goes straight to disk via
@@ -38,6 +40,8 @@ export const ZIP32_MAX_ENTRIES = 0xffff
 export const PRE_IMPORT_BACKUPS_KEPT = 3
 /** kv entries that belong to this device, not to the world: kept across an import. */
 export const DEVICE_KV_KEYS: readonly string[] = ['autoBackupDir']
+/** kv entries that belong to the world: exported in kv.json and restored on import. */
+export const WORLD_KV_KEYS: readonly string[] = ['chat.v1', 'overlay.landauerPaid', 'ai.usage']
 /**
  * kv key present while an import is replacing the world (written right after the wipe,
  * removed after the last write). If the tab dies in between, the next start finds it and can
@@ -70,6 +74,7 @@ export const ENTRY_MANIFEST = 'manifest.json'
 export const ENTRY_NODES = 'nodes.jsonl'
 export const ENTRY_EVENTS = 'events.jsonl'
 export const ENTRY_ASSETS = 'assets.json'
+export const ENTRY_KV = 'kv.json'
 export const assetEntryName = (id: string): string => `assets/${encodeURIComponent(id)}`
 
 // Fixed per-entry overhead of a fflate stored entry: local header 30 + descriptor 16 +
@@ -312,11 +317,12 @@ const ZIP_EPOCH = Date.UTC(1980, 0, 2)
  */
 export async function exportArchive(store: WorldStore, sink: ArchiveSink, opts: ExportOptions = {}): Promise<ExportResult> {
   const now = opts.now ?? Date.now()
-  const [settings, nodes, events, metas] = await Promise.all([
+  const [settings, nodes, events, metas, worldKv] = await Promise.all([
     store.getSettings(),
     store.listNodes(),
     store.listEvents(),
     store.listAssets(),
+    readWorldKv(store),
   ])
   const trash = nodes.filter((n) => n.deletedAt !== null).length
   const recordsHash = await hashRecords(nodes)
@@ -324,7 +330,8 @@ export async function exportArchive(store: WorldStore, sink: ArchiveSink, opts: 
   // Size check before writing anything. Text sizes are estimated in UTF-16 units (exact for
   // ASCII) and the manifest by its settings plus a fixed allowance; the running byte count
   // below enforces the hard limit regardless.
-  const names = [ENTRY_MANIFEST, ENTRY_NODES, ENTRY_EVENTS, ENTRY_ASSETS, ...metas.map((m) => assetEntryName(m.id))]
+  const kvText = Object.keys(worldKv).length ? JSON.stringify(worldKv) : null
+  const names = [ENTRY_MANIFEST, ENTRY_NODES, ENTRY_EVENTS, ENTRY_ASSETS, ...(kvText ? [ENTRY_KV] : []), ...metas.map((m) => assetEntryName(m.id))]
   if (names.length > ZIP32_MAX_ENTRIES) {
     throw new ArchiveError('too-large', `Too many assets for one archive (${metas.length}; zip32 allows ${ZIP32_MAX_ENTRIES - 4}).`)
   }
@@ -334,6 +341,7 @@ export async function exportArchive(store: WorldStore, sink: ArchiveSink, opts: 
     events.reduce((s, e) => s + JSON.stringify(e).length + 1, 0) +
     JSON.stringify(metas).length +
     JSON.stringify(settings).length +
+    (kvText?.length ?? 0) +
     1024
   const total = expectedAssetBytes + textEstimate + names.reduce((s, n) => s + entryOverhead(n), 0) + EOCD_BYTES
   if (total > ZIP32_MAX_BYTES) {
@@ -386,6 +394,7 @@ export async function exportArchive(store: WorldStore, sink: ArchiveSink, opts: 
   try {
     await addEntry(ENTRY_NODES, jsonlBatches(nodes))
     await addEntry(ENTRY_EVENTS, jsonlBatches(events))
+    if (kvText) await addEntry(ENTRY_KV, [new TextEncoder().encode(kvText)])
     phase = 'assets'
     for (const meta of metas) {
       const blob = await store.getBlob(meta.id)
@@ -782,11 +791,22 @@ function checkAssetIndex(raw: unknown): AssetMeta[] {
 
 // ─── import ────────────────────────────────────────────────────────────────────────
 
+async function readWorldKv(store: WorldStore): Promise<Record<string, unknown>> {
+  const out: Record<string, unknown> = {}
+  for (const k of WORLD_KV_KEYS) {
+    const v = await store.getKv(k)
+    if (v !== undefined) out[k] = v
+  }
+  return out
+}
+
 export interface ParsedArchive {
   manifest: ArchiveManifest
   nodes: NodeRecord[]
   events: InteractionEvent[]
   assets: AssetMeta[]
+  /** World kv entries (WORLD_KV_KEYS only; anything else in kv.json is ignored). */
+  kv: Record<string, unknown>
   /** Uncompressed bytes of each asset, ready to hand to store.putBlob. */
   assetData(id: string): Promise<Blob>
 }
@@ -857,6 +877,19 @@ export async function readArchive(file: Blob, onProgress?: (p: ArchiveProgress) 
   if (assets.length !== manifest.counts.assets) {
     throw new ArchiveError('corrupt', `The archive should hold ${manifest.counts.assets} assets but has ${assets.length}.`)
   }
+  const kv: Record<string, unknown> = {}
+  const kvEntry = index.entries.get(ENTRY_KV)
+  if (kvEntry) {
+    let raw: unknown
+    try {
+      raw = JSON.parse(await entryText(file, index, kvEntry, MAX_ASSET_INDEX_BYTES))
+    } catch (e) {
+      throw new ArchiveError('corrupt', `${ENTRY_KV} is not valid JSON.`, { cause: e })
+    }
+    if (!isObj(raw)) throw new ArchiveError('corrupt', `${ENTRY_KV} is not an object.`)
+    for (const k of WORLD_KV_KEYS) if (raw[k] !== undefined) kv[k] = raw[k]
+  }
+
   const verify = tick('verify')
   for (const meta of assets) await drainEntry(file, index, need(assetEntryName(meta.id)), verify)
 
@@ -865,6 +898,7 @@ export async function readArchive(file: Blob, onProgress?: (p: ArchiveProgress) 
     nodes,
     events,
     assets,
+    kv,
     async assetData(id) {
       const entry = need(assetEntryName(id))
       if (entry.method === 0) {
@@ -1018,6 +1052,7 @@ async function replaceWorld(store: WorldStore, parsed: ParsedArchive, opts: Impo
     await store.putBlob({ meta, data: await parsed.assetData(meta.id) })
     step(1)
   }
+  for (const [k, v] of Object.entries(parsed.kv)) await store.putKv(k, v)
   for (const [k, v] of kept) if (v !== undefined) await store.putKv(k, v)
   await store.deleteKv(IMPORT_MARKER_KV)
 }

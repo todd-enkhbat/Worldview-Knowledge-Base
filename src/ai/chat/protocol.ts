@@ -148,7 +148,7 @@ export type ChatStreamEvent =
   /** A tool call started (its input streams in; the UI shows "proposing notes…"). */
   | { t: 'tool'; name: string }
   /** The finished assistant turn, to append to the history unchanged. */
-  | { t: 'done'; content: unknown[]; stopReason: string | null; model: string; usage: { input: number; output: number; cacheRead: number } }
+  | { t: 'done'; content: unknown[]; stopReason: string | null; model: string; usage: { input: number; output: number; cacheRead: number; cacheWrite?: number } }
   | { t: 'error'; message: string; reason: 'unavailable' | 'refusal' | 'rate' | 'error' }
 
 export const ChatRequest = z.object({

@@ -23,6 +23,7 @@ import { Credits } from './Credits.tsx'
 import { getEnginePreference, migrateWorld, planMigration, probeEngine, type EngineHealth, type EngineKind, type MigrationPlan } from '../data/engine.ts'
 import { disableSemantic, enableSemantic, useSemantic } from '../ai/semanticIndex.ts'
 import { runRecrystallise } from '../ai/recrystallise.ts'
+import { estimateCost, ledgerCost, loadUsage, resetUsage, useUsage } from '../ai/usage.ts'
 import {
   INSTALL_TEXT,
   STORAGE_EXPLAIN,
@@ -889,6 +890,50 @@ function SemanticSection({ canWrite }: { canWrite: boolean }) {
   )
 }
 
+const usd = (v: number) => (v < 0.01 && v > 0 ? '< $0.01' : `$${v.toFixed(2)}`)
+
+function UsageSection({ canWrite }: { canWrite: boolean }) {
+  const ledger = useUsage((s) => s.ledger)
+  useEffect(() => {
+    void loadUsage()
+  }, [])
+  if (!ledger) return null
+  const models = Object.entries(ledger.byModel)
+  const total = ledgerCost(ledger)
+  return (
+    <Section
+      title="AI usage"
+      intro="What the chat and refinement have used, kept with this world. Dollars are an estimate at list prices; your Anthropic bill is the real number."
+    >
+      {models.length === 0 ? (
+        <Note>No AI calls yet{ledger.since ? ` since ${new Date(ledger.since).toLocaleDateString()}` : ''}. Adding files with “Keep as notes”, the Obsidian bridge and everything else costs nothing.</Note>
+      ) : (
+        <>
+          {models.map(([model, u]) => {
+            const c = estimateCost(model, u)
+            return (
+              <KV key={model} k={model.replace(/^claude-/, '')}>
+                {u.input.toLocaleString()} in · {u.output.toLocaleString()} out · {u.cacheRead.toLocaleString()} cache read · {u.cacheWrite.toLocaleString()} cache write
+                {' · '}
+                {c === null ? 'no price known' : usd(c)}
+              </KV>
+            )
+          })}
+          <KV k="Total">
+            about {usd(total.usd)} since {new Date(ledger.since).toLocaleDateString()}
+            {total.unpriced.length ? ` (plus ${total.unpriced.join(', ')}, unpriced)` : ''}
+          </KV>
+        </>
+      )}
+      <div className="flex flex-wrap gap-2">
+        <button type="button" className={BTN} disabled={!canWrite || models.length === 0} onClick={() => void resetUsage()}>
+          Reset the count
+        </button>
+      </div>
+    </Section>
+  )
+}
+
 function SettingsPanel() {
   const writer = useRepoStatus((s) => s.writer)
   const ready = useRepoStatus((s) => s.ready)
@@ -922,6 +967,7 @@ function SettingsPanel() {
       <StorageSection />
       <EngineSection canWrite={canWrite} />
       <SemanticSection canWrite={canWrite} />
+      <UsageSection canWrite={canWrite} />
       <BackupsSection canWrite={canWrite} />
       <ImportSection canWrite={canWrite} />
       <RelayoutSection canWrite={canWrite} />

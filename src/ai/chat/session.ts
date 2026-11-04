@@ -3,6 +3,7 @@ import { create } from 'zustand'
 import { useWorld } from '../../app/store.ts'
 import { registerDevApi } from '../../app/devApi.ts'
 import { addAttachment, addNodes, getStore, isRepoReady, link, updateNode } from '../../data/repo.ts'
+import { recordUsage } from '../usage.ts'
 import { findOriginal, rememberOriginal } from './originals.ts'
 import { proposalToDraft, searchWorld, stagedProposal, URL_RE, urlToIntake, type IntakeItem } from './apply.ts'
 import { TOOL_INPUTS, type AskUserInput, type ChatStreamEvent, type ProposedNote, type ToolName } from './protocol.ts'
@@ -271,6 +272,7 @@ async function streamTurn(): Promise<boolean> {
   if (!done) return false
 
   const content = done.content as Anthropic.ContentBlock[]
+  void recordUsage(done.model, done.usage)
   useChat.setState((st) => ({
     model: done!.model,
     usage: {

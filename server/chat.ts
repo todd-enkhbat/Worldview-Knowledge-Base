@@ -62,6 +62,7 @@ export function createChat(opts: ChatOptions = {}): ChatHandler {
           input: message.usage.input_tokens,
           output: message.usage.output_tokens,
           cacheRead: message.usage.cache_read_input_tokens ?? 0,
+          cacheWrite: message.usage.cache_creation_input_tokens ?? 0,
         },
       })
     } catch (e) {

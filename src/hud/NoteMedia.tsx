@@ -1,7 +1,11 @@
 import { useState } from 'react'
 import type { Attachment, Embed } from '../domain/types.ts'
+import { useWorld } from '../app/store.ts'
+import { getStore, updateNode } from '../data/repo.ts'
 import { youtubeId } from '../ai/chat/apply.ts'
 import { formatBytes } from '../ai/chat/preview.ts'
+import { geocode } from '../ai/geocode.ts'
+import { transcribe, transcriptMarkdown, useTranscriber } from '../ai/transcribe.ts'
 import { useStoredBlobUrl } from './fields/SceneField.tsx'
 
 // What a note holds beyond its text, in the Inspector: originals of any type (played, shown or
@@ -53,8 +57,46 @@ function FileActions({ attachment }: { attachment: Attachment }) {
   )
 }
 
+const speech = (a: Attachment) => a.mime.startsWith('video/') || a.mime.startsWith('audio/')
+
+/** Adds a transcript of an audio or video original to its note's text (Whisper, in this browser). */
+function TranscribeButton({ nodeId, attachment }: { nodeId: string; attachment: Attachment }) {
+  const t = useTranscriber()
+  const [state, setState] = useState<{ busy: boolean; message: string | null }>({ busy: false, message: null })
+  const run = async () => {
+    setState({ busy: true, message: null })
+    try {
+      const blob = await getStore().getBlob(attachment.blobId)
+      const out = blob ? await transcribe(blob) : null
+      if (!out || !out.text) return setState({ busy: false, message: 'No speech found (or this browser cannot decode the sound).' })
+      const node = useWorld.getState().nodes.get(nodeId)
+      if (!node) return setState({ busy: false, message: null })
+      const section = `## Transcript: ${attachment.name}\n\n${transcriptMarkdown(out)}`
+      await updateNode(nodeId, { contentMd: node.contentMd.trim() ? `${node.contentMd.trimEnd()}\n\n${section}\n` : `${section}\n` }, { keepAnchor: true })
+      setState({ busy: false, message: `Transcribed ${out.text.split(/\s+/).length} words into the note.` })
+    } catch (e) {
+      setState({ busy: false, message: e instanceof Error ? e.message : String(e) })
+    }
+  }
+  const label = !state.busy ? 'Transcribe' : t.phase === 'loading-model' ? `Downloading Whisper ${Math.round(t.download * 100)}%` : 'Transcribing…'
+  return (
+    <>
+      <button
+        type="button"
+        className="hud-btn px-1.5 py-0"
+        disabled={state.busy}
+        title="Speech to text in this browser (Whisper). The first use downloads the model, about 80–110 MB."
+        onClick={() => void run()}
+      >
+        {label}
+      </button>
+      {state.message && <span className="self-center text-[10px] text-concrete">{state.message}</span>}
+    </>
+  )
+}
+
 /** One original that is not an image: its kind, name and size; play, view, open or save it. */
-export function FileRow({ attachment }: { attachment: Attachment }) {
+export function FileRow({ attachment, nodeId, canWrite = false }: { attachment: Attachment; nodeId?: string; canWrite?: boolean }) {
   const [shown, setShown] = useState(false)
   const [actions, setActions] = useState(false)
   return (
@@ -79,6 +121,7 @@ export function FileRow({ attachment }: { attachment: Attachment }) {
             Open…
           </button>
         )}
+        {nodeId && canWrite && speech(attachment) && <TranscribeButton nodeId={nodeId} attachment={attachment} />}
       </div>
       {shown && <FileBody attachment={attachment} />}
     </li>
@@ -107,7 +150,37 @@ function osmEmbed(lat: number, lng: number): string {
   return `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${lat.toFixed(5)},${lng.toFixed(5)}`
 }
 
-function EmbedRow({ embed }: { embed: Embed }) {
+/** Looks up a place's address on OpenStreetMap (only when asked) and keeps its coordinates. */
+function FindOnMap({ nodeId, embed }: { nodeId: string; embed: Embed }) {
+  const [state, setState] = useState<'idle' | 'busy' | 'none' | 'error'>('idle')
+  const find = async () => {
+    setState('busy')
+    try {
+      const hit = await geocode(mapsQuery(embed))
+      if (!hit) return setState('none')
+      const node = useWorld.getState().nodes.get(nodeId)
+      if (!node) return setState('idle')
+      const embeds = (node.embeds ?? []).map((e) => (e.id === embed.id && e.place ? { ...e, place: { ...e.place, lat: hit.lat, lng: hit.lng } } : e))
+      await updateNode(nodeId, { embeds }, { keepAnchor: true })
+      setState('idle')
+    } catch {
+      setState('error')
+    }
+  }
+  return (
+    <button
+      type="button"
+      className="hud-btn px-1.5 py-0"
+      disabled={state === 'busy'}
+      title="Sends the address to OpenStreetMap's search (Nominatim) to find it on the map"
+      onClick={() => void find()}
+    >
+      {state === 'busy' ? 'Finding…' : state === 'none' ? 'Not found' : state === 'error' ? 'Try again' : 'Find on map'}
+    </button>
+  )
+}
+
+function EmbedRow({ embed, nodeId, canWrite }: { embed: Embed; nodeId?: string; canWrite?: boolean }) {
   const [live, setLive] = useState(false)
   if (embed.kind === 'youtube' && embed.url) {
     const id = youtubeId(embed.url)
@@ -158,6 +231,7 @@ function EmbedRow({ embed }: { embed: Embed }) {
               {live ? 'Hide map' : 'Map'}
             </button>
           )}
+          {!coords && nodeId && canWrite && (p?.address || p?.name) && <FindOnMap nodeId={nodeId} embed={embed} />}
           <a href={`https://maps.apple.com/?q=${q}`} target="_blank" rel="noopener noreferrer" className="hud-btn px-1.5 py-0">
             Apple Maps
           </a>
@@ -187,7 +261,7 @@ function EmbedRow({ embed }: { embed: Embed }) {
   )
 }
 
-export function EmbedsSection({ embeds }: { embeds: Embed[] }) {
+export function EmbedsSection({ embeds, nodeId, canWrite }: { embeds: Embed[]; nodeId?: string; canWrite?: boolean }) {
   return (
     <section aria-labelledby="hud-inspector-embeds" className="mb-5">
       <h3 id="hud-inspector-embeds" className="hud-label m-0 mb-2">
@@ -195,7 +269,7 @@ export function EmbedsSection({ embeds }: { embeds: Embed[] }) {
       </h3>
       <ul className="m-0 list-none space-y-1.5 p-0">
         {embeds.map((e) => (
-          <EmbedRow key={e.id} embed={e} />
+          <EmbedRow key={e.id} embed={e} nodeId={nodeId} canWrite={canWrite} />
         ))}
       </ul>
     </section>

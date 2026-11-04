@@ -88,6 +88,30 @@ export function proposalToDraft(
 }
 
 const VIDEO_NAME = /\.(mp4|m4v|mov|webm|mkv|avi)$/i
+/** Most of a staged file's text a note keeps as its body when kept without Claude. */
+const STAGED_BODY_MAX = 20_000
+
+/**
+ * What a staged item says in text (a text file's contents, a dataset or database preview, a
+ * transcript), without the <file> wrapper, or '' when it only describes the file for Claude.
+ */
+export function stagedBody(item: IntakeItem): string {
+  if (item.kind === 'image' || item.kind === 'pdf') return ''
+  const parts: string[] = []
+  for (const b of item.blocks) {
+    if (b.type !== 'text') continue
+    const inner = b.text.replace(/^<file\b[^>]*>\n?/, '').replace(/\n?<\/file>\s*$/, '').trim()
+    // Lines meant for Claude ("…; ask what it is.") are not the file's content.
+    const kept = inner
+      .split('\n')
+      .filter((l) => !/ask what (it is|it shows)\.$/.test(l.trim()))
+      .join('\n')
+      .trim()
+    if (kept) parts.push(kept)
+  }
+  const text = parts.join('\n\n')
+  return text.length > STAGED_BODY_MAX ? `${text.slice(0, STAGED_BODY_MAX)}\n… (shortened; the original is attached)` : text
+}
 
 /**
  * A staged file or link kept as it is, without Claude: titled from its name, dated by the
@@ -104,7 +128,7 @@ export function stagedProposal(item: IntakeItem, key: string, now = Date.now()):
     key,
     kind: visual ? 'memory' : 'document',
     title,
-    body: '',
+    body: stagedBody(item),
     date: { iso, precision: 'day', certain: false },
     tags: [],
     links: [],

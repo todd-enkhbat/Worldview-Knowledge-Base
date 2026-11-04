@@ -205,8 +205,8 @@ function InspectorPanel({ id }: { id: string }) {
 
         {node.archetype === 'memory' && <SceneSection node={node} />}
 
-        {node.attachments.length > 0 && <AttachmentsSection attachments={node.attachments} />}
-        {(node.embeds?.length ?? 0) > 0 && <EmbedsSection embeds={node.embeds!} />}
+        {node.attachments.length > 0 && <AttachmentsSection nodeId={node.id} canWrite={!readOnly} attachments={node.attachments} />}
+        {(node.embeds?.length ?? 0) > 0 && <EmbedsSection nodeId={node.id} canWrite={!readOnly} embeds={node.embeds!} />}
       </div>
 
       <footer className="grid grid-cols-4 gap-px border-t border-bone/20 bg-bone/20">
@@ -275,7 +275,7 @@ function SceneSection({ node }: { node: NodeRecord }) {
 
 // ─── attachments: image cards + lightbox ─────────────────────────────────────────────
 
-function AttachmentsSection({ attachments }: { attachments: Attachment[] }) {
+function AttachmentsSection({ nodeId, canWrite, attachments }: { nodeId: string; canWrite: boolean; attachments: Attachment[] }) {
   const [open, setOpen] = useState<Attachment | null>(null)
   const images = attachments.filter((a) => a.kind === 'image')
   const others = attachments.filter((a) => a.kind !== 'image')
@@ -296,7 +296,7 @@ function AttachmentsSection({ attachments }: { attachments: Attachment[] }) {
       {others.length > 0 && (
         <ul className="m-0 list-none space-y-1.5 p-0">
           {others.map((a) => (
-            <FileRow key={a.id} attachment={a} />
+            <FileRow key={a.id} nodeId={nodeId} canWrite={canWrite} attachment={a} />
           ))}
         </ul>
       )}

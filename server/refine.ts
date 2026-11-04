@@ -65,6 +65,8 @@ export function createRefiner(opts: RefinerOptions = {}): (body: unknown) => Pro
     if (!parsed.success) return { ok: false, reason: 'invalid', message: parsed.error.issues[0]?.message }
     const ids = new Set(candidates.map((c) => c.id))
     const output = { ...parsed.data, links: parsed.data.links.filter((l) => ids.has(l.targetId)) }
-    return { ok: true, output, model: response.model }
+    const u = response.usage as Anthropic.Usage | undefined
+    const usage = u && { input: u.input_tokens, output: u.output_tokens, cacheRead: u.cache_read_input_tokens ?? 0, cacheWrite: u.cache_creation_input_tokens ?? 0 }
+    return { ok: true, output, model: response.model, usage }
   }
 }

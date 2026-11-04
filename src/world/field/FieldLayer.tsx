@@ -42,6 +42,10 @@ const EASE = 6
 const MAX_GRAINS = 260_000
 const IMAGE_GRID = 56
 const CURRENT_GRAINS = 40
+/** Current grains for the whole world: big worlds thin each link's current instead of growing without bound. */
+const MAX_CURRENT_GRAINS = 60_000
+/** Pictures a note shows as cards, side by side. */
+const MAX_CARDS = 3
 const MAX_RIPPLES = 16
 /** Scenes the land levels and stains at once (the nearest). */
 const MAX_SCENES = 8
@@ -202,7 +206,7 @@ attribute float aNote;
 attribute vec3 aOff;
 attribute vec3 aColor;
 attribute vec3 aRand;   // phase, size, plane (1 = part of an image card)
-attribute vec2 aPlane;  // image-card position in [-0.5, 0.5]²
+attribute vec2 aPlane;  // image-card position: [-0.5, 0.5]² per card, cards side by side in x
 varying vec3 vColor;
 varying float vAlpha;
 void main() {
@@ -291,11 +295,23 @@ const pictures = new Map<string, Float32Array | null>()
 
 /** A note's picture key: its first image, else its scene's thumbnail. */
 function pictureKey(r: NodeRecord): { key: string; src: string } | null {
-  const img = r.attachments.find((a) => a.kind === 'image')
-  if (img) return { key: img.blobId, src: img.thumbBlobId ?? img.blobId }
-  if (r.splat?.thumbAssetId) return { key: sceneKey(r.splat.thumbAssetId), src: sceneKey(r.splat.thumbAssetId) }
-  return null
+  return pictureKeys(r)[0] ?? null
 }
+
+/** The pictures a note shows as cards (up to MAX_CARDS images), else its scene's thumbnail. */
+function pictureKeys(r: NodeRecord): { key: string; src: string }[] {
+  const imgs = r.attachments.filter((a) => a.kind === 'image').slice(0, MAX_CARDS)
+  if (imgs.length) return imgs.map((img) => ({ key: img.blobId, src: img.thumbBlobId ?? img.blobId }))
+  if (r.splat?.thumbAssetId) return [{ key: sceneKey(r.splat.thumbAssetId), src: sceneKey(r.splat.thumbAssetId) }]
+  return []
+}
+
+/** Grains per link's current: CURRENT_GRAINS, thinned (to ≥ 8) when the world has many links. */
+export const currentGrainsPerLink = (links: number) =>
+  links <= 0 ? CURRENT_GRAINS : Math.max(8, Math.min(CURRENT_GRAINS, Math.floor(MAX_CURRENT_GRAINS / links)))
+
+/** Horizontal offset (in card widths) of card j of m: a strip centred on the note. */
+export const cardOffset = (j: number, m: number) => (j - (m - 1) / 2) * 1.08
 
 /** Centre weight of a picture's pixel: a scene's subject is in the middle, its backdrop at the edge. */
 const centreWeight = (i: number, g: number) => {
@@ -362,14 +378,15 @@ async function loadPicture(key: string): Promise<Float32Array | null> {
 
 interface Budget {
   cloud: number
-  image: boolean
+  /** Picture cards (0 when the note holds no image). */
+  images: number
 }
 
 function grainsFor(frame: FieldFrame, i: number): Budget {
   const r = frame.records[i]
   const mass = r.thermo?.mass ?? 1
   const extra = Math.min(r.attachments.length + (r.embeds?.length ?? 0), 4)
-  return { cloud: Math.round(420 + 300 * mass + 120 * extra + 40 * Math.min(r.contentMd.length / 400, 8)), image: r.attachments.some((a) => a.kind === 'image') }
+  return { cloud: Math.round(420 + 300 * mass + 120 * extra + 40 * Math.min(r.contentMd.length / 400, 8)), images: Math.min(MAX_CARDS, r.attachments.filter((a) => a.kind === 'image').length) }
 }
 
 function landPoints(grid: number, material: ShaderMaterial, name: string, seed: number): Points {
@@ -522,13 +539,14 @@ export function FieldLayer() {
   useEffect(() => {
     let live = true
     for (const r of nodes.values()) {
-      const pk = pictureKey(r)
-      if (!pk || pictures.has(pk.key)) continue
-      pictures.set(pk.key, null)
-      void loadPicture(pk.src).then((pic) => {
-        pictures.set(pk.key, pic)
-        if (live && pic) setPictureVersion((v) => v + 1)
-      })
+      for (const pk of pictureKeys(r)) {
+        if (pictures.has(pk.key)) continue
+        pictures.set(pk.key, null)
+        void loadPicture(pk.src).then((pic) => {
+          pictures.set(pk.key, pic)
+          if (live && pic) setPictureVersion((v) => v + 1)
+        })
+      }
     }
     return () => {
       live = false
@@ -542,9 +560,10 @@ export function FieldLayer() {
     const frame = getFieldFrame()
     const n = frame.ids.length
     const budgets = frame.ids.map((_, i) => grainsFor(frame, i))
-    const planned = budgets.reduce((s, b) => s + b.cloud + (b.image ? IMAGE_GRID * IMAGE_GRID : 0), 0)
+    const cardGrains = (b: Budget) => b.images * IMAGE_GRID * IMAGE_GRID
+    const planned = budgets.reduce((s, b) => s + b.cloud + cardGrains(b), 0)
     const scale = Math.min(1, MAX_GRAINS / Math.max(1, planned))
-    const total = budgets.reduce((s, b) => s + Math.round(b.cloud * scale) + (b.image ? IMAGE_GRID * IMAGE_GRID : 0), 0)
+    const total = budgets.reduce((s, b) => s + Math.round(b.cloud * scale) + cardGrains(b), 0)
     const aNote = new Float32Array(total)
     const aOff = new Float32Array(total * 3)
     const aColor = new Float32Array(total * 3)
@@ -559,7 +578,7 @@ export function FieldLayer() {
       const pk = pictureKey(rec)
       const pic = pk ? pictures.get(pk.key) : null
       // A scene's cloud is the scene unresolved: nearly all its grains take its colours.
-      const share = rec.splat && !budgets[i].image ? 0.9 : 0.6
+      const share = rec.splat && !budgets[i].images ? 0.9 : 0.6
       const count = Math.round(budgets[i].cloud * scale)
       for (let c = 0; c < count; c++, k++) {
         aNote[k] = i
@@ -576,16 +595,20 @@ export function FieldLayer() {
         aColor.set([col.r, col.g, col.b], k * 3)
         aRand.set([r(), r(), 0], k * 3)
       }
-      if (budgets[i].image) {
+      const m = budgets[i].images
+      const keys = pictureKeys(rec)
+      for (let j = 0; j < m; j++) {
+        const card = keys[j] ? pictures.get(keys[j].key) : null
+        const dx = cardOffset(j, m)
         for (let y = 0; y < IMAGE_GRID; y++) {
           for (let x = 0; x < IMAGE_GRID; x++, k++) {
             aNote[k] = i
             aOff.set([gauss(r), gauss(r), gauss(r)], k * 3)
             const p = ((IMAGE_GRID - 1 - y) * IMAGE_GRID + x) * 3
-            if (pic) aColor.set([pic[p], pic[p + 1], pic[p + 2]], k * 3)
+            if (card) aColor.set([card[p], card[p + 1], card[p + 2]], k * 3)
             else aColor.set([base.r * 0.5, base.g * 0.5, base.b * 0.5], k * 3)
             aRand.set([r(), r(), 1], k * 3)
-            aPlane.set([(x + r() * 0.6) / IMAGE_GRID - 0.5, (y + r() * 0.6) / IMAGE_GRID - 0.5], k * 2)
+            aPlane.set([dx + (x + r() * 0.6) / IMAGE_GRID - 0.5, (y + r() * 0.6) / IMAGE_GRID - 0.5], k * 2)
           }
         }
       }
@@ -618,17 +641,18 @@ export function FieldLayer() {
     const cards = part(true, cardMat, 'field-cards')
 
     const links = buildTypedLinks(new Map(frame.records.map((r) => [r.id, r])))
-    const m = links.length * CURRENT_GRAINS
+    const per = currentGrainsPerLink(links.length)
+    const m = links.length * per
     const aEnds = new Float32Array(m * 2)
     const aFlow = new Float32Array(m * 2)
     const aCol = new Float32Array(m * 3)
     links.forEach((l, li) => {
       const r = rng(hash(l.from + l.to))
       const c = new Color(LINK_STYLE[l.kind as LinkKind].color).convertSRGBToLinear()
-      for (let g = 0; g < CURRENT_GRAINS; g++) {
-        const q = li * CURRENT_GRAINS + g
+      for (let g = 0; g < per; g++) {
+        const q = li * per + g
         aEnds.set([frame.index.get(l.from)!, frame.index.get(l.to)!], q * 2)
-        aFlow.set([g / CURRENT_GRAINS + r() * 0.02, r()], q * 2)
+        aFlow.set([g / per + r() * 0.02, r()], q * 2)
         aCol.set([c.r * 0.9, c.g * 0.9, c.b * 0.9], q * 3)
       }
     })
