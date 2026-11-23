@@ -1,16 +1,15 @@
 import type { NodeRecord, WorldSettings } from '../../domain/types.ts'
-import { isSemanticReady, semanticVectors } from '../../ai/semanticIndex.ts'
-import { setPoseTable } from '../poses.ts'
+import { computeSpatialWorld } from '../../domain/spatial.ts'
+import type { PoseTable } from '../poses.ts'
 import { registerDevApi } from '../../app/devApi.ts'
 import { markOnce } from '../../app/timings.ts'
-import { computeFieldLayout, layoutBounds, type XZ } from './layout.ts'
+import { layoutBounds, spatialWorldFor, type VerticalBounds, type XZ } from './layout.ts'
 import { attentionVersion, ensureAttention, lastTouch } from './attention.ts'
-import { activeRipples, buildHeightfield, landResolution, lift, noteState, sampleHeight, sceneCentreY, sceneSigma, sceneStand, type Heightfield, type NoteState, type Ripple } from './state.ts'
+import { activeRipples, noteState, type Heightfield, type Ripple } from './state.ts'
 
-// The field's per-frame state (milestone 2), outside React. It owns the layout (recomputed
-// when the records change, warm-started), evaluates every note at the playhead, builds the
-// land, and writes the shared pose table so labels, picking, links, fly-to and the camera
-// all see the field. The renderer reads the same arrays.
+// Read-only presentation arrays for the shared semantic 3-D world. The simulation, static
+// fallback and GPU dust use the same pure spatial anchors. History controls birth/evolution;
+// this adapter never replaces the actual pose table or derives coordinates from dates.
 
 export interface FieldFrame {
   /** Bumped whenever anything below changes. */
@@ -25,7 +24,7 @@ export interface FieldFrame {
   /** Cloud centre per note (x, y, z). */
   centers: Float32Array
   sigma: Float32Array
-  /** Height and width of each note's rise in the land. */
+  /** Legacy envelope metadata, never used to position a record. */
   amp: Float32Array
   width: Float32Array
   order: Float32Array
@@ -35,6 +34,7 @@ export interface FieldFrame {
   ripples: Ripple[]
   extent: { cx: number; cz: number; half: number }
   playheadMs: number
+  verticalBounds: VerticalBounds
 }
 
 const empty = (): FieldFrame => ({
@@ -56,18 +56,39 @@ const empty = (): FieldFrame => ({
   ripples: [],
   extent: { cx: 0, cz: 0, half: 60 },
   playheadMs: 0,
+  verticalBounds: { minY: 0, maxY: 0, centerY: 0 },
 })
 
 let frame = empty()
 let lastNodes: ReadonlyMap<string, NodeRecord> | null = null
-let lastSemantic = false
-let lastCompute = -Infinity
 let lastAttention = -1
+let previewVersion = 0
+let lastPreview = -1
+const dragOverrides = new Map<string, XZ>()
+let lastSettings: WorldSettings | null | undefined
 /** Last layout and per-evaluation cost (dev hook __wv.fieldStats()). */
 const stats = { layoutMs: 0, layoutN: 0, evalMs: 0 }
 
 export function getFieldFrame(): FieldFrame {
   return frame
+}
+
+/** Only an in-progress drag is a presentation offset; saved pins are already in P. */
+export function fieldPinOffsets(nodes: ReadonlyMap<string, NodeRecord>): Map<string, XZ> {
+  const pins = new Map<string, XZ>()
+  if (!dragOverrides.size) return pins
+  const spatial = spatialWorldFor(nodes)
+  for (const [id, target] of dragOverrides) {
+    const anchor = spatial.positions.get(id)
+    if (anchor) pins.set(id, [target[0] - anchor[0], target[1] - anchor[2]])
+  }
+  return pins
+}
+
+export function previewFieldAnchor(id: string, xz: XZ | null): void {
+  if (xz) dragOverrides.set(id, [...xz])
+  else dragOverrides.delete(id)
+  previewVersion++
 }
 
 /** The layout for these records (cached on the records' identity). For the camera. */
@@ -77,13 +98,12 @@ export function fieldLayoutFor(nodes: ReadonlyMap<string, NodeRecord>): Map<stri
 }
 
 function rebuildIfNeeded(nodes: ReadonlyMap<string, NodeRecord>): boolean {
-  const semantic = isSemanticReady()
-  if (nodes === lastNodes && semantic === lastSemantic) return false
+  if (nodes === lastNodes) return false
   lastNodes = nodes
-  lastSemantic = semantic
   const records = [...nodes.values()].filter((r) => r.deletedAt === null).sort((a, b) => (a.id < b.id ? -1 : 1))
   const t0 = performance.now()
-  const layout = computeFieldLayout({ records, vectors: semantic ? semanticVectors() : undefined, previous: frame.layout })
+  const world = spatialWorldFor(nodes)
+  const layout = new Map<string, XZ>([...world.positions].map(([id, p]) => [id, [p[0], p[2]]]))
   stats.layoutMs = Math.round(performance.now() - t0)
   stats.layoutN = records.length
   const ids = records.map((r) => r.id)
@@ -121,54 +141,61 @@ function rebuildIfNeeded(nodes: ReadonlyMap<string, NodeRecord>): boolean {
 }
 
 /**
- * Evaluate the field at the playhead and write the pose table. Small worlds update every
- * frame; big ones at ~8 Hz (the land is the costly part).
+ * Read-only adapter for the canonical P→pin→O table. It never publishes replacement poses.
+ * The optional static fallback uses the same pure 3-D cluster anchors as the worker.
  */
-export function updateField(nodes: ReadonlyMap<string, NodeRecord>, _settings: WorldSettings | null, playheadMs: number, nowS: number): FieldFrame {
+export function updateField(
+  nodes: ReadonlyMap<string, NodeRecord>, settings: WorldSettings | null, playheadMs: number,
+  nowS: number, canonical?: PoseTable,
+): FieldFrame {
   const rebuilt = rebuildIfNeeded(nodes)
   ensureAttention()
   const attention = attentionVersion()
-  const touched = attention !== lastAttention
+  const changedSettings = settings !== lastSettings
+  const evaluate = rebuilt || changedSettings || attention !== lastAttention || previewVersion !== lastPreview || playheadMs !== frame.playheadMs
   lastAttention = attention
+  lastSettings = settings
+  lastPreview = previewVersion
   const n = frame.ids.length
-  const interval = n > 150 ? 0.12 : 0
-  if (!rebuilt && !touched && playheadMs === frame.playheadMs && frame.version > 0) return frame
-  if (!rebuilt && nowS - lastCompute < interval) return frame
-  lastCompute = nowS
-
   const t1 = performance.now()
-  const states: NoteState[] = new Array(n)
-  for (let i = 0; i < n; i++) states[i] = noteState(frame.records[i], playheadMs, frame.degree[i], lastTouch(frame.ids[i], playheadMs))
-  const hf = buildHeightfield(
-    frame.ids.map((id, i) => ({ xz: frame.layout.get(id)!, state: states[i] })),
-    frame.extent,
-    landResolution(frame.extent.half * 2).height,
-  )
+  let changed = rebuilt || evaluate
+  if (evaluate) {
+    for (let i = 0; i < n; i++) {
+      const state = noteState(frame.records[i]!, playheadMs, frame.degree[i]!, lastTouch(frame.ids[i]!, playheadMs))
+      frame.sigma[i] = state.sigma
+      frame.amp[i] = state.amp
+      frame.width[i] = state.width
+      frame.order[i] = state.order
+      frame.condense[i] = state.condense
+    }
+    // Kept as an empty compatibility envelope for older media readers, never a position source.
+    frame.heightfield = { res: 2, x0: frame.extent.cx - frame.extent.half, z0: frame.extent.cz - frame.extent.half, size: frame.extent.half * 2, h: new Float32Array(4) }
+    frame.ripples = activeRipples(frame.records.map((rec) => ({ rec, xz: frame.layout.get(rec.id)! })), playheadMs)
+  }
+  const spatial = spatialWorldFor(nodes).positions
+  let minY = 0, maxY = 0
   for (let i = 0; i < n; i++) {
-    const s = states[i]
-    const [x, z] = frame.layout.get(frame.ids[i])!
-    // A scene note's cloud sits in its scene (FieldMedia stands the scene on the same clearing).
-    const stand = frame.records[i].splat?.proxyAssetId ? sceneStand(hf, x, z, s.condense) : null
-    frame.centers[i * 3] = x
-    frame.centers[i * 3 + 1] = stand ? sceneCentreY(stand) : sampleHeight(hf, x, z) + lift(s, frame.records[i].thermo?.mass ?? 1)
-    frame.centers[i * 3 + 2] = z
-    frame.sigma[i] = stand ? sceneSigma(s.sigma, stand.radius) : s.sigma
-    frame.amp[i] = s.amp
-    frame.width[i] = s.width
-    frame.order[i] = s.order
-    frame.condense[i] = s.condense
-    frame.born[i] = s.born ? 1 : 0
+    const rec = frame.records[i]!
+    const row = canonical?.index.get(rec.id)
+    const anchor = spatial.get(rec.id) ?? computeSpatialWorld([rec]).positions.get(rec.id)!
+    const drag = dragOverrides.get(rec.id)
+    const x = row === undefined ? drag?.[0] ?? anchor[0] : canonical!.pos[row * 3]!
+    const y = row === undefined ? anchor[1] : canonical!.pos[row * 3 + 1]!
+    const z = row === undefined ? drag?.[1] ?? anchor[2] : canonical!.pos[row * 3 + 2]!
+    const born = row === undefined ? Number(playheadMs >= rec.temporalOrigin) : canonical!.born[row]!
+    const offset = i * 3
+    if (frame.centers[offset] !== Math.fround(x) || frame.centers[offset + 1] !== Math.fround(y) || frame.centers[offset + 2] !== Math.fround(z) || frame.born[i] !== born) changed = true
+    frame.centers.set([x, y, z], offset)
+    frame.born[i] = born
+    minY = Math.min(minY, y)
+    maxY = Math.max(maxY, y)
   }
+  frame.verticalBounds = { minY, maxY, centerY: (minY + maxY) / 2 }
+  frame.playheadMs = playheadMs
+  if (changed) frame.version++
   stats.evalMs = Math.round((performance.now() - t1) * 10) / 10
-  frame = {
-    ...frame,
-    version: frame.version + 1,
-    heightfield: hf,
-    ripples: activeRipples(frame.records.map((rec, i) => ({ rec, xz: frame.layout.get(frame.ids[i])! })), playheadMs),
-    playheadMs,
-  }
-  setPoseTable({ index: frame.index, pos: frame.centers, born: frame.born })
   if (n) markOnce('field-first-frame')
+  void nowS
   return frame
 }
 
@@ -176,8 +203,10 @@ export function updateField(nodes: ReadonlyMap<string, NodeRecord>, _settings: W
 export function resetField(): void {
   frame = empty()
   lastNodes = null
-  lastCompute = -Infinity
   lastAttention = -1
+  lastPreview = -1
+  dragOverrides.clear()
+  lastSettings = undefined
 }
 
 registerDevApi('fieldStats', () => ({ ...stats, notes: frame.ids.length }))

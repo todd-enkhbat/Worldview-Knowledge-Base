@@ -91,10 +91,10 @@ function LandingNumerals({ landing, pitch }: { landing: Landing; pitch: number }
   const floor = useMemo(() => deckLabel(landing.angle, landing.outerRadius - 1.45, landing.y, pitch), [landing, pitch])
   return (
     <>
-      <Engraved placement={outer} size={1.15} spacing={0.12}>
+      <Engraved placement={outer} size={1.15} spacing={0.12} color="#c0d0dc" emissive="#7d9db4" emissiveIntensity={.35}>
         {String(landing.year)}
       </Engraved>
-      <Engraved placement={floor} size={0.8} spacing={0.1} color="#1d1c1a">
+      <Engraved placement={floor} size={0.8} spacing={0.1} color="#bdcbd4" emissive="#7795ad" emissiveIntensity={.2}>
         {String(landing.year)}
       </Engraved>
     </>

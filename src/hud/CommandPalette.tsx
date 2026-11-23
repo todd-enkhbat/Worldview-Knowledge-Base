@@ -18,6 +18,8 @@ import {
   selectAndFly,
   usePaletteIntent,
   setWorldView,
+  canNavigateTo,
+  navigateTo,
 } from './shortcuts.ts'
 import { flyTo } from '../world/camera/flyTo.ts'
 
@@ -50,8 +52,8 @@ type View = { type: 'list' } | { type: 'confirm-import'; file: File } | { type: 
 
 const MODE_ACTIONS: readonly { mode: CameraMode; label: string; key: string }[] = [
   { mode: 'orbit', label: 'Orbit camera', key: 'O' },
-  { mode: 'third_person', label: 'Third person', key: 'T' },
-  { mode: 'first_person', label: 'First person', key: 'F' },
+  { mode: 'third_person', label: 'Walk world', key: 'T' },
+  { mode: 'first_person', label: 'Fly through the world', key: 'F' },
 ]
 
 function errorText(e: unknown): string {
@@ -134,9 +136,10 @@ function PaletteDialog() {
       list.push({
         id: `mode-${m.mode}`,
         label: m.label,
-        keywords: 'camera mode view',
+        keywords: 'camera mode view navigation walk third person fly first person',
         hint: mode === m.mode ? 'current' : m.key,
-        run: () => app().setMode(m.mode),
+        disabled: !canNavigateTo(m.mode, mode),
+        run: () => navigateTo(m.mode),
       })
     }
     {
@@ -145,11 +148,11 @@ function PaletteDialog() {
       for (const n of nodes.values()) if (n.archetype === 'memory') memories++
       list.push({
         id: 'mode-autonav',
-        label: 'Ride the worldline',
+        label: 'Ride memories',
         keywords: 'camera autonav tour memories timeline',
         hint: mode === 'autonav' ? 'current' : memories < 2 ? 'needs 2 memories' : undefined,
-        disabled: memories < 2,
-        run: () => app().setMode('autonav'),
+        disabled: memories < 2 || !canNavigateTo('autonav', mode),
+        run: () => navigateTo('autonav'),
       })
     }
     list.push(
@@ -161,8 +164,8 @@ function PaletteDialog() {
       { id: 'import', label: 'Import archive', keywords: 'restore load zip replace', hint: ro ? 'read-only' : undefined, disabled: ro, run: () => fileRef.current?.click() },
       {
         id: 'world-view',
-        label: app().view.world === 'field' ? 'World view: switch to Classic (structure)' : 'World view: switch to Field (topographic)',
-        keywords: 'world view classic field topographic helix column particles backup layout',
+        label: app().view.world === 'field' ? 'World view: show structure' : 'World view: show embodied notes',
+        keywords: 'world view structure field neighborhood ground particles spatial neighborhoods',
         run: () => setWorldView(app().view.world === 'field' ? 'classic' : 'field'),
       },
       { id: 'stats', label: 'Toggle stats', keywords: 'fps performance renderer', hint: '`', run: () => app().togglePanel('stats') },

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useApp, useWorld } from '../../src/app/store.ts'
 import { createMemoryStore } from '../../src/data/memoryStore.ts'
 import { closeRepo, completeFirstRun, createNode, initRepo } from '../../src/data/repo.ts'
-import { _rememberOriginalForTests, keepAll, keepCard, keepStaged, loadChat, resetChat, send, skipCard, stage, useChat } from '../../src/ai/chat/session.ts'
+import { _rememberOriginalForTests, keepAll, keepCard, keepStaged, loadChat, resetChat, saveThought, send, skipCard, stage, useChat } from '../../src/ai/chat/session.ts'
 import { importVault, stagedProposal } from '../../src/ai/chat/apply.ts'
 import type { ChatStreamEvent } from '../../src/ai/chat/protocol.ts'
 
@@ -169,7 +169,44 @@ describe('chat session', () => {
   it('says what is missing when the server has no key (I7)', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 503 })))
     await send('hello')
-    expect(useChat.getState().error).toMatch(/ANTHROPIC_API_KEY/)
+    expect(useChat.getState().error).toMatch(/not configured/)
+  })
+
+  it('leaves original files staged when AI is unavailable so they can be saved locally', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 503 })))
+    const file = new File(['a thought'], 'journal.txt', { type: 'text/plain' })
+    stage([{ name: file.name, kind: 'text', bytes: file.size, blocks: [{ type: 'text', text: 'a thought' }], file }])
+    await send('Please remember this')
+    expect(useChat.getState().staged[0].file).toBe(file)
+    expect(useChat.getState().busy).toBe(false)
+    expect(await keepStaged()).toBe(1)
+    expect([...useWorld.getState().nodes.values()][0].attachments[0].name).toBe('journal.txt')
+  })
+
+  it('saves a reflection with words, hashtags, original files and live links without a network request', async () => {
+    const fetch = vi.fn(async () => { throw new Error('no network') })
+    vi.stubGlobal('fetch', fetch)
+    const file = new File(['notes'], 'today.txt', { type: 'text/plain' })
+    stage([{ name: file.name, kind: 'text', bytes: file.size, blocks: [], file }])
+    const id = await saveThought('A new connection #Learning\nI want to revisit https://example.com/essay', { reflection: true })
+    expect(id).not.toBeNull()
+    const record = useWorld.getState().nodes.get(id!)!
+    expect(record.archetype).toBe('memory')
+    expect(record.contentMd).toContain('A new connection #Learning')
+    expect(record.tags).toEqual(['reflection', 'learning'])
+    expect(record.attachments[0].name).toBe('today.txt')
+    expect(record.embeds?.[0].url).toBe('https://example.com/essay')
+    expect(record.provenance).toMatchObject({ source: 'chat', model: 'none' })
+    expect(useChat.getState().staged).toEqual([])
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it('recovers from an interrupted AI stream without leaving capture busy', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('not json\n', { status: 200 })))
+    await send('A thought I do not want to lose')
+    expect(useChat.getState().error).toMatch(/interrupted/)
+    expect(useChat.getState().busy).toBe(false)
+    expect(useChat.getState().history[0].content).toContainEqual({ type: 'text', text: 'A thought I do not want to lose' })
   })
 
   it('imports a vault without Claude, moving pre-T0 dates to reference dates', async () => {

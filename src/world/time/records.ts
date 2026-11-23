@@ -1,18 +1,19 @@
 import { MASS_RANGE, TEMPERATURE_RANGE } from '../../domain/constants.ts'
-import { birthStep, yOf } from '../../domain/time.ts'
-import type { NodeRecord, WorldSettings } from '../../domain/types.ts'
+import { birthStep } from '../../domain/time.ts'
+import { computeSpatialWorld, SPATIAL_LAYOUT_VERSION } from '../../domain/spatial.ts'
+import type { NodeRecord, Vec3, WorldSettings } from '../../domain/types.ts'
 import type { WorldRecord } from '../../physics/world.ts'
 
 // NodeRecord → WorldRecord, and the diff that keeps the worker's copy of the records in
 // step with useWorld. Pure (no worker, no store) so the mapping is testable in node.
-// Y is time: the anchor height is yOf(temporalOrigin) and the birth step is the same
-// date on the physics clock, so a node is born exactly where the helix says it is.
+// XYZ are shared semantic-space anchors. Historical time affects birthStep only; the
+// existing integer integrator runs around those same anchors used by every renderer.
 
 export type MappingSettings = Pick<WorldSettings, 'T0' | 'yPerYear' | 'stepsPerYear' | 'physicsSeed'>
 
 /** Everything the mapping depends on besides the records: a change means a full reload. */
 export function settingsKey(s: MappingSettings): string {
-  return `${s.T0}|${s.yPerYear}|${s.stepsPerYear}|${s.physicsSeed}`
+  return `${SPATIAL_LAYOUT_VERSION}|${s.T0}|${s.yPerYear}|${s.stepsPerYear}|${s.physicsSeed}`
 }
 
 const clamp = (v: number, [lo, hi]: readonly [number, number], fallback: number): number =>
@@ -23,14 +24,16 @@ const clamp = (v: number, [lo, hi]: readonly [number, number], fallback: number)
  * non-finite date or anchor that validation should have stopped). Mass and temperature
  * are clamped to their ranges so one malformed record cannot trip the stability gate.
  */
-export function toWorldRecord(n: NodeRecord, s: MappingSettings): WorldRecord | null {
+export function toWorldRecord(n: NodeRecord, s: MappingSettings, spatial?: ReadonlyMap<string, Vec3>): WorldRecord | null {
   if (n.deletedAt !== null) return null
   const T = n.temporalOrigin
   const [ax, az] = n.anchorXZ
   if (!Number.isFinite(T) || !Number.isFinite(ax) || !Number.isFinite(az)) return null
+  const anchor = (spatial ?? computeSpatialWorld([n]).positions).get(n.id)
+  if (!anchor?.every(Number.isFinite)) return null
   return {
     id: n.id,
-    anchor: [ax, yOf(T, s.T0, s.yPerYear), az],
+    anchor: [...anchor],
     birthStep: birthStep(T, s.T0, s.stepsPerYear),
     mass: clamp(n.thermo?.mass, MASS_RANGE, 1),
     temperature: clamp(n.thermo?.temperature, TEMPERATURE_RANGE, 0.5),
@@ -66,8 +69,9 @@ export interface RecordDiff {
 export function mirrorAll(nodes: ReadonlyMap<string, NodeRecord>, s: MappingSettings): { mirror: Mirror; records: WorldRecord[] } {
   const mirror: Mirror = new Map()
   const records: WorldRecord[] = []
+  const spatial = computeSpatialWorld(nodes.values()).positions
   for (const n of nodes.values()) {
-    const rec = toWorldRecord(n, s)
+    const rec = toWorldRecord(n, s, spatial)
     if (!rec) continue
     mirror.set(n.id, { updatedAt: n.updatedAt, rec })
     records.push(rec)
@@ -76,10 +80,9 @@ export function mirrorAll(nodes: ReadonlyMap<string, NodeRecord>, s: MappingSett
 }
 
 /**
- * Edits that bring the worker from `prev` to `nodes`. Records whose updatedAt did not
- * move are skipped without mapping; a newer record whose physics inputs are unchanged
- * (a title or tag edit) only refreshes the mirror. Ids gone from `nodes` (deleted or
- * moved to the trash) are removed.
+ * Compare every mapped anchor: a neighbor's tag/link edit can reclassify a node whose
+ * own updatedAt did not change. Title-only edits remain physics-neutral. Missing live
+ * records are removed, and dates change birthStep without changing spatial anchors.
  */
 export function diffRecords(
   prev: Mirror,
@@ -88,13 +91,10 @@ export function diffRecords(
 ): { mirror: Mirror; diff: RecordDiff } {
   const mirror: Mirror = new Map()
   const diff: RecordDiff = { upserts: [], removes: [] }
+  const spatial = computeSpatialWorld(nodes.values()).positions
   for (const n of nodes.values()) {
     const old = prev.get(n.id)
-    if (old && old.updatedAt === n.updatedAt) {
-      mirror.set(n.id, old)
-      continue
-    }
-    const rec = toWorldRecord(n, s)
+    const rec = toWorldRecord(n, s, spatial)
     if (!rec) continue
     mirror.set(n.id, { updatedAt: n.updatedAt, rec })
     if (!old || !sameWorldRecord(old.rec, rec)) diff.upserts.push(rec)

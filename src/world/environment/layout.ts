@@ -132,6 +132,23 @@ export interface Architecture {
   emissive: BoxInst[]
 }
 
+/** The measured time core only: no unrelated pylons or invented skyline in the live world. */
+export function buildChronologyScaffold(helixTop: number): Architecture {
+  const top = Math.max(12, helixTop)
+  return {
+    top,
+    core: { y0: -1, height: top + 3 },
+    shafts: [],
+    boxes: [],
+    drums: [
+      { x: 0, z: 0, y0: -0.6, height: 1.05, radius: 9.8, tone: .8 },
+      { x: 0, z: 0, y0: -0.6, height: 1.6, radius: 8.4, tone: .86 },
+      { x: 0, z: 0, y0: top + 2, height: .8, radius: CORE_RADIUS + .5, tone: .92 },
+    ],
+    emissive: [],
+  }
+}
+
 interface MonolithSpec {
   deg: number
   r: number

@@ -1,16 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import {
-  AdditiveBlending,
   BufferAttribute,
   BufferGeometry,
   Color,
   DataTexture,
   FloatType,
+  LineSegments,
   NearestFilter,
   Points,
+  AdditiveBlending,
   RGBAFormat,
-  RedFormat,
   ShaderMaterial,
   Vector3,
 } from 'three'
@@ -19,44 +19,25 @@ import { getStore, isRepoReady } from '../../data/repo.ts'
 import type { Archetype, LinkKind, NodeRecord } from '../../domain/types.ts'
 import { LAYER } from '../layers.ts'
 import { LINK_STYLE, buildTypedLinks } from '../links/style.ts'
-import { getFieldFrame, type FieldFrame } from './runtime.ts'
-import { RIPPLE_Y, buildTint, landResolution, type NoteState } from './state.ts'
-import { FieldVideos, fieldMediaStatus, sceneFootprint, sceneReveal, type SceneFootprint } from './FieldMedia.tsx'
+import { getFieldFrame } from './runtime.ts'
+import { FieldVideos, fieldMediaStatus, sceneReveal } from './FieldMedia.tsx'
 import { loadSplatBytes } from '../splats/assets.ts'
 import { registerDevApi } from '../../app/devApi.ts'
+import { createMolecularPacket, molecularBonds, molecularCounts } from './molecules.ts'
 
-// The particle world (milestone 2). Three point layers, all GPU-animated from small textures
-// the runtime fills each frame:
-//   land      a jittered grid of grains lifted by the heightfield, swept by birth ripples
-//   clouds    each note as a cloud of grains (a photo note's grains are its photo)
-//   currents  grains flowing along links, coloured by link kind
-// Shape comes from the playhead (runtime.ts, a pure function of time); a slow wall-clock
-// shimmer keeps the paused world alive without moving anything that time decides.
-
-const LAND_GRID = 300
-/** The detail patch: a finer land that follows where you look, for close views. */
-const DETAIL_GRID = 190
-const DETAIL_SIZE = 64
-/** How fast displayed clouds ease toward what time says (per second). */
+// Data-only molecular field: every packet belongs to a record and every bridge to a link.
+// All animated offsets are bounded rendering motion around semantic anchors. The reversible
+// integer engine and the timeline remain authoritative; no scenery is generated in an empty world.
 const EASE = 6
 const MAX_GRAINS = 260_000
 const IMAGE_GRID = 56
-const CURRENT_GRAINS = 40
-/** Current grains for the whole world: big worlds thin each link's current instead of growing without bound. */
+const CURRENT_GRAINS = 280
 const MAX_CURRENT_GRAINS = 60_000
-/** Pictures a note shows as cards, side by side. */
 const MAX_CARDS = 3
-const MAX_RIPPLES = 16
-/** Scenes the land levels and stains at once (the nearest). */
-const MAX_SCENES = 8
 
 const ARCHETYPE_COLOR: Record<Archetype, string> = {
-  idea: '#9fd3e6',
-  entity: '#e9e4d8',
-  lens: '#d9a54a',
-  document: '#bdb8ad',
-  memory: '#f0b85a',
-  demon: '#ff5a2c',
+  idea: '#76c5e2', entity: '#dfad65', lens: '#8ab2ff',
+  document: '#a5d0db', memory: '#e8a47a', demon: '#86d6be',
 }
 
 // ─── shared GLSL ─────────────────────────────────────────────────────────────────────
@@ -70,129 +51,63 @@ vec4 noteB(float i) { return texture2D(uNotes, vec2((i + 0.5) / uN, 0.5)); }
 vec4 noteC(float i) { return texture2D(uNotes, vec2((i + 0.5) / uN, 5.0 / 6.0)); }
 `
 
-const SOFT_DOT = /* glsl */ `
+// Depth-writing shaded beads carry the volume. A restrained glow is a separate pass;
+// discarding almost every solid sample was what made the old field disappear at overview.
+const MOLECULE = /* glsl */ `
 varying vec3 vColor;
 varying float vAlpha;
+varying float vRole;
+varying float vShine;
 void main() {
   vec2 d = gl_PointCoord * 2.0 - 1.0;
   float r2 = dot(d, d);
-  if (r2 > 1.0) discard;
-  float a = exp(-r2 * 3.2) * vAlpha;
-  if (a < 0.004) discard;
-  gl_FragColor = vec4(vColor, a);
+  if (r2 > 0.92 || vAlpha < 0.035 || vRole > 1.5) discard;
+  vec3 normal = vec3(d.x, -d.y, sqrt(max(0.0, 1.0 - r2)));
+  vec3 light = normalize(vec3(-0.45, 0.6, 1.0));
+  float diffuse = 0.24 + 0.76 * max(dot(normal, light), 0.0);
+  float specular = pow(max(dot(normal, normalize(light + vec3(0.0, 0.0, 1.0))), 0.0), 18.0);
+  float rim = 0.4 + 0.6 * normal.z;
+  vec3 color = vColor * diffuse * rim * 1.35 + vec3(0.7, 0.85, 0.9) * specular * 0.45;
+  gl_FragColor = vec4(color * (0.7 + 0.3 * vAlpha), 1.0);
 }
 `
-
-/** Land grains are small solid dots that write depth, so post fog sees the land, not the sky. */
+const NEBULA_GLOW = /* glsl */ `
+varying vec3 vColor;
+varying float vAlpha;
+varying float vRole;
+varying float vShine;
+void main() {
+  vec2 d = gl_PointCoord * 2.0 - 1.0;
+  float r2 = dot(d, d);
+  if (r2 > 1.0 || vAlpha < 0.035 || vRole > 2.5) discard;
+  float nucleus = step(2.5, vRole);
+  float fog = exp(-r2 * (nucleus > 0.5 ? 4.5 : 3.8));
+  float population = vRole > 1.5 && vRole < 2.5 ? 0.006 : vRole > 0.5 && vRole < 1.5 ? 0.022 : 0.009;
+  float alpha = fog * mix(population * (0.35 + 0.65 * vShine), 0.58, nucleus) * vAlpha;
+  float star = pow(max(0.0, 1.0 - abs(d.x) * 10.0), 5.0) * exp(-abs(d.y) * 5.0)
+    + pow(max(0.0, 1.0 - abs(d.y) * 10.0), 5.0) * exp(-abs(d.x) * 5.0);
+  alpha += star * (nucleus * 0.26 + step(0.975, vShine) * 0.08) * vAlpha;
+  gl_FragColor = vec4(vColor * (nucleus > 0.5 ? 1.5 : 0.95), alpha);
+}
+`
 const SOLID_DOT = /* glsl */ `
 varying vec3 vColor;
 varying float vAlpha;
 void main() {
   vec2 d = gl_PointCoord * 2.0 - 1.0;
-  float r2 = dot(d, d);
-  if (r2 > 0.8 || vAlpha < 0.05) discard;
+  if (dot(d, d) > 0.8 || vAlpha < 0.05) discard;
   gl_FragColor = vec4(vColor, 1.0);
 }
 `
-
-// ─── land ────────────────────────────────────────────────────────────────────────────
-
-const LAND_VERT = /* glsl */ `
-uniform sampler2D uHeight;
-uniform float uRes;
-uniform sampler2D uTint;
-uniform float uTintRes;
-uniform vec4 uExtent; // heightfield: x0, z0, size
-uniform vec4 uPatch;  // this layer: x0, z0, size, grain scale
-uniform float uPatchFade; // 1 = the whole land (round edge); else the detail patch's opacity
-uniform float uTime;
-uniform float uPixel;
-uniform vec4 uRipples[${MAX_RIPPLES}]; // x, z, age (years), amp
-uniform float uRippleSpeed;
-uniform vec4 uScenes[${MAX_SCENES}];    // x, z, radius, presence
-uniform vec4 uSceneLand[${MAX_SCENES}]; // scene colour (linear rgb), ground height
-attribute vec2 aUV;
-attribute vec2 aRand;
-varying vec3 vColor;
-varying float vAlpha;
-
-vec4 bilinear(sampler2D tex, float res, vec2 uv) {
-  vec2 f = clamp(uv, 0.0, 1.0) * (res - 1.0);
-  vec2 i = min(floor(f), vec2(res - 2.0));
-  vec2 t = f - i;
-  vec4 a = texture2D(tex, (i + vec2(0.5, 0.5)) / res);
-  vec4 b = texture2D(tex, (i + vec2(1.5, 0.5)) / res);
-  vec4 c = texture2D(tex, (i + vec2(0.5, 1.5)) / res);
-  vec4 d = texture2D(tex, (i + vec2(1.5, 1.5)) / res);
-  return mix(mix(a, b, t.x), mix(c, d, t.x), t.y);
-}
-
-void main() {
-  vec2 xz = uPatch.xy + aUV * uPatch.z;
-  vec2 huv = (xz - uExtent.xy) / uExtent.z;
-  float h = bilinear(uHeight, uRes, huv).r;
-  vec4 tint = bilinear(uTint, uTintRes, huv);
-  // Scenes: the land levels into a still clearing for each (its grains stand on it) and takes
-  // the scene's colours around it, faintly even from afar.
-  float under = 0.0;
-  float pool = 0.0;
-  vec3 stain = vec3(0.0);
-  float stainW = 0.0;
-  for (int k = 0; k < ${MAX_SCENES}; k++) {
-    vec4 sc = uScenes[k];
-    if (sc.z <= 0.0) continue;
-    float dist = length(xz - sc.xy);
-    h = mix(h, uSceneLand[k].w, 1.0 - smoothstep(1.05 * sc.z, 2.1 * sc.z, dist));
-    under = max(under, (1.0 - smoothstep(0.25 * sc.z, 0.75 * sc.z, dist)) * sc.w);
-    pool = max(pool, (1.0 - smoothstep(0.6 * sc.z, 1.9 * sc.z, dist)) * sc.w);
-    float w = (1.0 - smoothstep(0.3 * sc.z, 2.2 * sc.z, dist)) * (0.3 + 0.7 * sc.w);
-    stain += uSceneLand[k].rgb * w;
-    stainW = max(stainW, w);
-  }
-  // A slow ambient swell, then every recent birth's wave front.
-  float swell = 0.45 * sin(0.07 * xz.x + 0.35 * uTime) * cos(0.06 * xz.y - 0.27 * uTime);
-  float crest = 0.0;
-  for (int k = 0; k < ${MAX_RIPPLES}; k++) {
-    vec4 r = uRipples[k];
-    if (r.w <= 0.0) continue;
-    float dist = length(xz - r.xy);
-    float front = r.z * uRippleSpeed;
-    float fade = 1.0 - r.z / ${RIPPLE_Y.toFixed(2)};
-    crest += r.w * fade * exp(-pow(dist - front, 2.0) / 40.0);
-  }
-  vec3 p = vec3(xz.x, h + (swell + crest * 1.6) * (1.0 - under) + aRand.x * 0.2 * uPatch.w, xz.y);
-  vec4 mv = modelViewMatrix * vec4(p, 1.0);
-  gl_Position = projectionMatrix * mv;
-
-  // Survey contours every 1.5 u of height, and an index contour every fifth (7.5 u).
-  float level = h / 1.5;
-  float line = 1.0 - smoothstep(0.0, 0.11, abs(fract(level + 0.5) - 0.5));
-  float index = 1.0 - smoothstep(0.0, 0.06, abs(fract(level / 5.0 + 0.5) - 0.5) * 5.0);
-  float onLand = smoothstep(0.25, 1.2, h);
-  float contour = max(line * 0.55, index) * onLand;
-  gl_PointSize = clamp((0.16 + 0.16 * aRand.y) * uPatch.w * (1.0 + 0.6 * contour) * uPixel / -mv.z, 1.0, 4.0);
-
-  float lift = smoothstep(0.0, 16.0, h);
-  vec3 low = vec3(0.045, 0.055, 0.08);
-  vec3 mid = vec3(0.22, 0.21, 0.2);
-  vec3 high = vec3(0.92, 0.66, 0.34);
-  vec3 ground = mix(mix(low, mid, smoothstep(0.0, 0.45, lift)), high, smoothstep(0.45, 1.0, lift));
-  // The land takes the colour of the notes that raised it.
-  ground = mix(ground, tint.rgb * (0.35 + 0.65 * lift), tint.a * (0.35 + 0.45 * lift));
-  // Strongest under the scene, where its rim fades into the land, so floor and ground meet.
-  if (stainW > 0.0) ground = mix(ground, stain / max(stainW, 1e-3) * (0.5 + 0.7 * aRand.x), min(0.85, 0.3 * stainW * stainW + 0.7 * max(under, 0.75 * pool)));
-  vColor = ground * (0.75 + 0.5 * aRand.y)
-    + vec3(1.0, 0.72, 0.38) * contour * (0.25 + 0.4 * index)
-    + vec3(1.0, 0.8, 0.5) * min(crest, 1.0) * 0.9;
-
-  float edge;
-  if (uPatchFade >= 1.0) {
-    edge = 1.0 - smoothstep(0.55, 1.0, length(huv * 2.0 - 1.0));
-  } else {
-    edge = (1.0 - smoothstep(0.55, 1.0, length(aUV * 2.0 - 1.0))) * uPatchFade
-      * (1.0 - smoothstep(0.55, 1.0, length(huv * 2.0 - 1.0)));
-  }
-  vAlpha = edge * (0.55 + 0.4 * lift + 0.4 * min(crest, 1.0));
+// One bounded motion function keeps the scaffold endpoints attached to their beads.
+const MOLECULAR_MOTION = /* glsl */ `
+vec3 molecularPoint(vec3 offset, float phase, float role, float sigma, float highlight, float time) {
+  vec3 local = offset * (0.95 + 0.04 * min(sigma, 5.0));
+  float angle = time * (0.018 + 0.006 * sin(phase * 6.2831));
+  float co = cos(angle), si = sin(angle);
+  local.xz = mat2(co, -si, si, co) * local.xz;
+  vec3 curl = vec3(sin(local.z * 0.18 + time * 0.1), cos(local.x * 0.16 - time * 0.085), sin(local.y * 0.17 + time * 0.09));
+  return local + curl * (0.3 + 0.2 * role + highlight * 0.25);
 }
 `
 
@@ -200,41 +115,78 @@ void main() {
 
 const CLOUD_VERT = /* glsl */ `
 ${NOTE_FETCH}
+${MOLECULAR_MOTION}
 uniform float uTime;
 uniform float uPixel;
+uniform float uDpr;
+uniform float uPointScale;
 attribute float aNote;
 attribute vec3 aOff;
 attribute vec3 aColor;
-attribute vec3 aRand;   // phase, size, plane (1 = part of an image card)
-attribute vec2 aPlane;  // image-card position: [-0.5, 0.5]² per card, cards side by side in x
+attribute vec3 aRand;
+attribute vec2 aPlane;
+attribute float aRole;
 varying vec3 vColor;
 varying float vAlpha;
+varying float vRole;
+varying float vShine;
 void main() {
   vec4 a = noteA(aNote);
   vec4 b = noteB(aNote);
-  if (b.y < 0.5) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; return; }
-  float order = b.x;
+  if (b.y < 0.5) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; vAlpha = 0.0; return; }
   float hl = b.z;
   float cond = b.w;
   float sigma = a.w;
-  float ph = aRand.x * 6.2831;
-  vec3 drift = vec3(sin(uTime * 0.37 + ph), 0.6 * sin(uTime * 0.29 + ph * 1.7), cos(uTime * 0.33 + ph * 1.3));
+  bool nucleus = aRole > 2.5;
   vec4 mv;
   if (aRand.z > 0.5) {
-    // An image note: its grains hold the picture, facing you, dissolving as order falls.
-    vec4 c = modelViewMatrix * vec4(a.xyz + vec3(0.0, 1.5, 0.0), 1.0);
-    float card = 7.0 * (0.6 + 0.4 * cond);
-    vec3 scatter = aOff * sigma * (0.06 + 0.9 * (1.0 - order) * (1.0 - order)) + drift * 0.12;
-    mv = c + vec4(aPlane.x * card, aPlane.y * card, 0.0, 0.0) + vec4(scatter * (2.0 - cond), 0.0);
+    vec4 center = modelViewMatrix * vec4(a.xyz + vec3(0.0, 1.5, 0.0), 1.0);
+    float card = 7.0 * (0.8 + 0.2 * cond);
+    vec3 scatter = aOff * min(sigma, 5.0) * 0.035;
+    mv = center + vec4(aPlane.x * card, aPlane.y * card, 0.0, 0.0) + vec4(scatter, 0.0);
+  } else if (nucleus) {
+    mv = modelViewMatrix * vec4(a.xyz, 1.0);
   } else {
-    vec3 p = a.xyz + aOff * sigma + drift * sigma * (0.07 + 0.25 * (1.0 - order));
-    mv = modelViewMatrix * vec4(p, 1.0);
+    vec3 local = molecularPoint(aOff, aRand.x, aRole, sigma, hl, uTime);
+    mv = modelViewMatrix * vec4(a.xyz + local, 1.0);
   }
   gl_Position = projectionMatrix * mv;
-  float size = (aRand.z > 0.5 ? 0.34 : 0.14 + 0.22 * aRand.y) * (1.0 + 0.5 * hl);
-  gl_PointSize = clamp(size * uPixel / -mv.z, 1.0, 5.0);
-  vColor = aColor * (aRand.z > 0.5 ? 1.0 : 1.9) * (1.0 + 1.2 * hl);
-  vAlpha = (aRand.z > 0.5 ? 0.9 : 0.45 + 0.5 * order) * cond * (1.0 - noteC(aNote).x);
+  float size = aRand.z > 0.5 ? 0.34 : nucleus ? aRand.y : (0.55 + 1.15 * sqrt(aRand.y)) * (aRole > 0.5 && aRole < 1.5 ? 1.2 : 1.0);
+  float minSize = aRand.z > 0.5 ? 1.0 : (nucleus ? 9.0 : aRand.y > 0.72 ? 2.3 : 0.7) * uDpr;
+  float maxSize = (nucleus ? 42.0 : 8.0) * uDpr;
+  gl_PointSize = min(clamp(size * uPixel / max(0.1, -mv.z), minSize, maxSize) * uPointScale, 120.0 * uDpr);
+  vColor = mix(aColor, vec3(1.0, 0.76, 0.38), hl * 0.55);
+  vAlpha = (0.6 + 0.4 * cond) * (1.0 - noteC(aNote).x) * (1.0 + hl * 0.25);
+  vRole = aRole;
+  vShine = nucleus ? 1.0 : aRand.y;
+}
+`
+
+const BOND_VERT = /* glsl */ `
+${NOTE_FETCH}
+${MOLECULAR_MOTION}
+uniform float uTime;
+attribute float aNote;
+attribute vec3 aOff;
+attribute vec3 aColor;
+attribute float aPhase;
+attribute float aRole;
+varying vec3 vColor;
+varying float vAlpha;
+void main() {
+  vec4 a = noteA(aNote), b = noteB(aNote);
+  vColor = aColor;
+  vAlpha = b.y * (1.0 - noteC(aNote).x) * (0.7 + b.z * 0.3);
+  vec3 local = molecularPoint(aOff, aPhase, aRole, a.w, b.z, uTime);
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(a.xyz + local, 1.0);
+}
+`
+const BOND_FRAG = /* glsl */ `
+varying vec3 vColor;
+varying float vAlpha;
+void main() {
+  if (vAlpha < 0.05) discard;
+  gl_FragColor = vec4(vColor, 0.24 * vAlpha);
 }
 `
 
@@ -244,26 +196,35 @@ const CURRENT_VERT = /* glsl */ `
 ${NOTE_FETCH}
 uniform float uTime;
 uniform float uPixel;
-attribute vec2 aEnds;   // from, to note indices
-attribute vec2 aFlow;   // phase, speed jitter
+uniform float uDpr;
+uniform float uPointScale;
+attribute vec2 aEnds;
+attribute vec2 aFlow;
 attribute vec3 aColor;
 varying vec3 vColor;
 varying float vAlpha;
+varying float vRole;
+varying float vShine;
 void main() {
   vec4 A = noteA(aEnds.x);
   vec4 B = noteA(aEnds.y);
-  if (noteB(aEnds.x).y < 0.5 || noteB(aEnds.y).y < 0.5) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; return; }
-  float u = fract(aFlow.x + uTime * (0.05 + 0.04 * aFlow.y));
-  float len = distance(A.xyz, B.xyz);
-  vec3 mid = mix(A.xyz, B.xyz, 0.5) + vec3(0.0, 2.0 + len * 0.22, 0.0);
-  vec3 p = mix(mix(A.xyz, mid, u), mix(mid, B.xyz, u), u);
-  p += vec3(sin(aFlow.x * 40.0 + uTime), cos(aFlow.x * 31.0 + uTime * 0.8), sin(aFlow.x * 23.0)) * 0.35;
+  if (noteB(aEnds.x).y < 0.5 || noteB(aEnds.y).y < 0.5) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; vAlpha = 0.0; return; }
+  float u = fract(aFlow.x + uTime * 0.035);
+  vec3 p = mix(A.xyz, B.xyz, u);
+  vec3 tangent = normalize(B.xyz - A.xyz + vec3(0.001));
+  vec3 side = normalize(cross(tangent, vec3(0.0, 1.0, 0.0)) + vec3(0.001));
+  vec3 up = normalize(cross(side, tangent));
+  float angle = aFlow.y * 6.2831 + uTime * 0.09;
+  float radius = 0.6 + (1.0 + aFlow.y * 1.8) * sin(3.14159 * u);
+  p += (side * cos(angle) + up * sin(angle)) * radius;
   vec4 mv = modelViewMatrix * vec4(p, 1.0);
   gl_Position = projectionMatrix * mv;
-  gl_PointSize = clamp(0.5 * uPixel / -mv.z, 1.0, 8.0);
-  vColor = aColor * 1.8;
+  gl_PointSize = clamp((0.55 + 0.6 * aFlow.y) * uPixel / max(0.1, -mv.z), 1.2 * uDpr, 5.0 * uDpr) * uPointScale;
   float hl = max(noteB(aEnds.x).z, noteB(aEnds.y).z);
-  vAlpha = sin(3.14159 * u) * (0.45 + 0.5 * hl);
+  vColor = mix(aColor, vec3(0.95, 0.79, 0.43), 0.25 + hl * 0.5);
+  vAlpha = 0.8;
+  vRole = 1.0;
+  vShine = aFlow.y;
 }
 `
 
@@ -306,9 +267,9 @@ function pictureKeys(r: NodeRecord): { key: string; src: string }[] {
   return []
 }
 
-/** Grains per link's current: CURRENT_GRAINS, thinned (to ≥ 8) when the world has many links. */
+/** Molecules per real relationship, thinned within a fixed budget for large graphs. */
 export const currentGrainsPerLink = (links: number) =>
-  links <= 0 ? CURRENT_GRAINS : Math.max(8, Math.min(CURRENT_GRAINS, Math.floor(MAX_CURRENT_GRAINS / links)))
+  links <= 0 ? CURRENT_GRAINS : Math.max(0, Math.min(CURRENT_GRAINS, Math.floor(MAX_CURRENT_GRAINS / links)))
 
 /** Horizontal offset (in card widths) of card j of m: a strip centred on the note. */
 export const cardOffset = (j: number, m: number) => (j - (m - 1) / 2) * 1.08
@@ -382,45 +343,6 @@ interface Budget {
   images: number
 }
 
-function grainsFor(frame: FieldFrame, i: number): Budget {
-  const r = frame.records[i]
-  const mass = r.thermo?.mass ?? 1
-  const extra = Math.min(r.attachments.length + (r.embeds?.length ?? 0), 4)
-  return { cloud: Math.round(420 + 300 * mass + 120 * extra + 40 * Math.min(r.contentMd.length / 400, 8)), images: Math.min(MAX_CARDS, r.attachments.filter((a) => a.kind === 'image').length) }
-}
-
-function landPoints(grid: number, material: ShaderMaterial, name: string, seed: number): Points {
-  const n = grid * grid
-  const uv = new Float32Array(n * 2)
-  const rnd = new Float32Array(n * 2)
-  const r = rng(seed)
-  for (let j = 0; j < grid; j++) {
-    for (let i = 0; i < grid; i++) {
-      const k = j * grid + i
-      uv[k * 2] = (i + r()) / grid
-      uv[k * 2 + 1] = (j + r()) / grid
-      rnd[k * 2] = r()
-      rnd[k * 2 + 1] = r()
-    }
-  }
-  const g = new BufferGeometry()
-  g.setAttribute('aUV', new BufferAttribute(uv, 2))
-  g.setAttribute('aRand', new BufferAttribute(rnd, 2))
-  g.setAttribute('position', new BufferAttribute(new Float32Array(n * 3), 3))
-  const p = new Points(g, material)
-  p.frustumCulled = false
-  p.layers.set(LAYER.SOLID)
-  p.raycast = () => {}
-  p.name = name
-  return p
-}
-
-const linearColor = (hex: string): [number, number, number] => {
-  const c = new Color(hex).convertSRGBToLinear()
-  return [c.r, c.g, c.b]
-}
-const TINT_RGB = Object.fromEntries(Object.entries(ARCHETYPE_COLOR).map(([k, v]) => [k, linearColor(v)])) as Record<Archetype, [number, number, number]>
-
 // ─── the layer ───────────────────────────────────────────────────────────────────────
 
 export function FieldLayer() {
@@ -437,70 +359,13 @@ export function FieldLayer() {
     t.needsUpdate = true
     return t
   }, [])
-  const heightTex = useMemo(() => {
-    const t = new DataTexture(new Float32Array(4), 2, 2, RedFormat, FloatType)
-    t.magFilter = NearestFilter
-    t.minFilter = NearestFilter
-    t.needsUpdate = true
-    return t
-  }, [])
-  const tintTex = useMemo(() => {
-    const t = new DataTexture(new Float32Array(16), 2, 2, RGBAFormat, FloatType)
-    t.magFilter = NearestFilter
-    t.minFilter = NearestFilter
-    t.needsUpdate = true
-    return t
-  }, [])
-  useEffect(
-    () => () => {
-      notesTex.dispose()
-      heightTex.dispose()
-      tintTex.dispose()
-    },
-    [notesTex, heightTex, tintTex],
-  )
+  useEffect(() => () => notesTex.dispose(), [notesTex])
+  const flowTime = useRef(0)
 
-  const common = useMemo(() => ({ uNotes: { value: notesTex }, uN: { value: 1 }, uTime: { value: 0 }, uPixel: { value: 600 } }), [notesTex])
+  const common = useMemo(() => ({ uNotes: { value: notesTex }, uN: { value: 1 }, uTime: { value: 0 }, uPixel: { value: 600 }, uDpr: { value: 1 }, uPointScale: { value: 1 } }), [notesTex])
 
-  const landMat = useMemo(
-    () =>
-      new ShaderMaterial({
-        vertexShader: LAND_VERT,
-        fragmentShader: SOLID_DOT,
-        uniforms: {
-          uHeight: { value: heightTex },
-          uRes: { value: 2 },
-          uTint: { value: tintTex },
-          uTintRes: { value: 2 },
-          uExtent: { value: [-50, -50, 100, 0] },
-          uPatch: { value: [-50, -50, 100, 1] },
-          uPatchFade: { value: 1 },
-          uTime: common.uTime,
-          uPixel: common.uPixel,
-          uRipples: { value: Array.from({ length: MAX_RIPPLES }, () => [0, 0, 0, 0]).flat() },
-          uRippleSpeed: { value: 70 },
-          uScenes: { value: new Array<number>(MAX_SCENES * 4).fill(0) },
-          uSceneLand: { value: new Array<number>(MAX_SCENES * 4).fill(0) },
-        },
-        transparent: false,
-        depthWrite: true,
-      }),
-    [heightTex, tintTex, common],
-  )
-  // Shares every uniform with the land except where it sits and how visible it is.
-  const detailMat = useMemo(
-    () =>
-      new ShaderMaterial({
-        vertexShader: LAND_VERT,
-        fragmentShader: SOLID_DOT,
-        uniforms: { ...landMat.uniforms, uPatch: { value: [0, 0, DETAIL_SIZE, 0.55] }, uPatchFade: { value: 0 } },
-        transparent: false,
-        depthWrite: true,
-      }),
-    [landMat],
-  )
   const cloudMat = useMemo(
-    () => new ShaderMaterial({ vertexShader: CLOUD_VERT, fragmentShader: SOFT_DOT, uniforms: common, transparent: true, depthWrite: false, blending: AdditiveBlending }),
+    () => new ShaderMaterial({ vertexShader: CLOUD_VERT, fragmentShader: MOLECULE, uniforms: common, transparent: false, depthWrite: true }),
     [common],
   )
   const cardMat = useMemo(
@@ -508,31 +373,23 @@ export function FieldLayer() {
     [common],
   )
   const currentMat = useMemo(
-    () => new ShaderMaterial({ vertexShader: CURRENT_VERT, fragmentShader: SOFT_DOT, uniforms: common, transparent: true, depthWrite: false, blending: AdditiveBlending }),
+    () => new ShaderMaterial({ vertexShader: CURRENT_VERT, fragmentShader: MOLECULE, uniforms: common, transparent: false, depthWrite: true }),
     [common],
   )
+  const bondMat = useMemo(() => new ShaderMaterial({ vertexShader: BOND_VERT, fragmentShader: BOND_FRAG, uniforms: common, transparent: true, depthWrite: false }), [common])
+  const glowUniforms = useMemo(() => ({ ...common, uPointScale: { value: 1.7 } }), [common])
+  const glowMat = useMemo(() => new ShaderMaterial({ vertexShader: CLOUD_VERT, fragmentShader: NEBULA_GLOW, uniforms: glowUniforms, transparent: true, depthWrite: false, blending: AdditiveBlending }), [glowUniforms])
+  const currentGlowMat = useMemo(() => new ShaderMaterial({ vertexShader: CURRENT_VERT, fragmentShader: NEBULA_GLOW, uniforms: glowUniforms, transparent: true, depthWrite: false, blending: AdditiveBlending }), [glowUniforms])
   useEffect(
     () => () => {
-      landMat.dispose()
-      detailMat.dispose()
       cloudMat.dispose()
       cardMat.dispose()
       currentMat.dispose()
+      bondMat.dispose()
+      glowMat.dispose()
+      currentGlowMat.dispose()
     },
-    [landMat, detailMat, cloudMat, cardMat, currentMat],
-  )
-
-  // Land and detail patch: jittered grids, built once.
-  // The grain grid follows the land's size (a bigger world gets more grains, within budget).
-  const [grains, setGrains] = useState(LAND_GRID)
-  const land = useMemo(() => landPoints(grains, landMat, 'field-land', 7), [grains, landMat])
-  const detail = useMemo(() => landPoints(DETAIL_GRID, detailMat, 'field-land-detail', 11), [detailMat])
-  useEffect(
-    () => () => {
-      land.geometry.dispose()
-      detail.geometry.dispose()
-    },
-    [land, detail],
+    [cloudMat, cardMat, currentMat, bondMat, glowMat, currentGlowMat],
   )
 
   // Pictures for image notes (async; the clouds rebuild when one arrives).
@@ -554,47 +411,66 @@ export function FieldLayer() {
   }, [nodes])
 
   // Clouds and currents rebuild when the set of notes or the layout changes.
-  const { clouds, cards, currents } = useMemo(() => {
+  const { clouds, cards, bonds, currents, glow, currentGlow } = useMemo(() => {
     void structure
     void pictureVersion
     const frame = getFieldFrame()
     const n = frame.ids.length
-    const budgets = frame.ids.map((_, i) => grainsFor(frame, i))
+    const counts = molecularCounts(frame.records, MAX_GRAINS)
+    const budgets = frame.records.map((r, i) => ({ cloud: counts[i]!, images: Math.min(MAX_CARDS, r.attachments.filter((a) => a.kind === 'image').length) }))
     const cardGrains = (b: Budget) => b.images * IMAGE_GRID * IMAGE_GRID
     const planned = budgets.reduce((s, b) => s + b.cloud + cardGrains(b), 0)
     const scale = Math.min(1, MAX_GRAINS / Math.max(1, planned))
-    const total = budgets.reduce((s, b) => s + Math.round(b.cloud * scale) + cardGrains(b), 0)
+    const total = n + budgets.reduce((s, b) => s + Math.round(b.cloud * scale) + cardGrains(b), 0)
     const aNote = new Float32Array(total)
     const aOff = new Float32Array(total * 3)
     const aColor = new Float32Array(total * 3)
     const aRand = new Float32Array(total * 3)
     const aPlane = new Float32Array(total * 2)
+    const aRole = new Float32Array(total)
+    const bondNotes: number[] = [], bondOffsets: number[] = [], bondColors: number[] = [], bondPhases: number[] = [], bondRoles: number[] = []
     const col = new Color()
+    const warmWhite = new Color('#fff1dc')
     let k = 0
     for (let i = 0; i < n; i++) {
       const rec = frame.records[i]
       const r = rng(hash(rec.id))
-      const base = new Color(ARCHETYPE_COLOR[rec.archetype]).convertSRGBToLinear()
+      const base = new Color(ARCHETYPE_COLOR[rec.archetype])
       const pk = pictureKey(rec)
       const pic = pk ? pictures.get(pk.key) : null
       // A scene's cloud is the scene unresolved: nearly all its grains take its colours.
       const share = rec.splat && !budgets[i].images ? 0.9 : 0.6
       const count = Math.round(budgets[i].cloud * scale)
+      const packet = createMolecularPacket(rec, count, frame.degree[i])
+      const start = k
       for (let c = 0; c < count; c++, k++) {
         aNote[k] = i
-        // A soft ball, slightly flattened: the grains of an idea hover over its land.
-        aOff[k * 3] = gauss(r)
-        aOff[k * 3 + 1] = gauss(r) * 0.65
-        aOff[k * 3 + 2] = gauss(r)
+        aOff.set(packet.offsets.subarray(c * 3, c * 3 + 3), k * 3)
         if (pic && r() < share) {
           const p = (rec.splat ? centredPixel(r, IMAGE_GRID) : Math.floor(r() * IMAGE_GRID * IMAGE_GRID)) * 3
           col.setRGB(pic[p], pic[p + 1], pic[p + 2])
         } else {
-          col.copy(base).multiplyScalar(0.7 + 0.5 * r())
+          col.copy(base).lerp(warmWhite, r() * 0.12)
+          col.multiplyScalar(packet.roles[c] === 2 ? 0.65 : 0.8 + 0.4 * r())
         }
         aColor.set([col.r, col.g, col.b], k * 3)
-        aRand.set([r(), r(), 0], k * 3)
+        aRand.set([packet.phases[c]!, packet.sizes[c]!, 0], k * 3)
+        aRole[k] = packet.roles[c]!
       }
+      for (const site of molecularBonds(packet)) {
+        bondNotes.push(i)
+        bondOffsets.push(packet.offsets[site * 3]!, packet.offsets[site * 3 + 1]!, packet.offsets[site * 3 + 2]!)
+        const colorAt = (start + site) * 3
+        bondColors.push(aColor[colorAt]!, aColor[colorAt + 1]!, aColor[colorAt + 2]!)
+        bondPhases.push(packet.phases[site]!)
+        bondRoles.push(packet.roles[site]!)
+      }
+      // The actual note has one larger luminous nucleus, independent of decorative dust.
+      aNote[k] = i
+      aColor.set([base.r, base.g, base.b], k * 3)
+      aRand.set([r(), 1.5 + rec.thermo.mass * 0.4 + Math.min(frame.degree[i]!, 10) * 0.05, 0], k * 3)
+      aRole[k] = 3
+      k++
       const m = budgets[i].images
       const keys = pictureKeys(rec)
       for (let j = 0; j < m; j++) {
@@ -613,8 +489,8 @@ export function FieldLayer() {
         }
       }
     }
-    // Two draws: soft additive clouds, and photo cards as solid grains that write depth (so
-    // post fog sees them as near and they read as pictures, not glow).
+    // Photographs keep their own pixels. The soft volume and its sparse depth-writing stars
+    // share one bounded transform; there are no lattice lines or flat sheet surfaces.
     const part = (card: boolean, material: ShaderMaterial, name: string) => {
       const idx: number[] = []
       for (let q = 0; q < total; q++) if ((aRand[q * 3 + 2] > 0.5) === card) idx.push(q)
@@ -629,6 +505,7 @@ export function FieldLayer() {
       g.setAttribute('aColor', new BufferAttribute(pick(aColor, 3), 3))
       g.setAttribute('aRand', new BufferAttribute(pick(aRand, 3), 3))
       g.setAttribute('aPlane', new BufferAttribute(pick(aPlane, 2), 2))
+      g.setAttribute('aRole', new BufferAttribute(pick(aRole, 1), 1))
       g.setAttribute('position', new BufferAttribute(new Float32Array(idx.length * 3), 3))
       const p = new Points(g, material)
       p.frustumCulled = false
@@ -639,6 +516,23 @@ export function FieldLayer() {
     }
     const clouds = part(false, cloudMat, 'field-clouds')
     const cards = part(true, cardMat, 'field-cards')
+    const glow = new Points(clouds.geometry, glowMat)
+    glow.frustumCulled = false
+    glow.layers.set(LAYER.SOLID)
+    glow.raycast = () => {}
+    glow.name = 'field-nebula-glow'
+
+    const bondGeometry = new BufferGeometry()
+    for (const [name, values, itemSize] of [
+      ['aNote', bondNotes, 1], ['aOff', bondOffsets, 3], ['aColor', bondColors, 3],
+      ['aPhase', bondPhases, 1], ['aRole', bondRoles, 1],
+    ] as const) bondGeometry.setAttribute(name, new BufferAttribute(Float32Array.from(values), itemSize))
+    bondGeometry.setAttribute('position', new BufferAttribute(new Float32Array(bondNotes.length * 3), 3))
+    const bonds = new LineSegments(bondGeometry, bondMat)
+    bonds.frustumCulled = false
+    bonds.layers.set(LAYER.SOLID)
+    bonds.raycast = () => {}
+    bonds.name = 'record-molecular-bonds'
 
     const links = buildTypedLinks(new Map(frame.records.map((r) => [r.id, r])))
     const per = currentGrainsPerLink(links.length)
@@ -648,7 +542,7 @@ export function FieldLayer() {
     const aCol = new Float32Array(m * 3)
     links.forEach((l, li) => {
       const r = rng(hash(l.from + l.to))
-      const c = new Color(LINK_STYLE[l.kind as LinkKind].color).convertSRGBToLinear()
+      const c = new Color(LINK_STYLE[l.kind as LinkKind].color)
       for (let g = 0; g < per; g++) {
         const q = li * per + g
         aEnds.set([frame.index.get(l.from)!, frame.index.get(l.to)!], q * 2)
@@ -666,100 +560,60 @@ export function FieldLayer() {
     currents.layers.set(LAYER.SOLID)
     currents.raycast = () => {}
     currents.name = 'field-currents'
-    return { clouds, cards, currents }
-  }, [structure, pictureVersion, cloudMat, cardMat, currentMat])
+    const currentGlow = new Points(lg, currentGlowMat)
+    currentGlow.frustumCulled = false
+    currentGlow.layers.set(LAYER.SOLID)
+    currentGlow.raycast = () => {}
+    currentGlow.name = 'field-current-glow'
+    return { clouds, cards, bonds, currents, glow, currentGlow }
+  }, [structure, pictureVersion, cloudMat, cardMat, bondMat, currentMat, glowMat, currentGlowMat])
   useEffect(
     () => () => {
       clouds.geometry.dispose()
       cards.geometry.dispose()
+      bonds.geometry.dispose()
       currents.geometry.dispose()
     },
-    [clouds, cards, currents],
+    [clouds, cards, bonds, currents, glow, currentGlow],
   )
 
-  // Dev: __wv.fieldLayers({ land: false, clouds: false, … }) hides layers to see what is where.
+  // Dev: isolate data-associated layers without manufacturing background geometry.
   useEffect(() => {
-    const layers = { land, detail, clouds, cards, currents }
+    const layers = { clouds, cards, bonds, currents, glow, currentGlow }
     registerDevApi('fieldLayers', (want: Partial<Record<keyof typeof layers, boolean>> = {}) => {
       for (const [k, v] of Object.entries(want)) if (k in layers) layers[k as keyof typeof layers].visible = v
       return Object.fromEntries(Object.entries(layers).map(([k, p]) => [k, p.visible]))
     })
-  }, [land, detail, clouds, cards, currents])
+    registerDevApi('fieldMolecules', () => ({
+      packets: getFieldFrame().ids.length,
+      molecules: clouds.geometry.getAttribute('aNote').count,
+      nuclei: getFieldFrame().born.reduce((sum, born) => sum + born, 0),
+      currentMolecules: currents.geometry.getAttribute('aEnds').count,
+      localBonds: bonds.geometry.getAttribute('aNote').count / 2,
+    }))
+  }, [clouds, cards, bonds, currents, glow, currentGlow])
 
   const seen = useRef({ version: -1, structure: -1 })
+  // Fast Refresh may replace GPU textures while preserving the evaluated frame and refs.
+  useEffect(() => {
+    seen.current = { version: -1, structure: -1 }
+  }, [notesTex])
   // What is on screen eases toward what time says (attention re-condensing, a sudden scrub),
   // without changing what time says: the runtime's frame stays a pure function of the playhead.
   const shown = useRef({ sigma: new Float32Array(0), order: new Float32Array(0), hl: new Float32Array(0) })
-  const look = useMemo(() => ({ dir: new Vector3(), pt: new Vector3() }), [])
+  const look = useMemo(() => new Vector3(), [])
+  const texels = useRef(new Float32Array(0))
+  const highlighted = useRef(new Set<number>())
 
   useFrame((state, dt) => {
     const frame = getFieldFrame()
     if (frame.structure !== structure) setStructure(frame.structure)
     const cam = state.camera
-    common.uTime.value = state.clock.elapsedTime
+    if (useApp.getState().view.flow !== false) flowTime.current += Math.min(dt, 0.1)
+    common.uTime.value = flowTime.current
+    common.uDpr.value = dpr
     common.uPixel.value = (size.height * dpr) / (2 * Math.tan(((cam as { fov?: number }).fov ?? 50) * (Math.PI / 360)))
     const s = seen.current
-
-    // Land and tint: only when time (or the world) changed.
-    if (frame.version !== s.version) {
-      const hf = frame.heightfield
-      heightTex.image = { data: hf.h, width: hf.res, height: hf.res } as unknown as typeof heightTex.image
-      heightTex.needsUpdate = true
-      landMat.uniforms.uRes.value = hf.res
-      landMat.uniforms.uExtent.value = [hf.x0, hf.z0, hf.size, 0]
-      landMat.uniforms.uPatch.value = [hf.x0, hf.z0, hf.size, 1]
-      const res = landResolution(hf.size)
-      if (res.grains !== grains) setGrains(res.grains)
-      const tint = buildTint(
-        frame.ids.map((id, i) => ({
-          xz: frame.layout.get(id)!,
-          state: { born: frame.born[i] === 1, amp: frame.amp[i], width: frame.width[i] } as NoteState,
-          rgb: TINT_RGB[frame.records[i].archetype],
-        })),
-        hf,
-        res.tint,
-      )
-      tintTex.image = { data: tint, width: res.tint, height: res.tint } as unknown as typeof tintTex.image
-      tintTex.needsUpdate = true
-      landMat.uniforms.uTintRes.value = res.tint
-      const rip = landMat.uniforms.uRipples.value as number[]
-      rip.fill(0)
-      frame.ripples.forEach((r, i) => rip.splice(i * 4, 4, r.x, r.z, r.age, r.amp))
-    }
-
-    // Detail patch: centred where the view meets the ground, snapped to its own grain so it
-    // never swims; visible only when you are close.
-    cam.getWorldDirection(look.dir)
-    const t = look.dir.y < -0.05 ? Math.min(600, -cam.position.y / look.dir.y) : 80
-    look.pt.copy(cam.position).addScaledVector(look.dir, t)
-    const cell = DETAIL_SIZE / DETAIL_GRID
-    const px = Math.round(look.pt.x / cell) * cell - DETAIL_SIZE / 2
-    const pz = Math.round(look.pt.z / cell) * cell - DETAIL_SIZE / 2
-    const near = 1 - Math.min(1, Math.max(0, (cam.position.distanceTo(look.pt) - 40) / 80))
-    ;(detailMat.uniforms.uPatch.value as number[]).splice(0, 2, px, pz)
-    // The coarse land's grains shrink as the fine patch takes over, so close views stay fine.
-    ;(landMat.uniforms.uPatch.value as number[])[3] = 1 - 0.5 * near
-    detailMat.uniforms.uPatchFade.value = Math.min(0.999, near)
-    detail.visible = near > 0.01
-
-    // Scenes on the land: the nearest few level, clear and stain it (sceneFootprint).
-    const sc = landMat.uniforms.uScenes.value as number[]
-    const sl = landMat.uniforms.uSceneLand.value as number[]
-    sc.fill(0)
-    const feet: { fp: SceneFootprint; i: number; d: number }[] = []
-    for (let i = 0; i < frame.ids.length; i++) {
-      if (!frame.records[i].splat || !frame.born[i]) continue
-      const fp = sceneFootprint(frame, i, cam.position)
-      feet.push({ fp, i, d: Math.hypot(fp.x - cam.position.x, fp.z - cam.position.z) })
-    }
-    feet.sort((a, b) => a.d - b.d)
-    feet.slice(0, MAX_SCENES).forEach(({ fp, i }, k) => {
-      const pk = pictureKey(frame.records[i])
-      const pic = pk ? pictures.get(pk.key) : null
-      const c = pic ? meanColour(pic) : TINT_RGB.memory
-      sc.splice(k * 4, 4, fp.x, fp.z, fp.radius, fp.presence)
-      sl.splice(k * 4, 4, c[0], c[1], c[2], fp.ground)
-    })
 
     // Clouds: ease sigma, order and highlight toward their targets.
     const n = frame.ids.length
@@ -771,7 +625,8 @@ export function FieldLayer() {
     }
     const { selectedId, hoveredId } = useApp.getState()
     const sel = selectedId !== null ? frame.index.get(selectedId) : undefined
-    const linked = new Set<number>()
+    const linked = highlighted.current
+    linked.clear()
     if (sel !== undefined) {
       for (const l of frame.records[sel].links) {
         const j = frame.index.get(l.targetId)
@@ -781,7 +636,9 @@ export function FieldLayer() {
     }
     const k = 1 - Math.exp(-EASE * Math.min(dt, 0.1))
     const rows = Math.max(1, n)
-    const data = new Float32Array(rows * 3 * 4)
+    if (texels.current.length !== rows * 12) texels.current = new Float32Array(rows * 12)
+    const data = texels.current
+    data.fill(0)
     for (let i = 0; i < n; i++) {
       // A scrub that crosses a birth or death shows at once; within a life, ease.
       const jump = frame.born[i] === 0 || frame.condense[i] < 1
@@ -793,8 +650,8 @@ export function FieldLayer() {
       data.set([sh.order[i], frame.born[i], sh.hl[i], frame.condense[i]], (rows + i) * 4)
       const rec = frame.records[i]
       if (rec.splat) {
-        look.pt.set(frame.centers[i * 3], frame.centers[i * 3 + 1], frame.centers[i * 3 + 2])
-        data[(2 * rows + i) * 4] = sceneReveal(rec, look.pt.distanceTo(cam.position))
+        look.set(frame.centers[i * 3], frame.centers[i * 3 + 1], frame.centers[i * 3 + 2])
+        data[(2 * rows + i) * 4] = sceneReveal(rec, look.distanceTo(cam.position))
       }
     }
     notesTex.image = { data, width: rows, height: 3 } as unknown as typeof notesTex.image
@@ -806,11 +663,12 @@ export function FieldLayer() {
 
   return (
     <group name="field">
-      <primitive object={land} />
-      <primitive object={detail} />
       <primitive object={clouds} />
+      <primitive object={bonds} />
       <primitive object={cards} />
       <primitive object={currents} />
+      <primitive object={glow} />
+      <primitive object={currentGlow} />
       <FieldVideos notes={common} />
     </group>
   )

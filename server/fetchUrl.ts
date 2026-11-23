@@ -3,7 +3,41 @@
 // a 15 s timeout. Plain-text and markdown pass through; HTML loses scripts, styles, nav and
 // tags, with block elements turned into line breaks.
 
+import { lookup as dnsLookup } from 'node:dns/promises'
+import { BlockList, isIP } from 'node:net'
+
 const MAX_BYTES = 5 * 1024 * 1024
+const MAX_REDIRECTS = 5
+
+// Addresses a page link may never reach: on a hosted server, a link to these would read the
+// server's own network (SSRF). Checked for the first request and for every redirect.
+const PRIVATE = new BlockList()
+for (const [net, bits] of [
+  ['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10], ['127.0.0.0', 8], ['169.254.0.0', 16], ['172.16.0.0', 12],
+  ['192.0.0.0', 24], ['192.168.0.0', 16], ['198.18.0.0', 15], ['224.0.0.0', 4], ['240.0.0.0', 4],
+] as const) PRIVATE.addSubnet(net, bits, 'ipv4')
+for (const [net, bits] of [['::', 128], ['::1', 128], ['fc00::', 7], ['fe80::', 10], ['ff00::', 8], ['64:ff9b::', 96]] as const) PRIVATE.addSubnet(net, bits, 'ipv6')
+
+export function isPrivateAddress(ip: string): boolean {
+  const v = isIP(ip)
+  if (v === 4) return PRIVATE.check(ip, 'ipv4')
+  if (v === 6) {
+    const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(ip)
+    return mapped ? PRIVATE.check(mapped[1], 'ipv4') : PRIVATE.check(ip, 'ipv6')
+  }
+  return true
+}
+
+export type Lookup = (host: string) => Promise<string[]>
+const systemLookup: Lookup = async (host) => (await dnsLookup(host, { all: true, verbatim: true })).map((a) => a.address)
+
+async function assertPublic(url: URL, lookup: Lookup | null): Promise<void> {
+  if (!lookup) return
+  const host = url.hostname.replace(/^\[|\]$/g, '')
+  const addrs = isIP(host) ? [host] : await lookup(host).catch(() => [])
+  if (!addrs.length) throw new Error(`Could not find ${url.hostname}.`)
+  if (addrs.some(isPrivateAddress)) throw new Error('That link points into a private network, which this server will not read.')
+}
 const MAX_TEXT = 200_000
 
 export interface FetchedPage {
@@ -15,7 +49,11 @@ export interface FetchedPage {
   truncated: boolean
 }
 
-export async function fetchReadable(raw: string, f: typeof fetch = fetch): Promise<FetchedPage> {
+/**
+ * `lookup` checks every host the fetch reaches against private ranges. It defaults to the
+ * system resolver when `f` is the real fetch; a stubbed fetch (tests) skips it unless given one.
+ */
+export async function fetchReadable(raw: string, f: typeof fetch = fetch, lookup: Lookup | null = f === fetch ? systemLookup : null): Promise<FetchedPage> {
   let url: URL
   try {
     url = new URL(raw)
@@ -24,7 +62,16 @@ export async function fetchReadable(raw: string, f: typeof fetch = fetch): Promi
   }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error('Only http and https links can be read.')
   if (/(^|\.)(youtube\.com|youtu\.be)$/i.test(url.hostname)) return youtube(url, f)
-  const res = await f(url, { redirect: 'follow', signal: AbortSignal.timeout(15_000), headers: { accept: 'text/html,text/plain,text/markdown;q=0.9,*/*;q=0.5' } })
+  let res: Response
+  for (let hop = 0; ; hop++) {
+    await assertPublic(url, lookup)
+    res = await f(url, { redirect: 'manual', signal: AbortSignal.timeout(15_000), headers: { accept: 'text/html,text/plain,text/markdown;q=0.9,*/*;q=0.5' } })
+    const to = res.status >= 300 && res.status < 400 ? res.headers.get('location') : null
+    if (!to) break
+    if (hop >= MAX_REDIRECTS) throw new Error('That link redirects too many times.')
+    url = new URL(to, url)
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error('That link redirects to something other than http or https.')
+  }
   if (!res.ok) throw new Error(`The page answered ${res.status} ${res.statusText}.`)
   const contentType = res.headers.get('content-type') ?? ''
   if (!/text\/|application\/(xhtml|xml|json)/.test(contentType)) throw new Error(`Cannot read ${contentType || 'this kind of file'} from a link yet; download it and drop it in instead.`)
@@ -35,7 +82,7 @@ export async function fetchReadable(raw: string, f: typeof fetch = fetch): Promi
   let text = isHtml ? htmlToText(body) : body
   const truncated = text.length > MAX_TEXT || buf.byteLength > MAX_BYTES
   if (text.length > MAX_TEXT) text = text.slice(0, MAX_TEXT)
-  return { kind: 'web', url: res.url || url.href, title: title.slice(0, 200), text, contentType, truncated }
+  return { kind: 'web', url: url.href, title: title.slice(0, 200), text, contentType, truncated }
 }
 
 /** A YouTube link through oEmbed: title and channel, not the watch page's script soup. */

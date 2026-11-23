@@ -1,7 +1,8 @@
 import { useLayoutEffect, useMemo, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import { Vector3 } from 'three'
-import { canTransition, useApp } from '../../app/store.ts'
+import { canTransition, useApp, useWorld } from '../../app/store.ts'
+import { groundYAt, spatialGroundFor } from '../environment/knowledgeGround.ts'
 import { setOrbitHandoff } from '../camera/flyTo.ts'
 import { AutonavRide, type AutonavOptions } from './autonav.ts'
 import { refreshWorldline } from './live.ts'
@@ -34,6 +35,8 @@ export function AutonavRig({ options }: AutonavRigProps) {
   const ride = useMemo(() => new AutonavRide(options), [options])
   const held = useRef(0)
   const empty = useRef(0)
+  const nodes = useWorld((s) => s.nodes)
+  const ground = useMemo(() => spatialGroundFor(nodes), [nodes])
 
   useLayoutEffect(() => {
     const dir = camera.getWorldDirection(new Vector3())
@@ -54,7 +57,10 @@ export function AutonavRig({ options }: AutonavRigProps) {
     }
     empty.current = 0
     const riding = ride.update(dt, path)
+    // History orders the route; XYZ remains spatial. Keep a stable horizon above ground.
+    camera.up.set(0, 1, 0)
     camera.position.set(ride.camera.x, ride.camera.y, ride.camera.z)
+    camera.position.y = Math.max(camera.position.y, groundYAt(ground, camera.position.x, camera.position.z) + 3)
     camera.lookAt(ride.look.x, ride.look.y, ride.look.z)
     if (!riding) {
       held.current += dt

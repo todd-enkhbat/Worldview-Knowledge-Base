@@ -1,6 +1,8 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
+import './workspace.css'
+import './galaxy.css'
 import App from './App.tsx'
 import { bootData } from './app/boot.ts'
 

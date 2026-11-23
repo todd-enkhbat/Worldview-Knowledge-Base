@@ -1,6 +1,8 @@
 import { useLayoutEffect, useMemo } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import { isTyping } from './keyboard.ts'
+import { useWorld } from '../../app/store.ts'
+import { groundYAt, spatialGroundFor } from '../environment/knowledgeGround.ts'
 import { resetSparkControls, setSparkControlsEnabled, sparkControlsFor } from './sparkControls.ts'
 
 // Generic first-person flight: Spark's SparkControls (WASD/arrows move, Q/E or PgUp/PgDn
@@ -11,6 +13,8 @@ export function FirstPersonRig() {
   const gl = useThree((s) => s.gl)
   const camera = useThree((s) => s.camera)
   const controls = useMemo(() => sparkControlsFor(gl.domElement), [gl])
+  const nodes = useWorld((s) => s.nodes)
+  const ground = useMemo(() => spatialGroundFor(nodes), [nodes])
 
   // PLAN § Camera: on entering, reset lastTime, clear keys and toggle enable. Spark records
   // input even while disabled, so stale keys/drags are wiped on the way in and on the way out.
@@ -30,6 +34,7 @@ export function FirstPersonRig() {
     // Spark listens on document, so typing into a HUD field would otherwise fly the camera.
     controls.fpsMovement.enable = !isTyping()
     controls.update(camera)
+    camera.position.y = Math.max(camera.position.y, groundYAt(ground, camera.position.x, camera.position.z) + 1.6)
   }, -2)
 
   return null

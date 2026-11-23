@@ -6,11 +6,9 @@ import type { XZ } from './layout.ts'
 // to the world. Everything here is a pure function of the playhead, so scrubbing back restores
 // the world exactly (the visible macrostate is a function of t, like the engine's microstate).
 //
-// A note is born when the playhead passes its date: its grains condense out of a diffuse
-// cloud over ~2 months. Then it slowly loses order (its entropy rises): its cloud spreads and
-// its rise in the land erodes, toward a floor, unless it is linked into the world (links hold
-// order, the way a structure resists diffusion). The terrain is the macrostate: a sum of soft
-// bumps, one per born note, that the eye reads as land.
+// A note is born when the playhead passes its date. Its molecular packet condenses over
+// ~2 months, then slowly spreads as attention fades; links retain cohesion. The low support
+// envelope is used to place media and is never rendered as terrain or decorative scenery.
 
 export const YEAR = MS_PER_YEAR
 /** Years for a newborn note to condense. */
@@ -22,13 +20,13 @@ export interface NoteState {
   born: boolean
   /** 0 → 1 over the first months after birth. */
   condense: number
-  /** 1 = sharp and tall, → floor as it ages; links hold it up. */
+  /** 1 = coherent, → floor as it ages; links retain order. */
   order: number
   /** Grain cloud radius (world units). */
   sigma: number
-  /** Height of the note's bump in the land. */
+  /** Height of the invisible support envelope for media placement. */
   amp: number
-  /** Width of the bump. */
+  /** Width of the support envelope. */
   width: number
 }
 
@@ -50,8 +48,10 @@ export function noteState(rec: NodeRecord, playheadMs: number, degree: number, l
   const order = born ? 0.3 + 0.7 * (hold * 0.5 + (1 - hold * 0.5) * Math.exp(-since / ORDER_TAU_Y)) : 0
   const mass = rec.thermo?.mass ?? 1
   const sigma = (1.4 + 0.45 * mass) * (1 + 2.2 * (1 - order)) * (1 + 4 * (1 - condense))
-  const amp = (3.5 + 2.2 * mass + 1.2 * Math.min(degree, 6)) * condense * (0.45 + 0.55 * order)
-  const width = 8 + 2.2 * Math.sqrt(degree + 1)
+  // A low, broad support envelope places media without turning thoughts into mountains.
+  // The visible structure comes from the note's volumetric particle formation.
+  const amp = born ? (0.8 + 0.45 * mass + 0.14 * Math.min(degree, 10)) * (0.7 + 0.3 * condense) : 0
+  const width = 12 + 1.8 * Math.sqrt(degree + 1)
   return { born, condense, order, sigma, amp, width }
 }
 
@@ -207,7 +207,7 @@ export function fieldEntropy(sigma: ArrayLike<number>, born: ArrayLike<number>):
 }
 
 /** How far the land lifts a note's cloud above its bump. */
-export const lift = (state: NoteState, mass: number) => 2.5 + mass + state.sigma * 0.9
+export const lift = (state: NoteState, mass: number) => 4.5 + mass * 0.55 + Math.min(state.sigma, 5) * 0.2
 
 // ─── scenes on the land ──────────────────────────────────────────────────────────────
 

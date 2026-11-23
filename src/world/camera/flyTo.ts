@@ -3,6 +3,7 @@ import type { CameraControlsImpl } from '@react-three/drei'
 import { useApp } from '../../app/store.ts'
 import type { Vec3 } from '../../domain/types.ts'
 import { readPose } from '../poses.ts'
+import { stopOrbitMotion } from './orbitMotion.ts'
 
 // Programmatic camera moves, callable from outside the Canvas (editor after save, Library,
 // Cmd+K palette). The orbit CameraControls only exist while the rig is in orbit, so a fly
@@ -104,6 +105,7 @@ export function flyTo(target: string | Vec3, opts: FlyToOptions = {}): boolean {
   }
   const app = useApp.getState()
   if (app.mode !== 'orbit' && !app.setMode('orbit')) return false
+  stopOrbitMotion()
   if (controls) applyFly(controls, point, opts)
   else pending = { point, opts }
   return true

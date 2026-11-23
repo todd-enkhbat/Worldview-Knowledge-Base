@@ -1,8 +1,9 @@
 // Records → dust owners, and the glue that keeps DustSim's segments in line with them.
 
+import { computeSpatialWorld } from '../../src/domain/spatial.ts'
 import { describe, expect, it } from 'vitest'
 import { MS_PER_YEAR } from '../../src/domain/constants.ts'
-import { birthStep, yOf } from '../../src/domain/time.ts'
+import { birthStep } from '../../src/domain/time.ts'
 import { ARCHETYPES, type Archetype, type NodeRecord } from '../../src/domain/types.ts'
 import type { DustOwner } from '../../src/gpu/dust/dustWorld.ts'
 import { UNIT } from '../../src/physics/fixed.ts'
@@ -53,8 +54,9 @@ class FakeSim implements DustOwnerSink {
 
 describe('dust owners from records', () => {
   it('tethers dust to the node anchor and birth, quantised like the node world', () => {
-    const e = dustEntries(mapOf([node('m', 10.5, 'memory', 2)]), settings).get('m')!
-    expect(e.owner.anchor).toEqual([Math.round(3.25 * UNIT), Math.round(yOf(T0 + 10.5 * MS_PER_YEAR, T0) * UNIT), Math.round(-7.5 * UNIT)])
+    const record = node('m', 10.5, 'memory', 2)
+    const e = dustEntries(mapOf([record]), settings).get('m')!
+    expect(e.owner.anchor).toEqual(computeSpatialWorld([record]).positions.get('m')!.map((v) => Math.round(v * UNIT)))
     expect(e.owner.birth).toBe(birthStep(T0 + 10.5 * MS_PER_YEAR, T0))
     expect(e.owner.seed).toBe(fnv1a32('m') | 0)
     expect(e.owner.style).toBe(ARCHETYPES.indexOf('memory'))

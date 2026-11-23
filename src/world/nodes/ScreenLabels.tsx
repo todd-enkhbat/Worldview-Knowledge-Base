@@ -7,6 +7,8 @@ import { formatByPrecision } from '../../domain/time.ts'
 import { yearOf } from '../time/timeScale.ts'
 import type { Archetype, NodeRecord } from '../../domain/types.ts'
 import { getPoseTable } from '../poses.ts'
+import { spatialWorldFor } from '../field/layout.ts'
+import { useOrbitMotion } from '../camera/orbitMotion.ts'
 import { clipTitle, countOverlaps, fieldLabelLevel, labelPriority, labelSize, pickLandmarks, placeLabels, sideBox, type LabelCandidate, type LabelLevel, type PlacedLabel } from './declutter.ts'
 import { MIN_WORLD_TEXT_PX, worldTextPx } from './labels.tsx'
 import { flyIn } from '../splats/index.tsx'
@@ -24,6 +26,31 @@ const TOP_CLEAR = 76
 const BOTTOM_CLEAR = 100
 /** Gap between a node and its label (px). */
 const LIFT = 8
+const OVERVIEW_DISTANCE = 220
+
+export interface OverviewLabelCandidate {
+  id: string
+  clusterId: string
+  distance: number
+  priority: number
+  /** Selection and hover remain readable regardless of overview budgets. */
+  pinned: boolean
+}
+
+/** Distant views name neighborhoods first; ordinary record labels get a small diverse budget. */
+export function overviewLabelIds(candidates: readonly OverviewLabelCandidate[], limit = 3, previous: ReadonlySet<string> = new Set(), orbiting = false): Set<string> {
+  const allowed = new Set(candidates.filter((c) => c.pinned || (!orbiting && c.distance <= OVERVIEW_DISTANCE)).map((c) => c.id))
+  if (orbiting) return allowed
+  const clusters = new Set<string>()
+  const far = candidates.filter((c) => !allowed.has(c.id)).sort((a, b) => Number(previous.has(b.id)) - Number(previous.has(a.id)) || b.priority - a.priority || a.id.localeCompare(b.id))
+  for (const candidate of far) {
+    if (clusters.size >= limit) break
+    if (clusters.has(candidate.clusterId)) continue
+    clusters.add(candidate.clusterId)
+    allowed.add(candidate.id)
+  }
+  return allowed
+}
 
 const TAG: Record<Archetype, string> = {
   idea: 'IDEA',
@@ -63,6 +90,10 @@ interface Slot {
 function makeSlot(root: HTMLElement): Slot {
   const el = document.createElement('div')
   el.className = 'wv-label'
+  el.addEventListener('click', (e) => {
+    const id = el.dataset.nodeId
+    if (id) { e.stopPropagation(); useApp.getState().select(id) }
+  })
   const tag = document.createElement('div')
   tag.className = 'wv-label-tag'
   const title = document.createElement('div')
@@ -146,9 +177,12 @@ const _v = new Vector3()
 function hudBoxes(canvas: HTMLCanvasElement): [number, number, number, number][] {
   const c = canvas.getBoundingClientRect()
   const out: [number, number, number, number][] = []
-  for (const el of document.querySelectorAll('[data-label-avoid]')) {
+  // Topic labels are the primary reading layer at overview distance.
+  for (const el of document.querySelectorAll('[data-label-avoid], .world-banners, .knowledge-district-label, .world-agent-label')) {
     const r = el.getBoundingClientRect()
-    if (r.width > 0) out.push([r.left - c.left - 6, r.top - c.top - 6, r.right - c.left + 6, r.bottom - c.top + 6])
+    // An agent's caption sits below its body: reserve the actual avatar above it too.
+    const above = el.classList.contains('world-agent-label') ? 90 : 6
+    if (r.width > 0 && r.height > 0) out.push([r.left - c.left - 6, r.top - c.top - above, r.right - c.left + 6, r.bottom - c.top + 6])
   }
   return out
 }
@@ -160,6 +194,8 @@ export function ScreenLabels({ records, byId, always = false }: Props) {
   const slots = useRef(new Map<string, Slot>())
   const placed = useRef<PlacedLabel[]>([])
   const last = useRef(-Infinity)
+  const lastOrbit = useRef(false)
+  const spatial = useMemo(() => spatialWorldFor(byId), [byId])
 
   const graph = useMemo(() => {
     const nbrs = new Map<string, Set<string>>()
@@ -177,7 +213,7 @@ export function ScreenLabels({ records, byId, always = false }: Props) {
     }
     return nbrs
   }, [byId])
-  const landmarks = useMemo(() => pickLandmarks(new Map([...graph].map(([id, s]) => [id, s.size]))), [graph])
+  const landmarks = useMemo(() => pickLandmarks(new Map([...graph].map(([id, s]) => [id, s.size])), 12), [graph])
   /** Each shown label's level in the field (title only, or with its picture). */
   const levels = useRef(new Map<string, LabelLevel>())
 
@@ -185,7 +221,7 @@ export function ScreenLabels({ records, byId, always = false }: Props) {
     const parent = gl.domElement.parentElement
     if (!parent) return
     const root = document.createElement('div')
-    root.className = 'wv-labels'
+    root.className = `wv-labels${always ? ' is-molecular' : ''}`
     root.setAttribute('aria-hidden', 'true')
     parent.append(root)
     rootRef.current = root
@@ -196,7 +232,7 @@ export function ScreenLabels({ records, byId, always = false }: Props) {
       rootRef.current = null
       map.clear()
     }
-  }, [gl])
+  }, [gl, always])
 
   useFrame((state) => {
     const root = rootRef.current
@@ -206,6 +242,7 @@ export function ScreenLabels({ records, byId, always = false }: Props) {
     const W = size.width
     const H = size.height
     const t = state.clock.elapsedTime
+    const orbiting = useOrbitMotion.getState().playing
     const project = (id: string): { x: number; y: number; d: number } | null => {
       const row = table.index.get(id)
       if (row === undefined || table.born[row] !== 1) return null
@@ -217,13 +254,16 @@ export function ScreenLabels({ records, byId, always = false }: Props) {
       return { x: (_v.x * 0.5 + 0.5) * W, y: (-_v.y * 0.5 + 0.5) * H, d }
     }
 
-    if (t - last.current >= RESAMPLE_SECONDS || t < last.current) {
+    if (orbiting !== lastOrbit.current || t - last.current >= RESAMPLE_SECONDS || t < last.current) {
       last.current = t
+      lastOrbit.current = orbiting
       const { selectedId, hoveredId, timeFocusYear, mode } = useApp.getState()
       // Inside a memory's scene (and on the way in or out) the world's labels step aside.
       const inside = mode === 'entering' || mode === 'interior' || mode === 'exiting'
       const selNbrs = selectedId ? graph.get(selectedId) : undefined
       const cands: LabelCandidate[] = []
+      const previous = new Map(placed.current.map((label) => [label.id, label]))
+      const distances = new Map<string, number>()
       let born = 0
       let inView = 0
       let worldText = 0
@@ -236,25 +276,32 @@ export function ScreenLabels({ records, byId, always = false }: Props) {
         const p = project(rec.id)
         if (!p || p.x < 0 || p.x > W || p.y < 0 || p.y > H) continue
         inView++
+        const full = rec.id === hoveredId || rec.id === selectedId
+        // The camera tour names regions; pointing or selecting still names an actual record.
+        if (orbiting && !full) continue
         const px = always ? 0 : worldTextPx(rec, p.d, cam, H)
         if (px >= MIN_WORLD_TEXT_PX) {
           worldText++
           minWorldPx = Math.min(minWorldPx, px)
           continue
         }
-        const full = rec.id === hoveredId || rec.id === selectedId
         const inFocusYear = timeFocusYear !== null && yearOf(rec.temporalOrigin) === timeFocusYear
         // The field names things as you come near, not all at once (classic hands over to plaques).
-        const level: LabelLevel = always
-          ? fieldLabelLevel({ distance: p.d, degree: graph.get(rec.id)?.size ?? 0, pinned: full || !!selNbrs?.has(rec.id) || inFocusYear, landmark: landmarks.has(rec.id), scene: !!rec.splat?.proxyAssetId })
+        const overview = !full && p.d > OVERVIEW_DISTANCE
+        const level: LabelLevel = overview ? 'title' : always
+          ? fieldLabelLevel({ distance: p.d, degree: graph.get(rec.id)?.size ?? 0, pinned: full || !!selNbrs?.has(rec.id) || inFocusYear || (records.length <= 64 && !rec.splat), landmark: landmarks.has(rec.id) || records.length <= 64, scene: !!rec.splat?.proxyAssetId })
           : 'peek'
         if (level === 'none') continue
         levels.current.set(rec.id, level)
         const title = full ? rec.title : clipTitle(rec.title)
         const tag = `${TAG[rec.archetype]} · ${formatByPrecision(rec.temporalOrigin, rec.temporalPrecision)}`
         const peek = level === 'peek' ? peekOf(rec) : null
-        const plain = labelSize(title, tag)
+        const measured = labelSize(title, tag)
+        const plain = !full && (always || overview) ? { w: measured.w, h: 25 } : measured
         const sz = peek ? peekLabelSize(plain) : plain
+        const sides = peek ? ['below', 'right', 'left', 'above'] as const : ['above', 'right', 'left', 'below'] as const
+        const priorSide = previous.get(rec.id)?.side
+        distances.set(rec.id, p.d)
         cands.push({
           id: rec.id,
           x: p.x,
@@ -263,7 +310,8 @@ export function ScreenLabels({ records, byId, always = false }: Props) {
           h: sz.h,
           // A note with a picture, video or scene is labelled underneath, clear of its cloud,
           // and a little ahead of plain notes: it is the one you cannot read from grains alone.
-          ...(peek ? { sides: ['below', 'right', 'left', 'above'] as const, compact: { w: Math.min(plain.w, full ? 420 : plain.w), h: plain.h } } : {}),
+          sides: priorSide ? [priorSide, ...sides.filter((side) => side !== priorSide)] : sides,
+          ...(peek ? { compact: { w: Math.min(plain.w, full ? 420 : plain.w), h: plain.h } } : {}),
           priority: (peek ? 3000 : 0) + (timeFocusYear !== null && yearOf(rec.temporalOrigin) === timeFocusYear ? 2e5 : 0) + labelPriority({
             selected: rec.id === selectedId,
             hovered: rec.id === hoveredId,
@@ -273,10 +321,17 @@ export function ScreenLabels({ records, byId, always = false }: Props) {
           }),
         })
       }
-      placed.current = placeLabels(cands, {
+      const allowed = overviewLabelIds(cands.map((candidate) => ({
+        id: candidate.id,
+        clusterId: spatial.clusterOf.get(candidate.id) ?? candidate.id,
+        distance: distances.get(candidate.id) ?? Infinity,
+        priority: candidate.priority,
+        pinned: candidate.id === selectedId || candidate.id === hoveredId,
+      })), 3, new Set(previous.keys()), orbiting)
+      placed.current = placeLabels(cands.filter((candidate) => allowed.has(candidate.id)), {
         width: W,
         height: H,
-        max: MAX_LABELS,
+        max: Math.min(MAX_LABELS, Math.max(3, Math.min(10, Math.floor(W / 140)))),
         lift: LIFT,
         avoid: [[0, 0, W, TOP_CLEAR], [0, H - BOTTOM_CLEAR, W, H], ...hudBoxes(gl.domElement)],
       })
@@ -288,16 +343,19 @@ export function ScreenLabels({ records, byId, always = false }: Props) {
         let s = slots.current.get(p.id)
         if (!s) slots.current.set(p.id, (s = makeSlot(root)))
         const full = rec.id === hoveredId || rec.id === selectedId
+        const overview = !full && (project(rec.id)?.d ?? 0) > OVERVIEW_DISTANCE
         const title = full ? rec.title : clipTitle(rec.title)
         const tag = `${TAG[rec.archetype]} · ${formatByPrecision(rec.temporalOrigin, rec.temporalPrecision)}`
         const inYear = timeFocusYear !== null && yearOf(rec.temporalOrigin) === timeFocusYear
-        const key = `${title}\u0000${tag}\u0000${rec.id === selectedId ? 's' : ''}${inYear ? 'y' : ''}`
+        const key = `${title}\u0000${tag}\u0000${rec.id === selectedId ? 's' : ''}${inYear ? 'y' : ''}${overview ? 'o' : ''}`
+        s.el.dataset.nodeId = rec.id
         if (s.key !== key) {
           s.key = key
           s.title.textContent = title
           s.tag.textContent = tag
           s.el.classList.toggle('is-selected', rec.id === selectedId)
           s.el.classList.toggle('is-year', inYear)
+          s.el.classList.toggle('is-overview', overview)
           s.el.style.width = `${p.w}px`
         }
         // Where there is no room for the picture, the title alone.

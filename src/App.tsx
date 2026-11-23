@@ -1,4 +1,6 @@
 import { lazy, Suspense, useEffect, useState, type ComponentType, type LazyExoticComponent } from 'react'
+import { useAuth } from './data/auth.ts'
+import { SignIn } from './hud/SignIn.tsx'
 
 // Hash routes: #/ world · #/lab · #/lab/perf · #/lab/s1 · #/sandbox/<name> (dev only).
 // Static hosting needs no server rewrites.
@@ -42,6 +44,9 @@ export default function App() {
     return () => window.removeEventListener('hashchange', onHash)
   }, [])
 
+  const auth = useAuth((s) => s.state)
+  if (auth === 'signed-out' && route !== 'sandbox') return <SignIn />
+
   return (
     <Suspense fallback={<Boot />}>
       {route === 'world' && <WorldPage />}
@@ -56,7 +61,7 @@ export default function App() {
 function Boot() {
   return (
     <div className="flex h-full items-center justify-center font-mono text-[11px] uppercase tracking-[0.2em] text-concrete">
-      crystallising…
+      Opening your world…
     </div>
   )
 }

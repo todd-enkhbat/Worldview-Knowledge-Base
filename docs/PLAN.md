@@ -1,5 +1,22 @@
 # Architectural Hyperspace — Phases 1–3 Implementation Plan
 
+## Proposed workspace update (2026-11-22)
+
+The [workspace update proposal](WORKSPACE-UPDATE-PLAN.md) and [research/code audit](WORKSPACE-UPDATE-RESEARCH.md) define the recommended next delivery sequence: readable daily workspaces, durable sources and repeatable imports, passage retrieval, reviewable organization, and evidence-backed spatial exploration. They are planning documents, not claims of implemented features. The governing XYZ/history contract below remains in force.
+
+## Current product amendment — XYZ space, history as the fourth dimension (2026-11-04)
+
+This is the governing axis/product contract. The user's latest instruction explicitly rejects the previous restoration of visible **Y=time**. It supersedes the Axes decision and the historical chronological presentation below, including year-height scaffolding, date-height readouts and year-walk language. The earlier plan is preserved to explain the engine and implementation history; it does not override this amendment.
+
+- **All three visible axes are spatial.** X, Y and Z define an explorable world with meaningful topic/relationship neighborhoods, ground, and recognizable records. Y is physical elevation. A note's date must not supply its visible altitude.
+- **Time is the fourth dimension through history.** The playhead controls births, future ghosts and replay. `temporalOrigin` is the entry date, and `referenceDate` remains display-only historical metadata. Editing only a date changes history availability, without moving that note or its neighborhood.
+- **Related content shares a meaningful region in a spread-out world.** Regions must derive from actual tags/relationships and record content, not decorative scenery or fabricated data. Explicit semantic pins remain user placement inputs. World and Structure share the same spatial pose table; labels, media, links, agents, picking, grounds and camera targets must agree.
+- **Retain the reversible engine.** Historical date-derived Y may remain an internal physics coordinate for compatibility. The presentation maps that engine output to spatial neighborhood anchors with bounded dynamics. Do not silently relabel calendar height as spatial elevation, and do not change the integer kick or integrator merely to change the visible map.
+- **Navigate space and revisit history separately.** Walk world traverses the ground, Fly explores XYZ, and Ride memories can visit memory records in chronological order without placing them on a time column. The timeline and selected-note date are separate from XYZ/region readouts.
+- **Acceptance for this amendment:** a real spatial neighborhood model, related/unrelated placement checks, independent spatial Y, date-only-edit stability, shared pose/picking/camera behavior, honest region membership/counts, retained original content and birth/replay behavior. Earlier Y=time screenshots and tests are historical evidence, not visual acceptance for this direction.
+
+Implementation evidence and outstanding verification are recorded in [design/IMPLEMENTATION.md](design/IMPLEMENTATION.md). The corresponding decisions are appended to [DECISIONS.md](DECISIONS.md).
+
 ## Context
 The repo is greenfield: only a `README.md` stating the aim to "capture an individual's entire worldview … in 4D in physics / mathematical grounding". The user supplied a full engineering spec for a brutalist 4D "thermodynamic worldview engine".
 
@@ -18,7 +35,7 @@ The research found that several spec items are infeasible or wrong:
 |---|---|
 | Scope | **Phases 1–3**: explorable world, splat dioramas, reversible physics and time scrub. Stop for review before the data/AI engine, capture pipeline, desktop shell and publishing (Phases 4–5). |
 | Physics | **Exact fixed-point Hamiltonian**: bit-reversible integer leapfrog, conservative potentials, measurable entropy rise from a Past-Hypothesis state. Demons and Hebbian plasticity form a dissipative overlay driven by an event log. |
-| Axes | **Y = time** (`temporalOrigin`), as the spec says. X/Z are semantic. Hebbian elevation is a bounded offset. |
+| Axes | **XYZ is spatial; time is history**, per the governing amendment above. The original Y=time decision is historical/internal-engine detail only. |
 | Content | Starts empty. A **local-first in-app editor** (IndexedDB + OPFS) with first-run onboarding, export/import, backups and an optional demo seed. |
 | Framework | **Vite + React SPA** instead of Next.js. |
 | Renderer | **WebGL2 + Spark 2.3.1**. The physics runs as an **integer-only** kernel: nodes on a CPU worker, dust on WebGL2 integer GPGPU. CPU and GPU produce identical bits, and so does every browser. |
@@ -99,7 +116,10 @@ scripts/fetch-fixtures.sh      downloads the CC-BY splat fixtures (run only afte
   - **Concurrency**: a Web Locks single writer, with BroadcastChannel to refresh other tabs.
 - **One canonical origin**: dev and preview both serve on `localhost:5173` with `strictPort`, because storage is partitioned by origin, port included. Settings shows the origin. Chrome, Safari and the built-in pane keep separate stores, bridged only by export/import. `npm run serve` (build + preview) gives a stable local "website".
 
-### Space and time (Y = time)
+### Historical space and time mapping (internal engine compatibility)
+
+> Superseded for visible presentation by the current XYZ-space/history amendment above. This section documents the original date-height engine contract and former chronological scaffold; it must not be used to place the current spatial world or label its Y axis.
+
 - `Y(T) = Y_PER_YEAR · years(T − T0)`. Node anchor `y = Y(temporalOrigin)`.
 - Time runs from T0 to now + 5 y, so future plans are allowed.
 - Items born after the playhead render as ghosts.

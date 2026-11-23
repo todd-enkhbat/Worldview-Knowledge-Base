@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { AutonavRide } from '../../src/world/worldline/autonav.ts'
+import { AutonavRide, navigationPointAt } from '../../src/world/worldline/autonav.ts'
 import { WorldlinePath, catmullRom, knotsFromPoses, memoryOrder, sampleCount } from '../../src/world/worldline/path.ts'
 import type { NodeRecord } from '../../src/domain/types.ts'
 
@@ -74,7 +74,7 @@ describe('WorldlinePath', () => {
     expect(p.y).toBeCloseTo(12, 4)
     path.tangentAt(path.length / 2, p)
     expect(Math.hypot(p.x, p.y, p.z)).toBeCloseTo(1, 6)
-    expect(p.y).toBeGreaterThan(0) // time runs up the curve
+    expect(p.y).toBeGreaterThan(0) // this spatial fixture rises along Y
   })
 
   it('interpolates the born weight between knots (future stretch fades)', () => {
@@ -143,7 +143,7 @@ describe('AutonavRide', () => {
       maxStep = Math.max(maxStep, Math.hypot(ride.look.x - prev.x, ride.look.y - prev.y, ride.look.z - prev.z))
       prev = { ...ride.look }
     }
-    // Cruise ≤ maxSpeed (14 u/s): the damped target moves well under 1 u per frame.
+    // This compact route cruises near the minimum speed; damping prevents frame-sized jumps.
     expect(maxStep).toBeLessThan(0.5)
   })
 
@@ -153,5 +153,70 @@ describe('AutonavRide', () => {
     const between = ride.speedAt(path, (path.knotArc[3] + path.knotArc[4]) / 2, 10)
     expect(atKnot).toBeLessThan(between)
     expect(ride.speedAt(path, (path.knotArc[3] + path.knotArc[4]) / 2, 0)).toBeLessThan(between)
+  })
+
+  it('permits an origin-crossing memory route without modifying true knots or adding a central exclusion zone', () => {
+    const crossing = new WorldlinePath()
+    const knots = knotsOf([[-80, 35, 0], [0, 35, 0], [80, 35, 0]])
+    crossing.set(knots, [1, 1, 1], 3, ['first', 'second', 'third'])
+    const original = crossing.samples.slice()
+    const guide = { x: 0, y: 0, z: 0, set(x: number, y: number, z: number) { this.x = x; this.y = y; this.z = z } }
+    navigationPointAt(crossing, crossing.knotArc[1]!, 500, 0, guide)
+    expect([guide.x, guide.y, guide.z]).toEqual([0, 35, 0])
+    navigationPointAt(crossing, crossing.knotArc[1]!, 500, 4.5, guide)
+    expect(Math.hypot(guide.x, guide.z)).toBeCloseTo(4.5, 5)
+    expect(guide.y).toBe(35)
+    expect(crossing.samples).toEqual(original)
+    expect(crossing.knotIds).toEqual(['first', 'second', 'third'])
+    for (let i = 0; i < 3; i++) {
+      crossing.pointAt(crossing.knotArc[i]!, guide)
+      expect([guide.x, guide.y, guide.z]).toEqual(Array.from(knots.subarray(i * 3, i * 3 + 3)))
+    }
+  })
+
+  it('follows translated spatial routes without origin bias or reverse-facing view snaps', () => {
+    const base = new WorldlinePath(), translated = new WorldlinePath()
+    base.set(knotsOf([[-80, 35, 0], [0, 35, 0], [80, 35, 0]]), [1, 1, 1], 3, ['a', 'b', 'c'])
+    translated.set(knotsOf([[170, 35, -180], [250, 35, -180], [330, 35, -180]]), [1, 1, 1], 3, ['a', 'b', 'c'])
+    const original = base.samples.slice()
+    const ride = new AutonavRide({ minSpeed: 10, maxSpeed: 10 })
+    const shiftedRide = new AutonavRide({ minSpeed: 10, maxSpeed: 10 })
+    ride.prime({ x: -90, y: 44, z: 7 }, { x: -65, y: 35, z: 0 })
+    shiftedRide.prime({ x: 160, y: 44, z: -173 }, { x: 185, y: 35, z: -180 })
+    let previousView = { x: ride.look.x - ride.camera.x, y: ride.look.y - ride.camera.y, z: ride.look.z - ride.camera.z }
+    let nearestOrigin = Infinity
+    for (let frame = 0; frame < 1800; frame++) {
+      ride.update(1 / 60, base)
+      shiftedRide.update(1 / 60, translated)
+      nearestOrigin = Math.min(nearestOrigin, Math.hypot(ride.camera.x, ride.camera.z))
+      for (const key of ['camera', 'look'] as const) {
+        expect(shiftedRide[key].x - ride[key].x).toBeCloseTo(250, 4)
+        expect(shiftedRide[key].y - ride[key].y).toBeCloseTo(0, 4)
+        expect(shiftedRide[key].z - ride[key].z).toBeCloseTo(-180, 4)
+      }
+      const view = { x: ride.look.x - ride.camera.x, y: ride.look.y - ride.camera.y, z: ride.look.z - ride.camera.z }
+      const length = Math.hypot(view.x, view.y, view.z)
+      expect(Number.isFinite(length)).toBe(true)
+      expect(Math.hypot(view.x, view.z)).toBeGreaterThanOrEqual(2 - 1e-6)
+      const dot = (previousView.x * view.x + previousView.y * view.y + previousView.z * view.z) / (Math.hypot(previousView.x, previousView.y, previousView.z) * length)
+      expect(dot).toBeGreaterThan(.98)
+      previousView = view
+    }
+    expect(nearestOrigin).toBeLessThan(10)
+    expect(ride.done).toBe(true)
+    expect(base.samples).toEqual(original)
+  })
+
+  it('keeps a finite horizontal view on a vertical spatial memory route', () => {
+    const vertical = new WorldlinePath()
+    vertical.set(knotsOf([[24, 20, 0], [24, 44, 0], [24, 68, 0]]), [1, 1, 1], 3, ['a', 'b', 'c'])
+    const ride = new AutonavRide()
+    let previousLookY = -Infinity
+    for (let i = 0; i < 1000; i++) {
+      ride.update(1 / 60, vertical)
+      expect(Math.hypot(ride.look.x - ride.camera.x, ride.look.z - ride.camera.z)).toBeGreaterThanOrEqual(2 - 1e-6)
+      expect(ride.look.y).toBeGreaterThanOrEqual(previousLookY)
+      previousLookY = ride.look.y
+    }
   })
 })

@@ -43,6 +43,7 @@ describe('SQLite engine: migration fidelity', () => {
       slug: 'extra-fields',
       provenance: { source: 'omnibox', state: 'refined', raw: 'typed text', refinedAt: NOW },
       referenceDate: { epochMs: Date.UTC(1872, 0, 1), precision: 'year', label: 'H-theorem' },
+      fieldAnchorXZ: [120, -75],
       futureField: { nested: [1, 'two', null] },
     } as unknown as NodeRecord
     await source.putSettings(settings)

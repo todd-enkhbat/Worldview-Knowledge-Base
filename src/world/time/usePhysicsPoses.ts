@@ -1,7 +1,7 @@
 import { useFrame } from '@react-three/fiber'
 import { useEffect } from 'react'
-import { useApp, useWorld } from '../../app/store.ts'
-import { updateField } from '../field/runtime.ts'
+import { useWorld } from '../../app/store.ts'
+import { fieldPinOffsets, updateField } from '../field/runtime.ts'
 import { getPlayhead, playheadEpoch } from './clock.ts'
 import { applyOverlays } from './overlayHook.ts'
 import { getPhysicsClient } from './physicsClient.ts'
@@ -26,21 +26,16 @@ export function usePhysicsPoses(): void {
     const client = getPhysicsClient()
     const ph = getPlayhead()
     client.sendTarget(ph.step)
-    // The particle world writes its own poses (a pure function of the playhead); the engine
-    // keeps running for the timeline's readouts.
-    if (useApp.getState().view.world === 'field') {
-      client.acquire()
-      const w = useWorld.getState()
-      if (w.settings) updateField(w.nodes, w.settings, playheadEpoch(w.settings), state.clock.elapsedTime)
-      return
-    }
+    // Both render styles use one actual P→pin→O pose table. The molecular layer reads it;
+    // it never substitutes display-only coordinates for the shared 3-D simulation anchors.
+    const w = useWorld.getState()
     const frame = client.acquire()
     let table
     if (frame) table = writer.writePhysics(frame, ph.step, ph.acc)
     else {
-      const w = useWorld.getState()
       table = writer.writeStatic(w.nodes, w.settings, w.revision, ph.step)
     }
-    applyOverlays(table, Date.now())
+    applyOverlays(table, Date.now(), undefined, fieldPinOffsets(w.nodes))
+    if (w.settings) updateField(w.nodes, w.settings, playheadEpoch(w.settings), state.clock.elapsedTime, table)
   }, -2)
 }

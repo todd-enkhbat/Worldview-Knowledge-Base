@@ -1,0 +1,38 @@
+.sources-import { display: flex; flex-direction: column; gap: 14px; padding-bottom: 25px; }
+.sources-import h3, .sources-guide h3 { margin: 0; color: #25372f; font-size: 15px; font-weight: 600; }
+.sources-import p { margin: 6px 0 0; max-width: 54ch; color: #617166; font-size: 13px; }
+.sources-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.sources-services { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 14px; margin: 0 -8px 20px; }
+.sources-service {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 12px 10px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: #25372f;
+  text-align: left;
+  cursor: pointer;
+}
+.sources-service:hover { background: #edf1e9; }
+.sources-service.is-active { border-color: #c5d5bf; background: #e9f0e3; }
+.sources-service-mark { display: flex; flex: none; align-items: center; justify-content: center; width: 34px; height: 38px; border-radius: 8px; background: #fff; color: #47735b; font-size: 20px; font-weight: 600; }
+.sources-service strong { display: block; font-size: 13px; font-weight: 600; }
+.sources-service small { display: block; margin-top: 3px; color: #6b786e; font-size: 11px; line-height: 1.4; }
+.sources-guide { border-top: 1px solid #dde4d9; padding-top: 20px; }
+.sources-guide-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.sources-guide-heading > span { color: #61755f; font-size: 11px; }
+.sources-guide p { margin: 10px 0; color: #56685b; font-size: 13px; }
+.sources-guide .sources-connection-note { color: #71806e; font-size: 11px; }
+.sources-link { margin-top: 25px; }
+.sources-link label { display: block; margin-bottom: 8px; font-size: 13px; font-weight: 600; }
+.sources-link > div { display: flex; gap: 8px; }
+.sources-link .product-button { flex: none; }
+.sources-link small { display: block; margin-top: 7px; color: #71806e; font-size: 11px; }
+@media (max-width: 500px) {
+  .sources-services { grid-template-columns: 1fr; }
+  .sources-service { padding-block: 9px; }
+  .sources-link > div { flex-direction: column; }
+}

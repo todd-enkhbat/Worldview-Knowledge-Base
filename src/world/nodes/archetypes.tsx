@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { Color, Euler, Matrix4, Quaternion, Vector3, type Group } from 'three'
+import { useApp } from '../../app/store.ts'
 import type { NodeRecord } from '../../domain/types.ts'
 import { LAYER, RENDER_ORDER } from '../layers.ts'
 import { getPoseTable } from '../poses.ts'
@@ -339,7 +340,8 @@ const demonSlit: LocalFn = (_r, _p, _t, out) => {
 // The field is the demon's real sorting radius, so it undoes the node scale and the far boost.
 const demonField: LocalFn = (rec, _p, _t, out, far) => {
   const d = rec.demon
-  if (!d || !d.active) out.makeScale(0, 0, 0)
+  const app = useApp.getState()
+  if (!d || !d.active || app.selectedId !== rec.id && app.hoveredId !== rec.id) out.makeScale(0, 0, 0)
   else {
     const k = d.radius / (nodeScale(rec) * far)
     out.makeScale(k, k, k)

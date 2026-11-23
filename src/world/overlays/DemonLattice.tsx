@@ -1,21 +1,17 @@
 import { useFrame } from '@react-three/fiber'
 import { useEffect, useMemo } from 'react'
 import { BufferAttribute, BufferGeometry, Color, DynamicDrawUsage, LineBasicMaterial, LineSegments } from 'three'
-import { useWorld } from '../../app/store.ts'
-import { DEMON, rampWeight } from '../../overlay/demon.ts'
+import { useApp, useWorld } from '../../app/store.ts'
+import { rampWeight } from '../../overlay/demon.ts'
 import { getDemonPlan, getOverlayFields } from '../../overlay/index.ts'
 import { LAYER, RENDER_ORDER } from '../layers.ts'
 import { capacityFor } from '../nodes/instancing.ts'
 import { getPoseTable } from '../poses.ts'
 
-// The demon lattice: for every active demon, a square cell at the demon's height for each
-// occupied slot, and a plumb line from the cell down (or up) to the sorted node, which keeps
-// its own date. Brightness follows the easing weight w(t), so the lattice draws itself as
-// the nodes slide in after an activation.
+// Query associations are shown only when inspecting that query. They connect real XYZ
+// poses; the old global sorting lattice must not imply that distant neighborhoods collapse.
 
-const HALF = 0.42 * DEMON.SPACING
-/** Segments per occupied slot: 4 cell edges + 1 plumb line. */
-const SEGS = 5
+const SEGS = 1
 const SIGNAL = new Color('#ff4a1c')
 
 function makeLines(capacity: number, material: LineBasicMaterial): LineSegments {
@@ -24,7 +20,7 @@ function makeLines(capacity: number, material: LineBasicMaterial): LineSegments 
   g.setAttribute('color', new BufferAttribute(new Float32Array(capacity * SEGS * 6), 3).setUsage(DynamicDrawUsage))
   g.setDrawRange(0, 0)
   const lines = new LineSegments(g, material)
-  lines.name = 'demon-lattice'
+  lines.name = 'query-associations'
   lines.layers.set(LAYER.DUST)
   lines.renderOrder = RENDER_ORDER.DUST
   lines.frustumCulled = false
@@ -36,7 +32,7 @@ export function DemonLattice() {
   const settings = useWorld((s) => s.settings)
   // Re-plan only when records or settings change; the plan is cached in overlay/index.ts.
   const slots = useMemo(() => (nodes && settings ? getDemonPlan().assignments.size : 0), [nodes, settings])
-  const material = useMemo(() => new LineBasicMaterial({ vertexColors: true, toneMapped: false }), [])
+  const material = useMemo(() => new LineBasicMaterial({ vertexColors: true, toneMapped: false, transparent: true, opacity: .35, depthWrite: false }), [])
   useEffect(() => () => material.dispose(), [material])
   const capacity = capacityFor(Math.max(1, slots))
   const lines = useMemo(() => makeLines(capacity, material), [capacity, material])
@@ -64,6 +60,7 @@ export function DemonLattice() {
     }
     let used = 0
     for (const [id, a] of f.plan.assignments) {
+      if (useApp.getState().selectedId !== a.demonId) continue
       if (used >= capacity) break
       const drow = table.index.get(a.demonId)
       const row = table.index.get(id)
@@ -73,15 +70,11 @@ export function DemonLattice() {
       const dx = table.pos[drow * 3]
       const dy = table.pos[drow * 3 + 1]
       const dz = table.pos[drow * 3 + 2]
-      const sx = dx + a.dx
-      const sz = dz + a.dz
+      const sx = table.pos[row * 3]
+      const sz = table.pos[row * 3 + 2]
       const ny = table.pos[row * 3 + 1]
       const k = 0.35 + 1.4 * w
-      seg(sx - HALF, dy, sz - HALF, sx + HALF, dy, sz - HALF, k)
-      seg(sx + HALF, dy, sz - HALF, sx + HALF, dy, sz + HALF, k)
-      seg(sx + HALF, dy, sz + HALF, sx - HALF, dy, sz + HALF, k)
-      seg(sx - HALF, dy, sz + HALF, sx - HALF, dy, sz - HALF, k)
-      seg(sx, dy, sz, sx, ny, sz, 0.5 * k)
+      seg(dx, dy, dz, sx, ny, sz, .5 * k)
       used++
     }
     lines.geometry.setDrawRange(0, v)

@@ -15,7 +15,7 @@ export default defineConfig(({ mode }) => {
   const apiKey = env.ANTHROPIC_API_KEY || undefined
   return {
     // Vitest starts a Vite server too: keep tests off the real data/world.sqlite.
-    plugins: [react(), tailwindcss(), ...(process.env.VITEST ? [] : [hyperspaceEngine({ apiKey })])],
+    plugins: [react(), tailwindcss(), ...(process.env.VITEST ? [] : [hyperspaceEngine({ apiKey, accounts: env.HYPERSPACE_ACCOUNTS === '1' })])],
     server: { host: 'localhost', port: PORT, strictPort: true },
     preview: { host: 'localhost', port: PORT, strictPort: true },
     worker: { format: 'es' as const },

@@ -10,10 +10,10 @@ describe('field cards and currents', () => {
   })
 
   it('thins each current in big worlds so the total stays bounded', () => {
-    expect(currentGrainsPerLink(10)).toBe(40)
+    expect(currentGrainsPerLink(10)).toBe(280)
     expect(currentGrainsPerLink(1500)).toBe(40)
     expect(currentGrainsPerLink(3000)).toBe(20)
     expect(currentGrainsPerLink(3000) * 3000).toBeLessThanOrEqual(60_000)
-    expect(currentGrainsPerLink(100_000)).toBe(8)
+    expect(currentGrainsPerLink(100_000)).toBe(0)
   })
 })

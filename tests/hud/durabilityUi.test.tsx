@@ -5,6 +5,7 @@ import type { Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { useApp, useWorld } from '../../src/app/store.ts'
 import { createMemoryStore } from '../../src/data/memoryStore.ts'
+import { MS_PER_YEAR } from '../../src/domain/constants.ts'
 import { closeRepo, completeFirstRun, createNode, initRepo, softDelete, useRepoStatus } from '../../src/data/repo.ts'
 import { Banners } from '../../src/hud/Banners.tsx'
 import { FirstRun } from '../../src/hud/FirstRun.tsx'
@@ -61,45 +62,51 @@ afterEach(async () => {
 })
 
 describe('FirstRun', () => {
-  it('walks T0 → start → explainer → done and creates the world', async () => {
+  it('validates the optional date and creates the selected example world', async () => {
     render(<FirstRun />)
-    expect(text()).toContain('When does your worldview begin?')
+    expect(text()).toContain('Make room')
+    expect(text()).toContain('for your mind.')
 
-    const date = document.body.querySelector<HTMLInputElement>('input[inputmode="numeric"]')!
+    act(() => document.body.querySelector('summary')!.click())
+    const date = document.body.querySelector<HTMLInputElement>('#world-start')!
+    typeInto(date, '1990-02-31')
+    act(() => button(/Step into your world/).click())
+    expect(document.body.querySelector('[role="alert"]')?.textContent).toContain('That day does not exist')
+    expect(useWorld.getState().settings).toBeNull()
+
     typeInto(date, '1700')
-    act(() => button(/^Continue$/).click())
-    expect(text()).toMatch(/at most 250 years/)
+    act(() => button(/Step into your world/).click())
+    expect(document.body.querySelector('[role="alert"]')?.textContent).toMatch(/at most 250 years/)
+    expect(useWorld.getState().settings).toBeNull()
 
     typeInto(date, '1990-03-14')
-    act(() => button(/^Continue$/).click())
-    expect(text()).toContain('What should it start with?')
-
-    act(() => document.body.querySelector<HTMLInputElement>('input[value="demo"]')!.click())
-    act(() => button(/^Continue$/).click())
-    expect(text()).toContain('Your world lives here')
-
-    act(() => button(/^Understood$/).click())
-    expect(text()).toContain('Ready.')
-    expect(text()).toContain('1990-03-14')
-
-    await act(async () => button(/Enter the world/).click())
-    await flush()
+    const example = [...document.body.querySelectorAll<HTMLInputElement>('input[type="radio"]')].find((el) => el.closest('label')?.textContent?.includes('Look around first'))!
+    act(() => example.click())
+    expect(example.checked).toBe(true)
+    await act(async () => button(/Step into your world/).click())
+    await settle(() => useWorld.getState().settings?.firstRunComplete === true)
     const s = useWorld.getState().settings
     expect(s?.T0).toBe(Date.UTC(1990, 2, 14))
     expect(useWorld.getState().nodes.size).toBeGreaterThan(10)
-    expect(text()).not.toContain('Ready.')
+    expect(useApp.getState().panels.chat).toBe(true)
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
   })
 
-  it('Esc goes back a step', () => {
+  it('starts an empty personal world without requiring a date', async () => {
     render(<FirstRun />)
-    const date = document.body.querySelector<HTMLInputElement>('input[inputmode="numeric"]')!
-    typeInto(date, '1990')
-    act(() => button(/^Continue$/).click())
-    expect(text()).toContain('What should it start with?')
-    act(() => {
-      document.body.querySelector('[role="dialog"] h1')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
-    })
-    expect(text()).toContain('When does your worldview begin?')
+    const personal = [...document.body.querySelectorAll<HTMLInputElement>('input[type="radio"]')].find((el) => el.closest('label')?.textContent?.includes('Make it my own'))!
+    expect(personal.checked).toBe(true)
+    expect(document.body.querySelector<HTMLInputElement>('#world-start')?.value).toBe('')
+    const before = Date.now()
+    await act(async () => button(/Step into your world/).click())
+    await settle(() => useWorld.getState().settings?.firstRunComplete === true)
+    const settings = useWorld.getState().settings!
+    expect(settings.firstRunComplete).toBe(true)
+    expect(settings.T0).toBeGreaterThanOrEqual(before - 30 * MS_PER_YEAR)
+    expect(settings.T0).toBeLessThanOrEqual(Date.now() - 30 * MS_PER_YEAR)
+    expect(useWorld.getState().nodes.size).toBe(0)
+    expect(useApp.getState().panels.chat).toBe(true)
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
   })
 })
 
@@ -150,7 +157,7 @@ describe('with a world', () => {
     act(() => useApp.getState().togglePanel('settings', true))
     render(<Settings />)
     await flush()
-    for (const h of ['Storage', 'Backups', 'Import', 'Re-layout world', 'Quality', 'Credits', 'Danger zone']) expect(text()).toContain(h)
+    for (const h of ['Storage', 'Backups', 'Import', 'History origin', 'Quality', 'Credits', 'Danger zone']) expect(text()).toContain(h)
     expect(text()).toContain('lion.v3.spz')
 
     const wipe = button(/^Wipe world$/)
@@ -165,7 +172,7 @@ describe('with a world', () => {
     expect(useApp.getState().panels.settings).toBe(false)
   })
 
-  it('re-layout preview lists records outside the new range', async () => {
+  it('history-origin preview lists records outside the new range', async () => {
     await createNode({ archetype: 'idea', title: 'Early', temporalOrigin: Date.UTC(1995, 0, 1) })
     act(() => useApp.getState().togglePanel('settings', true))
     render(<Settings />)
@@ -179,7 +186,7 @@ describe('with a world', () => {
     typeInto(t0, '1992')
     await act(async () => button(/^Preview$/).click())
     await flush()
-    await act(async () => button(/Apply re-layout/).click())
+    await act(async () => button(/Apply history origin/).click())
     await flush()
     expect(useWorld.getState().settings?.T0).toBe(Date.UTC(1992, 0, 1))
   })

@@ -4,6 +4,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { join } from 'node:path'
 import { pipeline } from 'node:stream/promises'
 import type { AssetMeta, InteractionEvent, NodeRecord, WorldSettings } from '../src/domain/types.ts'
+import { ChangeBus, parseEnvelope } from './changes.ts'
 import { fetchReadable } from './fetchUrl.ts'
 import { bytesF32, EMBEDDING_DIM, StoreInputError, type WorldDb } from './worldDb.ts'
 
@@ -23,6 +24,8 @@ export interface ApiOptions {
   refine?: (body: unknown) => Promise<unknown>
   /** Streams one chat turn as NDJSON (server/chat.ts). */
   chat?: (body: unknown, res: ServerResponse) => Promise<void>
+  /** Relays change notices between this world's open devices (server/changes.ts). */
+  bus?: ChangeBus
   now?: () => number
 }
 
@@ -84,6 +87,21 @@ export function createApiHandler(opts: ApiOptions): Handler {
 
     if (seg[0] === 'world') {
       const [, what, id] = seg
+      if (what === 'changes') {
+        const bus = opts.bus
+        if (!bus) return send(res, 404, { error: 'live changes are off' }), true
+        if (method === 'GET') {
+          const client = url.searchParams.get('client') ?? ''
+          if (!client || client.length > 100) throw new HttpError(400, 'client is required')
+          bus.subscribe(req, res, client)
+          return true
+        }
+        if (method === 'POST') {
+          const env = parseEnvelope(await readJson<unknown>(req, 1024 * 1024))
+          if (!env) throw new HttpError(400, 'not a change notice')
+          return send(res, 200, { relayed: bus.publish(env) }), true
+        }
+      }
       if (what === 'settings') {
         if (method === 'GET') return send(res, 200, db.getSettings()), true
         if (method === 'PUT') return db.putSettings(await readJson<WorldSettings>(req)), send(res, 204, undefined), true

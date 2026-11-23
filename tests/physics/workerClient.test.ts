@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { useApp, useWorld } from '../../src/app/store.ts'
+import { computeSpatialWorld } from '../../src/domain/spatial.ts'
 import { MS_PER_YEAR, STEPS_PER_YEAR, Y_PER_YEAR } from '../../src/domain/constants.ts'
 import type { NodeRecord, WorldSettings } from '../../src/domain/types.ts'
 import { makeNodeDraft } from '../../src/domain/validate.ts'
@@ -83,7 +84,7 @@ afterEach(() => {
 })
 
 describe('record mapping', () => {
-  it('maps a NodeRecord to its physics view (Y is time)', () => {
+  it('maps semantic XYZ independently from the historical birth date', () => {
     const n = makeNodeDraft('memory', {
       id: 'x',
       temporalOrigin: T0 + 2.5 * MS_PER_YEAR,
@@ -92,26 +93,26 @@ describe('record mapping', () => {
     })
     expect(toWorldRecord(n, settings)).toEqual({
       id: 'x',
-      anchor: [4, 30, -7],
+      anchor: computeSpatialWorld([n]).positions.get(n.id),
       birthStep: 1500,
       mass: 4,
       temperature: 0,
     })
     expect(toWorldRecord({ ...n, deletedAt: NOW }, settings)).toBeNull()
     expect(toWorldRecord({ ...n, anchorXZ: [Number.NaN, 0] }, settings)).toBeNull()
-    // Before T0: born at step 0, anchored below the origin.
+    // Before T0: born at step 0, with the same semantic XYZ anchor.
     const early = toWorldRecord({ ...n, temporalOrigin: T0 - MS_PER_YEAR }, settings)!
     expect(early.birthStep).toBe(0)
-    expect(early.anchor[1]).toBe(-12)
+    expect(early.anchor).toEqual(toWorldRecord(n, settings)!.anchor)
   })
 
-  it('diffs by updatedAt: physics-neutral edits only refresh the mirror', () => {
+  it('diffs shared anchors: title edits only refresh the mirror, explicit pins move physics', () => {
     const list = nodes(4)
     const map = new Map(list.map((n) => [n.id, n]))
     const { mirror } = mirrorAll(map, settings)
     const next = new Map(map)
     next.set(list[0].id, { ...list[0], title: 'renamed', updatedAt: 2000 }) // no physics change
-    next.set(list[1].id, { ...list[1], anchorXZ: [1, 2], updatedAt: 2000 })
+    next.set(list[1].id, { ...list[1], fieldAnchorXZ: [1, 2], updatedAt: 2000 })
     next.delete(list[2].id)
     const extra = makeNodeDraft('idea', { id: 'new', temporalOrigin: T0 + MS_PER_YEAR, anchorXZ: [9, 9] })
     next.set('new', extra)
@@ -192,7 +193,7 @@ describe('physics client', () => {
     expect(useApp.getState().clock.settling).toBe(false)
     const after = client.acquire()!
     expect(after.slots.ids).not.toContain(list[5].id)
-    const finalRecords = [...useWorld.getState().nodes.values()].map((n) => toWorldRecord(n, settings)!)
+    const finalRecords = mirrorAll(useWorld.getState().nodes, settings).records
     const ref2 = buildWorld({ records: finalRecords, seed: settings.physicsSeed })
     runTo(ref2, load.target)
     expect(stateHashById(fake.host.current!)).toBe(stateHashById(ref2))

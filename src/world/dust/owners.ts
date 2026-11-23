@@ -3,6 +3,7 @@
 // (toWorldRecord + quantizeRecord), so dust and node agree to the last bit about where
 // and when a memory happens. Pure: tested in node against a fake DustSim.
 
+import { computeSpatialWorld } from '../../domain/spatial.ts'
 import { ARCHETYPES, type Archetype, type NodeRecord } from '../../domain/types.ts'
 import {
   DUST_BUDGET_SEGMENTS,
@@ -29,8 +30,9 @@ export interface DustEntry {
 export function dustEntries(nodes: ReadonlyMap<string, NodeRecord>, settings: MappingSettings | null): Map<string, DustEntry> {
   const out = new Map<string, DustEntry>()
   if (!settings) return out
+  const spatial = computeSpatialWorld(nodes.values()).positions
   for (const n of nodes.values()) {
-    const rec = toWorldRecord(n, settings)
+    const rec = toWorldRecord(n, settings, spatial)
     if (!rec) continue
     let q: ReturnType<typeof quantizeRecord>
     try {

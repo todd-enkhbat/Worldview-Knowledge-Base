@@ -1,7 +1,9 @@
 import { create } from 'zustand'
+import { getPoseTable } from '../world/poses.ts'
 import { useWorld } from '../app/store.ts'
 import { getStore, isRepoReady, logEvent, subscribeRepo, useRepoStatus } from '../data/repo.ts'
 import type { InteractionEvent, NodeRecord, WorldSettings } from '../domain/types.ts'
+import { computeSpatialWorld } from '../domain/spatial.ts'
 import { applyLedgerEvent, createLedger, foldLedger, isActiveDemon, kTEff, landauerCost, landauerJoules, matchDemon, planDemons, sortable } from './demon.ts'
 import type { DemonLedger, DemonLedgerEntry, DemonMatch, DemonPlan, SemanticMatcher } from './demon.ts'
 import { embedTexts, isSemanticReady, useSemantic, vectorOf } from '../ai/semanticIndex.ts'
@@ -222,7 +224,7 @@ export function resetOverlays(): void {
 
 // ─── fields (per frame, cached) ──────────────────────────────────────────────────────
 
-let planCache: { nodes: ReadonlyMap<string, NodeRecord>; settings: WorldSettings | null; semantic: number; plan: DemonPlan } | null = null
+let planCache: { nodes: ReadonlyMap<string, NodeRecord>; settings: WorldSettings | null; semantic: number; bornKey: string; sampledAt: number; posesVersion: number; plan: DemonPlan } | null = null
 
 // ─── semantic matching ───────────────────────────────────────────────────────────────
 // Demon queries are embedded once each (async); until a query's vector arrives, its demon
@@ -259,10 +261,17 @@ function semanticMatcher(nodes: ReadonlyMap<string, NodeRecord>): SemanticMatche
 /** The demon plan for the current records (recomputed when records, settings or embeddings change). */
 export function getDemonPlan(): DemonPlan {
   const { nodes, settings } = useWorld.getState()
-  if (planCache && planCache.nodes === nodes && planCache.settings === settings && planCache.semantic === semVersion) return planCache.plan
+  const poses = getPoseTable()
+  const eligible = [...nodes.values()].filter((record) => {
+    const row = poses.index.get(record.id)
+    return row === undefined ? record.temporalOrigin <= Date.now() : poses.born[row] === 1
+  })
+  const bornKey = eligible.map((record) => record.id).join('|')
+  const now = Date.now()
+  if (planCache && planCache.nodes === nodes && planCache.settings === settings && planCache.semantic === semVersion && planCache.bornKey === bornKey && (planCache.posesVersion === poses.version || now - planCache.sampledAt < 250)) return planCache.plan
   const semantic = semVersion
-  const plan = settings ? planDemons(nodes.values(), anchorOfFor(settings), semanticMatcher(nodes)) : EMPTY_PLAN
-  planCache = { nodes, settings, semantic, plan }
+  const plan = settings ? planDemons(eligible, anchorOfFor(settings, nodes.values(), poses), semanticMatcher(nodes)) : EMPTY_PLAN
+  planCache = { nodes, settings, semantic, bornKey, sampledAt: now, posesVersion: poses.version, plan }
   return plan
 }
 
@@ -289,8 +298,12 @@ export function previewDemon(demonId: string): DemonMatch | null {
   const { nodes, settings } = useWorld.getState()
   const demon = nodes.get(demonId)
   if (!demon || !settings || !isActiveDemon(demon)) return null
-  const population = sortable(nodes.values())
-  return matchDemon(demon, population, buildIndex(population), anchorOfFor(settings), semanticMatcher(nodes))
+  const poses = getPoseTable()
+  const population = sortable(nodes.values()).filter((record) => {
+    const row = poses.index.get(record.id)
+    return row === undefined ? record.temporalOrigin <= Date.now() : poses.born[row] === 1
+  })
+  return matchDemon(demon, population, buildIndex(population), anchorOfFor(settings, nodes.values(), poses), semanticMatcher(nodes))
 }
 
 /**
@@ -320,8 +333,9 @@ const watcher = (() => {
 
   const signatures = (nodes: ReadonlyMap<string, NodeRecord>) => {
     const out = new Map<string, string>()
+    const spatial = computeSpatialWorld(nodes.values()).positions
     for (const n of nodes.values()) {
-      if (isActiveDemon(n)) out.set(n.id, JSON.stringify([n.demon!.query.trim(), n.demon!.radius, n.anchorXZ, n.temporalOrigin]))
+      if (isActiveDemon(n)) out.set(n.id, JSON.stringify([n.demon!.query.trim(), n.demon!.radius, spatial.get(n.id), n.temporalOrigin]))
     }
     return out
   }

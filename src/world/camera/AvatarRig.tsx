@@ -203,7 +203,7 @@ const BRASS = '#c9973f'
 const EMBER_HDR = new Color('#e8b04a').multiplyScalar(6)
 const SIGNAL_HDR = new Color('#ff4a1c').multiplyScalar(4)
 
-function AvatarFigure({ ref }: { ref: Ref<Group> }) {
+export function AvatarFigure({ ref }: { ref: Ref<Group> }) {
   return (
     <group ref={ref}>
       {/* plinth */}

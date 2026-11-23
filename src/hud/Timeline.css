@@ -1,0 +1,24 @@
+.timeline-context {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  column-gap: 14px;
+  row-gap: 5px;
+  min-height: 15px;
+  margin: 12px 0 0 43px;
+  color: #abc3b7;
+  font-size: 10px;
+  line-height: 1.5;
+}
+.timeline-context button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #e0ebd9;
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.timeline-context button:hover { color: #fff; }
+@media (max-width: 900px) { .timeline-context { margin-left: 36px; font-size: 9px; } }

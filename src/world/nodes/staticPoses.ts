@@ -1,12 +1,11 @@
 import { useLayoutEffect } from 'react'
 import { useWorld } from '../../app/store.ts'
-import { Y_PER_YEAR } from '../../domain/constants.ts'
-import { yOf } from '../../domain/time.ts'
+import { computeSpatialWorld } from '../../domain/spatial.ts'
 import type { NodeRecord, WorldSettings } from '../../domain/types.ts'
 import { getPoseTable, setPoseTable, type PoseTable } from '../poses.ts'
 
-// Phase-1 pose writer: every live node sits on its frozen anchor at the height of its
-// temporal origin, and everything counts as born (the Phase-3 time scrub marks the unborn).
+// Static fallback uses exactly the shared spatial anchors. Dates never set XYZ; the
+// Phase-3 writer independently marks records born/ghost from the history playhead.
 // Rows are stable slots across rewrites so readers that cache row numbers between frames
 // keep working: surviving ids keep their row, new ids fill freed rows before appending.
 
@@ -16,15 +15,12 @@ export function buildStaticPoseTable(
   settings: WorldSettings | null,
   prev: Pick<PoseTable, 'index'>,
 ): Omit<PoseTable, 'version'> {
-  // Without settings there is no T0; the earliest node stands in so heights stay finite.
-  let T0 = settings?.T0 ?? Infinity
-  if (!Number.isFinite(T0)) for (const n of nodes.values()) T0 = Math.min(T0, n.temporalOrigin)
-  if (!Number.isFinite(T0)) T0 = 0
-  const yPerYear = settings?.yPerYear ?? Y_PER_YEAR
+  const spatial = computeSpatialWorld(nodes.values()).positions
+  void settings
 
   const index = new Map<string, number>()
   const used = new Set<number>()
-  for (const id of nodes.keys()) {
+  for (const id of spatial.keys()) {
     const row = prev.index.get(id)
     if (row !== undefined && !used.has(row)) {
       index.set(id, row)
@@ -32,7 +28,7 @@ export function buildStaticPoseTable(
     }
   }
   let next = 0
-  for (const id of nodes.keys()) {
+  for (const id of spatial.keys()) {
     if (index.has(id)) continue
     while (used.has(next)) next++
     index.set(id, next)
@@ -43,11 +39,9 @@ export function buildStaticPoseTable(
 
   const pos = new Float32Array(rows * 3)
   const born = new Uint8Array(rows)
-  for (const [id, n] of nodes) {
+  for (const [id, anchor] of spatial) {
     const r = index.get(id)!
-    pos[r * 3] = n.anchorXZ[0]
-    pos[r * 3 + 1] = yOf(n.temporalOrigin, T0, yPerYear)
-    pos[r * 3 + 2] = n.anchorXZ[1]
+    pos.set(anchor, r * 3)
     born[r] = 1
   }
   return { index, pos, born }

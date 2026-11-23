@@ -1,0 +1,5 @@
+.knowledge-district-label { display:block; max-width:170px; padding:5px 8px; border:1px solid #88abc05c; border-radius:6px; background:#101b27e8; color:#d4dfe7; font:11px/1.45 var(--font-sans); text-align:left; pointer-events:auto; cursor:pointer; white-space:nowrap; box-shadow:0 2px 12px #0003; }
+.knowledge-district-label strong { display:block; font-weight:500; overflow:hidden; text-overflow:ellipsis; text-transform:capitalize; }
+.knowledge-district-label span { display:block; color:#8da5b5; font-size:9px; }
+.knowledge-district-label:hover { background:#243545; border-color:#cfdae2!important; }
+@media(max-width:660px) { .knowledge-district-label { max-width:130px; font-size:10px; padding:4px 6px; }.knowledge-district-label span { font-size:8px; } }

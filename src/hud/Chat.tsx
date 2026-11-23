@@ -1,3 +1,5 @@
+import { ArrowUp, ArrowUpRight, CheckCircle, Paperclip, Sparkle, X } from '@phosphor-icons/react'
+import './Chat.css'
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import type Anthropic from '@anthropic-ai/sdk'
 import { useApp, useWorld } from '../app/store.ts'
@@ -12,7 +14,7 @@ import {
   loadChat,
   send,
   skipCard,
-  startInterview,
+  saveThought,
   unstage,
   keepStaged,
   useChat,
@@ -20,12 +22,12 @@ import {
 } from '../ai/chat/session.ts'
 import { BTN, BTN_PRIMARY } from './DurabilityKit.tsx'
 import { Markdown } from './markdown.ts'
-import { intake, intakeFolderFiles } from './chatIntake.ts'
+import { entriesOf, intake, intakeFolderFiles } from './chatIntake.ts'
 import { selectAndFly } from './shortcuts.ts'
+import { openAgentsPanel } from '../world/agents/model.ts'
 
-// The chat (milestone 1): the front door of the world. Talk, drop files or a vault folder,
-// paste links; Claude proposes notes as cards and nothing is saved until you keep one.
-// Full screen for the first-visit interview, docked on the right afterwards. "/" opens it.
+// Capture stays available beside the world. Direct saves preserve the user's words and
+// originals locally; AI turns propose reviewable records. "/" opens the conversation.
 
 type Block = Anthropic.ContentBlockParam | Anthropic.ContentBlock
 
@@ -67,7 +69,7 @@ function CardView({ toolId, card, writer }: { toolId: string; card: Card; writer
       tabIndex={0}
       onKeyDown={onKey}
       aria-label={`Proposed ${KIND_LABEL[n.kind] ?? n.kind}: ${n.title}`}
-      className={`border px-3 py-2 outline-none focus-visible:border-ember ${card.status === 'kept' ? 'border-ember/50 bg-ember/5' : card.status === 'open' ? 'border-bone/25' : 'border-bone/10 opacity-60'}`}
+      className={`chat-proposal border px-3 py-2 outline-none focus-visible:border-ember ${card.status === 'kept' ? 'border-ember/50 bg-ember/5' : card.status === 'open' ? 'border-bone/25' : 'border-bone/10 opacity-60'}`}
     >
       <div className="hud-label flex items-center gap-2">
         <span>{KIND_LABEL[n.kind] ?? n.kind}</span>
@@ -208,7 +210,7 @@ function Turn({ role, content, writer }: { role: 'user' | 'assistant'; content: 
       if (chip) chips.push(chip)
       else if (b.type === 'text' && !isHiddenText(b.text) && b.text.trim()) {
         parts.push(
-          <div key={i} className="ml-auto max-w-[85%] whitespace-pre-wrap border border-bone/20 bg-bone/5 px-3 py-2 text-[13px] text-bone">
+          <div key={i} className="chat-user-turn ml-auto max-w-[85%] whitespace-pre-wrap border border-bone/20 bg-bone/5 px-3 py-2 text-[13px] text-bone">
             {b.text}
           </div>,
         )
@@ -260,15 +262,35 @@ async function downloadVault(): Promise<void> {
   setTimeout(() => URL.revokeObjectURL(url), 10_000)
 }
 
-export function Chat() {
+function CapturedNote({ id }: { id: string }) {
+  const note = useWorld((s) => s.nodes.get(id))
+  if (!note || note.deletedAt) return null
+  const date = new Date(note.temporalOrigin).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+  return (
+    <article className="chat-captured-note">
+      <div className="chat-captured-meta">{KIND_LABEL[note.archetype]} <span>·</span> {date}</div>
+      <button type="button" className="chat-captured-title" onClick={() => selectAndFly(id)}>
+        <span>{note.title}</span><ArrowUpRight size={16} />
+      </button>
+      {note.contentMd && <p>{note.contentMd.replace(/^#+\s*/gm, '').slice(0, 180)}</p>}
+      {note.attachments.length > 0 && <div className="chat-captured-files"><Paperclip size={13} /><span>{note.attachments.map((a) => a.name).join(', ')}</span></div>}
+      {note.tags.length > 0 && <div className="chat-captured-tags">{note.tags.slice(0, 4).map((t) => <span key={t}>#{t}</span>)}</div>}
+      <button type="button" className="chat-captured-open" onClick={() => selectAndFly(id)}>Find in world <ArrowUpRight size={13} /></button>
+    </article>
+  )
+}
+
+export function Chat({ embedded = false }: { embedded?: boolean }) {
   const open = useApp((s) => s.panels.chat)
   const writer = useRepoStatus((s) => s.writer)
   const ready = useRepoStatus((s) => s.ready)
-  const settings = useWorld((s) => s.settings)
-  const empty = useWorld((s) => s.nodes.size === 0)
-  const { history, live, busy, toolHint, error, staged, loaded, usage } = useChat()
+  const { history, live, busy, toolHint, error, staged, intakeBusy } = useChat()
   const [text, setText] = useState('')
   const [full, setFull] = useState(false)
+  const [reflection, setReflection] = useState(false)
+  const [captureIds, setCaptureIds] = useState<string[]>([])
+  const [saving, setSaving] = useState(false)
+  const [dropOver, setDropOver] = useState(false)
   const listRef = useRef<HTMLDivElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const dirRef = useRef<HTMLInputElement>(null)
@@ -278,18 +300,10 @@ export function Chat() {
     if (ready) void loadChat()
   }, [ready])
 
-  // First visit: an empty world with no conversation opens the interview, full screen.
-  useEffect(() => {
-    if (!loaded || !writer || !settings || !empty || history.length) return
-    setFull(true)
-    useApp.getState().togglePanel('chat', true)
-    startInterview()
-  }, [loaded, writer, settings, empty, history.length])
-
   useEffect(() => {
     const el = listRef.current
     if (el) el.scrollTop = el.scrollHeight
-  }, [history.length, live, staged.length, open])
+  }, [history.length, live, staged.length, open, captureIds.length, error])
 
   useEffect(() => {
     if (open) inputRef.current?.focus()
@@ -300,24 +314,74 @@ export function Chat() {
     [history, writer],
   )
 
-  if (!open) return null
+  if (!open && !embedded) return null
 
-  const submit = () => {
-    if (busy || !writer) return
+  const working = busy || intakeBusy || saving
+  const canSave = !!text.trim() || staged.some((item) => item.file || item.url)
+  const submit = async () => {
+    if (working || !writer || (!text.trim() && !staged.length)) return
     const t = text
     setText('')
-    void send(t)
+    await send(t)
+    if (useChat.getState().error) setText((draft) => draft || t)
   }
 
-  const shell = full
-    ? 'pointer-events-auto fixed inset-0 z-40 flex justify-center bg-void/95 backdrop-blur-sm'
-    : 'pointer-events-auto absolute bottom-3 right-3 top-3 z-20 flex w-[min(440px,calc(100%-24px))]'
+  const saveFiles = async () => {
+    if (working || !writer) return
+    setSaving(true)
+    const before = new Set(useWorld.getState().nodes.keys())
+    try {
+      await keepStaged()
+      const created = [...useWorld.getState().nodes.keys()].filter((id) => !before.has(id))
+      if (created.length) setCaptureIds((ids) => [...ids, ...created].slice(-8))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const saveLocal = async () => {
+    if (working || !writer) return
+    if (!text.trim()) return saveFiles()
+    setSaving(true)
+    const draft = text
+    try {
+      const id = await saveThought(draft, { reflection })
+      if (id) {
+        setText((current) => current === draft ? '' : current)
+        setReflection(false)
+        setCaptureIds((ids) => [...ids, id].slice(-8))
+      }
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const shell = embedded
+    ? 'chat-panel chat-embedded pointer-events-auto flex h-full min-h-0 w-full flex-col'
+    : full
+      ? 'chat-panel pointer-events-auto fixed inset-0 z-40 flex justify-center bg-void/95 backdrop-blur-sm'
+      : 'chat-panel pointer-events-auto absolute bottom-3 right-3 top-3 z-20 flex w-[min(440px,calc(100%-24px))]'
 
   return (
     <section
       aria-label="Chat"
       data-label-avoid={full ? undefined : ''}
-      className={shell}
+      className={`${shell} ${dropOver ? 'is-dragging' : ''}`}
+      onDragOver={(e) => {
+        if (!Array.from(e.dataTransfer.types).includes('Files') || !writer) return
+        e.preventDefault()
+        setDropOver(true)
+      }}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropOver(false)
+      }}
+      onDrop={(e) => {
+        if (!writer || !Array.from(e.dataTransfer.types).includes('Files')) return
+        e.preventDefault()
+        e.stopPropagation()
+        setDropOver(false)
+        void intake(Array.from(e.dataTransfer.files), entriesOf(e.dataTransfer))
+      }}
       onKeyDown={(e) => {
         if (e.key === 'Escape' && !e.defaultPrevented) {
           e.stopPropagation()
@@ -326,132 +390,99 @@ export function Chat() {
         }
       }}
     >
-      <div className={`hud-panel flex min-h-0 w-full flex-col ${full ? 'my-6 max-w-2xl' : ''}`}>
-        <header className="flex items-center gap-2 border-b border-bone/15 px-3 py-2">
-          <span className="hud-label">Talk to your world</span>
-          <span className="ml-auto" />
-          <button type="button" className={`${BTN} px-1.5 py-0`} onClick={() => void downloadVault()} title="Export every note and its files as an Obsidian vault (.zip)">
-            Export vault
-          </button>
-          <button type="button" className={`${BTN} px-1.5 py-0`} onClick={() => setFull((f) => !f)} title={full ? 'Dock to the side' : 'Full screen'}>
-            {full ? 'Dock' : 'Expand'}
-          </button>
-          <button type="button" className={`${BTN} px-1.5 py-0`} aria-label="Close the chat" onClick={() => useApp.getState().togglePanel('chat', false)}>
-            ×
-          </button>
+      <div className={`chat-body flex min-h-0 w-full flex-1 flex-col ${full ? 'my-6 max-w-2xl' : ''}`}>
+        <header className="chat-header">
+          <Sparkle size={21} weight="light" aria-hidden="true" />
+          <h2>Companion</h2>
+          <button type="button" className="chat-icon-button" aria-label="Close the chat" onClick={() => useApp.getState().togglePanel('chat', false)}><X size={16} /></button>
         </header>
 
-        <div ref={listRef} className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-3 py-3">
-          {!history.length && !busy && (
-            <div className="text-[13px] leading-relaxed text-concrete">
-              Tell me about anything: an idea you keep coming back to, a person who shaped you, a moment you remember. Drop in anything: photos, PDFs, videos, datasets, zips, contacts,
-              a folder or an Obsidian vault, or paste a link or an address. I&apos;ll propose notes; nothing is saved until you keep it.
+        <div ref={listRef} className="chat-messages flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
+          {!history.length && !captureIds.length && !busy && (
+            <div className="chat-welcome">
+              <h3>Where shall we explore?</h3>
+              <p>Follow an idea. Remember a moment.<br />Make room for something new.</p>
+              <div className="chat-starters">
+                <button type="button" onClick={() => { setText((draft) => draft || 'What connections do you see between my recent thoughts?'); inputRef.current?.focus() }}>Find connections <ArrowUpRight size={15} /></button>
+                <button type="button" onClick={() => { setReflection(true); setText((draft) => draft || 'Today I’ve been thinking about '); inputRef.current?.focus() }}>Reflect on today <ArrowUpRight size={15} /></button>
+                <button type="button" onClick={() => inputRef.current?.focus()}>Add a thought <ArrowUpRight size={15} /></button>
+              </div>
+              <button type="button" className="chat-meet-agents" onClick={openAgentsPanel}>Meet your agents <ArrowUpRight size={13} /></button>
             </div>
           )}
           {turns}
           {live && <Markdown source={live} className="text-[13px] leading-relaxed text-bone" />}
-          {busy && (
-            <div className="hud-label animate-pulse" role="status">
-              {toolHint === 'propose_notes' ? 'Writing notes…' : toolHint === 'search_world' ? 'Looking through your notes…' : toolHint === 'ask_user' ? 'Thinking of a question…' : 'Thinking…'}
+          {captureIds.length > 0 && (
+            <div className="chat-captures">
+              <div className="chat-captures-heading" role="status"><CheckCircle size={16} /> Added to your world</div>
+              {captureIds.map((id) => <CapturedNote key={id} id={id} />)}
             </div>
           )}
-          {error && (
-            <div role="alert" className="border-l-2 border-signal pl-2 text-[12px] text-signal">
-              {error}
+          {working && (
+            <div className="chat-progress" role="status">
+              {intakeBusy ? 'Preparing your files…' : saving ? 'Adding to your world…' : toolHint === 'propose_notes' ? 'Finding a place for these thoughts…' : toolHint === 'search_world' ? 'Looking through your world…' : 'Thinking…'}
             </div>
           )}
+          {error && <div role="alert" className="chat-error">{error}</div>}
         </div>
 
-        <footer className="border-t border-bone/15 p-2">
+        <footer className="chat-footer">
           {staged.length > 0 && (
-            <div className="mb-1.5 flex flex-wrap gap-1">
+            <div className="chat-attachments">
               {staged.map((s, i) => (
-                <span key={i} className="flex items-center gap-1 border border-bone/25 px-1.5 py-0.5 text-[11px] text-bone">
-                  {s.kind === 'pdf' ? 'PDF' : s.kind === 'image' ? 'Image' : s.kind === 'page' ? 'Link' : 'File'} · {s.name}
-                  <button type="button" aria-label={`Remove ${s.name}`} className="text-concrete hover:text-bone" onClick={() => unstage(i)}>
-                    ×
-                  </button>
+                <span key={i} className="chat-attachment">
+                  <span>{s.name}</span>
+                  <button type="button" aria-label={`Remove ${s.name}`} onClick={() => unstage(i)}><X size={16} /></button>
                 </span>
               ))}
               {staged.some((s) => s.file || s.url) && (
-                <button
-                  type="button"
-                  className={`${BTN} px-1.5 py-0`}
-                  disabled={busy || !writer}
-                  title="Put each file in your world as its own note, as it is: no AI, nothing sent anywhere. You can rename and date them in the Inspector."
-                  onClick={() => void keepStaged()}
-                >
-                  Keep as notes
-                </button>
+                <button type="button" className="chat-save-files" disabled={working || !writer} onClick={() => void saveFiles()}>Save files to world</button>
               )}
             </div>
           )}
-          <div className="flex items-end gap-1">
+          {reflection && <div className="chat-reflection-label">Daily reflection <button type="button" aria-label="Cancel reflection" onClick={() => setReflection(false)}><X size={16} /></button></div>}
+          <div className="chat-composer">
             <textarea
               ref={inputRef}
-              rows={full ? 3 : 2}
+              rows={2}
               disabled={!writer}
-              className="min-h-0 flex-1 resize-none border border-bone/30 bg-void px-2 py-1.5 font-mono text-[13px] text-bone outline-none placeholder:text-concrete focus:border-ember"
-              placeholder={writer ? 'Say anything, paste a link, or drop files here…' : 'Read-only: another tab is the writer'}
+              aria-label="Your thought"
+              placeholder={dropOver ? 'Drop it here. Make it part of your world.' : writer ? captureIds.length ? 'Keep thinking…' : 'Add a thought, file, or link…' : 'Another tab is editing this world'}
               value={text}
               onChange={(e) => setText(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                   e.preventDefault()
-                  submit()
+                  void submit()
                 }
               }}
               onPaste={(e) => {
                 const files = Array.from(e.clipboardData.files)
-                if (files.length) {
-                  e.preventDefault()
-                  void intake(files)
-                }
+                if (files.length) { e.preventDefault(); void intake(files) }
               }}
             />
-            <div className="flex flex-col gap-1">
-              <button type="button" className={BTN_PRIMARY} disabled={busy || !writer} onClick={submit}>
-                Send
-              </button>
-              <button type="button" className={BTN} disabled={!writer} title="Add any files: photos, PDFs, videos, datasets, zips, contacts…" onClick={() => fileRef.current?.click()}>
-                Files
-              </button>
-              <button type="button" className={BTN} disabled={!writer} title="Add a folder: an Obsidian vault is imported, anything else is read file by file" onClick={() => dirRef.current?.click()}>
-                Folder
-              </button>
+            <div className="chat-composer-tools">
+              <button type="button" className="chat-icon-button chat-attach" aria-label="Attach files" disabled={!writer || intakeBusy} title="Add photos, videos, PDFs, or other files" onClick={() => fileRef.current?.click()}><Paperclip size={18} /></button>
+              <button type="button" className="chat-folder-button" disabled={!writer || intakeBusy} onClick={() => dirRef.current?.click()}>Folder</button>
+              <span className="chat-composer-spacer" />
+              <button type="button" className="chat-local-save" disabled={working || !writer || !canSave} onClick={() => void saveLocal()} title="Save your words and files directly, without AI">Save to world</button>
+              <button type="button" className="chat-send" aria-label="Send to AI" disabled={working || !writer || (!text.trim() && !staged.length)} onClick={() => void submit()} title="Send to the AI assistant"><ArrowUp size={18} /></button>
             </div>
           </div>
-          <div className="mt-1 flex justify-between text-[10px] text-concrete">
-            <span>Files and pages you add are sent to Anthropic&apos;s API to read them.</span>
-            {usage.input + usage.output > 0 && (
-              <span title="Tokens this session (input / output / read from cache)">
-                {usage.input.toLocaleString()} in · {usage.output.toLocaleString()} out · {usage.cacheRead.toLocaleString()} cached
-              </span>
-            )}
+          <p className="chat-privacy">Save to your world, or send to AI.</p>
+          <div className="chat-bottom-tools">
+            <button type="button" onClick={() => void downloadVault()} title="Export all your notes and original files as an Obsidian vault">Export notes</button>
+            {!embedded && <button type="button" onClick={() => setFull((f) => !f)}>{full ? 'Dock chat' : 'Expand chat'}</button>}
+            <span title="AI messages and attached previews are sent to Anthropic’s API">Private by default</span>
           </div>
-          <input
-            ref={fileRef}
-            type="file"
-            multiple
-            hidden
-            onChange={(e) => {
-              const files = Array.from(e.target.files ?? [])
-              e.target.value = ''
-              if (files.length) void intake(files)
-            }}
-          />
-          <input
-            ref={dirRef}
-            type="file"
-            hidden
+          <input ref={fileRef} type="file" multiple hidden onChange={(e) => {
+            const files = Array.from(e.target.files ?? []); e.target.value = ''; if (files.length) void intake(files)
+          }} />
+          <input ref={dirRef} type="file" hidden
             // @ts-expect-error webkitdirectory is not in React's input attributes
-            webkitdirectory=""
-            onChange={(e) => {
-              const files = Array.from(e.target.files ?? [])
-              e.target.value = ''
-              if (files.length) void intakeFolderFiles(files)
-            }}
-          />
+            webkitdirectory="" onChange={(e) => {
+              const files = Array.from(e.target.files ?? []); e.target.value = ''; if (files.length) void intakeFolderFiles(files)
+            }} />
         </footer>
       </div>
     </section>

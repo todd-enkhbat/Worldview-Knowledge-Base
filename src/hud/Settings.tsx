@@ -23,6 +23,7 @@ import { Credits } from './Credits.tsx'
 import { getEnginePreference, migrateWorld, planMigration, probeEngine, type EngineHealth, type EngineKind, type MigrationPlan } from '../data/engine.ts'
 import { disableSemantic, enableSemantic, useSemantic } from '../ai/semanticIndex.ts'
 import { runRecrystallise } from '../ai/recrystallise.ts'
+import { signOut, useAuth } from '../data/auth.ts'
 import { estimateCost, ledgerCost, loadUsage, resetUsage, useUsage } from '../ai/usage.ts'
 import {
   INSTALL_TEXT,
@@ -138,8 +139,25 @@ function StorageSection() {
     if (outcome === 'accepted') setMsg({ ok: 'Installed. Open the app window from now on: it uses this same storage.', error: null })
   }
 
+  const auth = useAuth()
+  const onServer = getEnginePreference() === 'sqlite' || auth.state === 'signed-in'
   return (
-    <Section title="Storage" intro="Everything lives in this browser. There is no server and no sync.">
+    <Section
+      title="Storage"
+      intro={
+        onServer
+          ? 'The world lives on the server engine (SQLite). Every browser and device that opens this server sees the same world, and edits show up on the others live.'
+          : 'Everything lives in this browser. Move it to the server engine (below) to reach it from other devices.'
+      }
+    >
+      {auth.state === 'signed-in' && auth.user && (
+        <KV k="Account">
+          {auth.user.email}{' '}
+          <button type="button" className={`${BTN} ml-2`} onClick={() => void signOut()}>
+            Sign out
+          </button>
+        </KV>
+      )}
       <KV k="Status">
         <span className={`font-bold tracking-[0.14em] ${KIND_TONE[kind]}`}>{STORAGE_LABEL[kind]}</span>
         <span className="block text-bone/75">{STORAGE_EXPLAIN[kind]}</span>
@@ -534,7 +552,7 @@ function RelayoutSection({ canWrite }: { canWrite: boolean }) {
     try {
       const r = await relayoutWorld(candidate, { apply: true })
       setPreview(r.applied ? null : r)
-      setMsg(r.applied ? { ok: `The world now starts ${formatDay(candidate)}.`, error: null } : { ok: null, error: 'Some records no longer fit. Nothing was changed.' })
+      setMsg(r.applied ? { ok: `History now starts ${formatDay(candidate)}.`, error: null } : { ok: null, error: 'Some records no longer fit. Nothing was changed.' })
       if (r.applied) setText('')
     } catch (err) {
       setMsg({ ok: null, error: errorText(err) })
@@ -554,15 +572,15 @@ function RelayoutSection({ canWrite }: { canWrite: boolean }) {
   const same = candidate === settings.T0
   return (
     <Section
-      title="Re-layout world"
-      intro="T0 is the bottom of the worldline. Changing it moves every record’s height; positions across the floor stay."
+      title="History origin"
+      intro="The beginning of the history timeline. Changing it adjusts the timeline range; spatial neighborhoods stay in place."
     >
-      <KV k="T0 now">
+      <KV k="Starts at">
         <span className="text-bone">{formatDay(settings.T0)}</span>
       </KV>
       <form onSubmit={onPreview} className="flex flex-wrap items-end gap-2">
         <label htmlFor={inputId} className="flex flex-col gap-1">
-          <span className="hud-label">New T0</span>
+          <span className="hud-label">New start date</span>
           <input
             id={inputId}
             className={`${INPUT} w-40`}
@@ -592,7 +610,7 @@ function RelayoutSection({ canWrite }: { canWrite: boolean }) {
           {preview.outOfRange.length > 0 && (
             <>
               <Note tone="warn">
-                {plural(preview.outOfRange.length, 'record')} would fall outside the worldline. Nothing is clamped: redate them, or pick an earlier T0.
+                {plural(preview.outOfRange.length, 'record')} would fall outside the history range. Nothing is clamped: correct those dates, or choose an earlier start.
               </Note>
               <ul className="m-0 max-h-48 list-none overflow-y-auto border border-bone/10 p-0">
                 {preview.outOfRange.map((r) => (
@@ -609,14 +627,14 @@ function RelayoutSection({ canWrite }: { canWrite: boolean }) {
               </ul>
             </>
           )}
-          {fits && same && <Note>That is already T0.</Note>}
+          {fits && same && <Note>That is already the history start.</Note>}
           {fits && !same && candidate !== null && (
             <div className="flex flex-wrap items-center gap-3">
               <span>
-                Every record fits. Re-layout from <span className="text-bone">{formatDay(candidate)}</span>?
+                Every record fits. Start history from <span className="text-bone">{formatDay(candidate)}</span>?
               </span>
               <button type="button" className={BTN_PRIMARY} onClick={onApply} disabled={busy}>
-                {busy ? 'Applying…' : 'Apply re-layout'}
+                {busy ? 'Applying…' : 'Apply history origin'}
               </button>
             </div>
           )}
@@ -643,12 +661,11 @@ function WorldViewSection() {
     </label>
   )
   return (
-    <Section title="World view" intro="How your world is drawn. Your notes are the same in both; switch any time. Saved on this device.">
+    <Section title="World view" intro="Two render treatments of the same spatial world. XYZ is space; the timeline is history. Saved on this device.">
       <div className="flex max-w-xl flex-col gap-1.5">
-        {option('field', 'Field (topographic)', 'Notes are clouds of grains on a living land shaped by what you know. Time plays in the timeline at the bottom.')}
-        {option('classic', 'Classic (structure)', 'The original column, helix and rings, with time as height. Kept as a backup view.')}
+        {option('field', 'World', 'Recognizable notes and original media in three-dimensional topic neighborhoods, with living particles around them.')}
+        {option('classic', 'Structure', 'Inspect the same spatial neighborhoods, embodied notes and saved relationships with structural detail.')}
       </div>
-      {world === 'classic' && (
         <label htmlFor={archId} className="mt-2 flex flex-col gap-1">
           <span className="hud-label">Architecture · {Math.round(architecture * 100)}%</span>
           <input
@@ -661,9 +678,8 @@ function WorldViewSection() {
             value={architecture}
             onChange={(e) => useApp.getState().setView({ architecture: Number(e.target.value) })}
           />
-          <span className="text-[11px] text-concrete">How bright the column, colonnade and land are next to your nodes.</span>
+          <span className="text-[11px] text-concrete">Brightness of the ground and spatial landmarks beside your notes.</span>
         </label>
-      )}
     </Section>
   )
 }
@@ -882,8 +898,7 @@ function SemanticSection({ canWrite }: { canWrite: boolean }) {
         </button>
       </div>
       <Note>
-        New nodes land near what they mean. Re-crystallise lays out every node by meaning at once (UMAP, aligned to the current layout so the
-        world turns as little as possible); each node keeps its distance from the axis and its date.
+        Re-crystallise updates saved semantic anchors using the available embeddings. History dates stay unchanged; topic neighborhoods and explicit placement pins remain separate from the timeline.
       </Note>
       <Outcome ok={ok} error={error} />
     </Section>

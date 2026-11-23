@@ -30,6 +30,7 @@ import type { Sync, WriterLock } from './locks.ts'
 import { buildDemoWorld } from './seed/demo.ts'
 import { initStorageStatus } from './storage.ts'
 import type { StoreChange, WorldStore } from './WorldStore.ts'
+import { combineSyncs, createServerSync } from './serverSync.ts'
 
 // Application data façade. Every mutation goes: validate → update useWorld optimistically →
 // persist → (on failure) roll useWorld back and rethrow. Actions run one at a time through a
@@ -139,6 +140,8 @@ export interface InitRepoOptions {
   storageStatus?: boolean
   /** Debounced rolling backups to the user's folder. Default: true unless a store is injected. */
   autoBackup?: boolean
+  /** Open the server engine whatever this browser's preference (a hosted server with accounts). */
+  engine?: 'sqlite'
 }
 
 /** Open the store, hydrate useWorld and start syncing. Idempotent: a second call (even a concurrent one) returns the same repo. */
@@ -157,7 +160,7 @@ async function openRepo(opts: InitRepoOptions): Promise<RepoStatus> {
   let error: string | null = null
   let lockOverride: WriterLock | null | undefined
   if (opts.store) raw = opts.store
-  else if (getEnginePreference() === 'sqlite' && (await probeEngine())) {
+  else if ((opts.engine ?? getEnginePreference()) === 'sqlite' && (await probeEngine())) {
     raw = await openSqliteStore()
   } else {
     if (getEnginePreference() === 'sqlite') {
@@ -190,7 +193,16 @@ async function openRepo(opts: InitRepoOptions): Promise<RepoStatus> {
   const local = injected || fallback
   const lock = opts.lock !== undefined ? opts.lock : local ? null : initWriterLock()
   if (lock) await lock.ready
-  const sync = opts.sync !== undefined ? opts.sync : local ? null : createSync({ onChange: (c) => void handleRemoteChange(c) })
+  const onChange = (c: StoreChange) => void handleRemoteChange(c)
+  // On the server engine, other devices' edits arrive over the server's live-change stream too.
+  const sync =
+    opts.sync !== undefined
+      ? opts.sync
+      : local
+        ? null
+        : raw.info.kind === 'sqlite'
+          ? combineSyncs(createSync({ onChange }), createServerSync({ onChange }))
+          : createSync({ onChange })
   const canWrite = () => (lock ? lock.isWriter : true)
   const store = withSync(raw, { sync, canWrite })
 

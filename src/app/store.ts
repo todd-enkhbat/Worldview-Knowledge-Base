@@ -3,7 +3,7 @@ import type { Archetype, NodeRecord, QualityTier, WorldSettings } from '../domai
 
 // ─── Camera-mode machine ────────────────────────────────────────────────────────────
 // orbit         free CameraControls around the world (default)
-// third_person  kinematic avatar on the catwalk path graph, damped follow cam
+// third_person  ground-level navigation through the spatial world
 // first_person  generic 6-DOF flight (SparkControls)
 // entering      fly-in tween into a memory diorama
 // interior      inside a diorama: 6-DOF SparkControls with roll, world group hidden
@@ -68,12 +68,14 @@ export interface QualityState {
 export interface ViewState {
   /** Architecture brightness, 0.3–1 (1 = the original full-contrast shell). */
   architecture: number
-  /** 'field': the particle world (milestone 2). 'classic': the column, helix and rings. */
+  /** Two render treatments of the same spatial world: embodied notes and structural detail. */
   world: 'field' | 'classic'
+  /** Ambient molecular flow; distinct from replaying the history timeline. */
+  flow: boolean
 }
 
 const VIEW_KEY = 'hyperspace.view'
-export const VIEW_DEFAULTS: ViewState = { architecture: 0.62, world: 'field' }
+export const VIEW_DEFAULTS: ViewState = { architecture: 0.62, world: 'field', flow: true }
 export const ARCHITECTURE_RANGE = [0.3, 1] as const
 
 function loadView(): ViewState {
@@ -84,6 +86,7 @@ function loadView(): ViewState {
     return {
       architecture: Math.min(ARCHITECTURE_RANGE[1], Math.max(ARCHITECTURE_RANGE[0], a)),
       world: v.world === 'classic' ? 'classic' : 'field',
+      flow: typeof v.flow === 'boolean' ? v.flow : !(globalThis.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches),
     }
   } catch {
     return { ...VIEW_DEFAULTS }
@@ -172,8 +175,6 @@ export const useApp = create<AppState>()((set, get) => ({
   setMode: (to) => {
     const from = get().mode
     if (!canTransition(from, to)) return false
-    // The catwalk and the worldline ride belong to the classic world's helix.
-    if (get().view.world === 'field' && (to === 'third_person' || to === 'autonav')) return false
     if (from !== to) set({ mode: to, prevMode: from })
     return true
   },

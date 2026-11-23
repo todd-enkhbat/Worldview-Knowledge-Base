@@ -1,82 +1,63 @@
 import { describe, expect, it } from 'vitest'
+import { Vector3, PerspectiveCamera } from 'three'
+import { computeSpatialWorld } from '../../src/domain/spatial.ts'
+import { makeNodeDraft } from '../../src/domain/validate.ts'
+import { MS_PER_YEAR } from '../../src/domain/constants.ts'
 import type { NodeRecord } from '../../src/domain/types.ts'
-import { computeFieldLayout, layoutBounds } from '../../src/world/field/layout.ts'
+import { computeFieldLayout, fieldVerticalBounds, layoutBounds, spatialCameraShot, spatialWorldFor } from '../../src/world/field/layout.ts'
 
-const rec = (id: string, anchor: [number, number], links: string[] = [], tags: string[] = []): NodeRecord =>
-  ({ id, anchorXZ: anchor, links: links.map((t) => ({ targetId: t, kind: 'supports', createdAt: 0 })), tags, deletedAt: null }) as unknown as NodeRecord
+const T0 = Date.UTC(2000, 0, 1)
+const settings = { T0, yPerYear: 12 }
+const rec = (id: string, tags: string[] = [], year = 0): NodeRecord => makeNodeDraft('idea', { id, title: id, tags, temporalOrigin: T0 + year * MS_PER_YEAR })
 
-const dist = (m: Map<string, [number, number]>, a: string, b: string) => Math.hypot(m.get(a)![0] - m.get(b)![0], m.get(a)![1] - m.get(b)![1])
-
-describe('field layout', () => {
-  const world = [
-    rec('a', [40, 0], ['b']),
-    rec('b', [-40, 0]),
-    rec('c', [0, 60], [], ['x']),
-    rec('d', [0, -60], [], ['x']),
-    rec('e', [70, 70]),
-    rec('f', [-70, -70]),
-  ]
-
-  it('is deterministic and frees notes from their rings: links and tags pull together', () => {
-    const one = computeFieldLayout({ records: world })
-    const two = computeFieldLayout({ records: [...world].reverse() })
-    expect([...one]).toEqual([...two])
-    // Linked a–b and tagged c–d end closer than the unrelated e–f.
-    expect(dist(one, 'a', 'b')).toBeLessThan(dist(one, 'e', 'f'))
-    expect(dist(one, 'c', 'd')).toBeLessThan(dist(one, 'e', 'f'))
-    // Nothing sits on top of anything else.
-    const ids = [...one.keys()]
-    for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) expect(dist(one, ids[i], ids[j])).toBeGreaterThan(4)
+describe('shared spatial field layout', () => {
+  it('returns deterministic shared anchors regardless of input order or unrelated neighborhoods', () => {
+    const records = [rec('a', ['physics']), rec('b', ['physics'])]
+    const world = computeSpatialWorld(records)
+    const first = computeFieldLayout({ records })
+    const semantic = computeFieldLayout({ records: [...records].reverse(), vectors: new Map([['a', new Float32Array([1, 0])], ['b', new Float32Array([1, 0])]]), previous: new Map([['a', [999, 999]]]) })
+    expect([...first]).toEqual([...semantic])
+    expect(first.get('a')).toEqual([world.positions.get('a')![0], world.positions.get('a')![2]])
+    const added = computeFieldLayout({ records: [...records, rec('c', ['art'])], previous: first })
+    expect(added.get('a')).toEqual(first.get('a'))
+    expect(layoutBounds(added).radius).toBeGreaterThanOrEqual(30)
+    const nodes = new Map(records.map((r) => [r.id, r]))
+    expect(spatialWorldFor(nodes)).toBe(spatialWorldFor(nodes))
   })
 
-  it('warm-starts: adding a note barely moves the others', () => {
-    const before = computeFieldLayout({ records: world })
-    const after = computeFieldLayout({ records: [...world, rec('g', [10, 10], ['a'])], previous: before })
-    for (const id of before.keys()) {
-      const moved = Math.hypot(before.get(id)![0] - after.get(id)![0], before.get(id)![1] - after.get(id)![1])
-      expect(moved).toBeLessThan(id === 'a' ? 12 : 6)
-    }
-    expect(layoutBounds(after).radius).toBeGreaterThanOrEqual(30)
-  })
-
-  it('uses semantic neighbours when vectors are given', () => {
-    const v = (x: number, y: number) => new Float32Array([x, y])
-    const vectors = new Map([['e', v(1, 0)], ['f', v(0.99, 0.141)], ['a', v(0, 1)], ['b', v(-1, 0)], ['c', v(0, -1)], ['d', v(-0.7, -0.7)]])
-    const sem = computeFieldLayout({ records: world, vectors })
-    const plain = computeFieldLayout({ records: world })
-    expect(dist(sem, 'e', 'f')).toBeLessThan(dist(plain, 'e', 'f'))
+  it('honors explicit XZ pins across reload', () => {
+    const a = { ...rec('a', ['physics']), fieldAnchorXZ: [120, -75] as [number, number] }
+    const saved = JSON.parse(JSON.stringify([a])) as NodeRecord[]
+    expect(computeFieldLayout({ records: saved }).get('a')).toEqual([120, -75])
+    expect(computeFieldLayout({ records: [{ ...a, deletedAt: 1 }] }).size).toBe(0)
   })
 })
 
-describe('field layout at scale', () => {
-  it('gives a big world room: median nearest-neighbour spacing ≥ 18 u', () => {
-    let seed = 7
-    const r = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff)
-    const big = Array.from({ length: 600 }, (_, i) => rec(`n${i}`, [r() * 160 - 80, r() * 160 - 80], i > 0 ? [`n${Math.floor(r() * i)}`] : [], [`t${i % 25}`]))
-    const layout = computeFieldLayout({ records: big })
-    const pts = [...layout.values()]
-    const nn = pts.map((p, i) => Math.min(...pts.map((q, j) => (i === j ? Infinity : Math.hypot(p[0] - q[0], p[1] - q[1])))))
-    nn.sort((a, b) => a - b)
-    expect(nn[nn.length >> 1]).toBeGreaterThanOrEqual(17.9)
+describe('spatial full-scene framing', () => {
+  it('uses real XYZ bounds independent of dates and T0', () => {
+    const records = [rec('a', ['physics'], 10), rec('b', ['art'], 30)]
+    const bounds = fieldVerticalBounds(records, settings)
+    const changed = records.map((r) => ({ ...r, temporalOrigin: r.temporalOrigin + 20 * MS_PER_YEAR }))
+    expect(fieldVerticalBounds(changed, { T0: T0 - 50 * MS_PER_YEAR, yPerYear: 200 })).toEqual(bounds)
+    expect(bounds.minY).toBe(0)
+    expect(bounds.maxY).toBeGreaterThan(40)
   })
 
-  it('does not keep inflating across warm-started re-layouts', () => {
-    let seed = 11
-    const r = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff)
-    const world = Array.from({ length: 300 }, (_, i) => rec(`n${i}`, [r() * 120 - 60, r() * 120 - 60], i > 0 ? [`n${Math.floor(r() * i)}`] : []))
-    const radius = (m: Map<string, [number, number]>) => Math.max(...[...m.values()].map(([x, z]) => Math.hypot(x, z)))
-    let layout = computeFieldLayout({ records: world })
-    const first = radius(layout)
-    for (let k = 0; k < 5; k++) {
-      world.push(rec(`extra${k}`, [0, 0], ['n0']))
-      layout = computeFieldLayout({ records: world, previous: layout })
+  it('fits the real cluster extents and ground in portrait and landscape cameras', () => {
+    const world = computeSpatialWorld([rec('a', ['physics']), rec('b', ['art'])])
+    for (const aspect of [0.46, 1.5]) {
+      const shot = spatialCameraShot(world, 50, aspect, 10000)
+      const camera = new PerspectiveCamera(50, aspect, 0.1, 20000)
+      camera.position.set(...shot.position)
+      camera.lookAt(...shot.target)
+      camera.updateMatrixWorld()
+      for (const x of [world.bounds.min[0], world.bounds.max[0]]) for (const z of [world.bounds.min[2], world.bounds.max[2]]) for (const y of [0, world.bounds.max[1]]) {
+        const projected = new Vector3(x, y, z).project(camera)
+        expect(Math.abs(projected.x)).toBeLessThan(1)
+        expect(Math.abs(projected.y)).toBeLessThan(1)
+      }
     }
-    expect(radius(layout) / first).toBeLessThan(1.25)
-  })
-
-  it('leaves a small world’s scale alone', async () => {
-    const { spacingScale } = await import('../../src/world/field/layout.ts')
-    expect(spacingScale([0, 30, 60], [0, 0, 0])).toBe(1)
-    expect(spacingScale([0, 9, 18], [0, 0, 0])).toBe(2)
+    const shot = spatialCameraShot(world, 50, 0.46, 100)
+    expect(Math.hypot(...shot.position.map((p, i) => p - shot.target[i]!))).toBeCloseTo(100)
   })
 })

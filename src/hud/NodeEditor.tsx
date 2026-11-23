@@ -442,7 +442,7 @@ function EditorForm({ source, archetype, settings }: EditorFormProps) {
             max={maxOrigin}
             onChange={setOrigin}
             error={errs('temporalOrigin')?.join(' ') ?? null}
-            hint={`Sets its height on the timeline: ${formatByPrecision(settings.T0, 'day')} to ${formatByPrecision(maxOrigin, 'day')} (UTC).`}
+            hint={`Controls when it appears in history; spatial placement is unchanged: ${formatByPrecision(settings.T0, 'day')} to ${formatByPrecision(maxOrigin, 'day')} (UTC).`}
           />
 
           {!isNew && spacing.status === 'snap' && !anchorOverride && (

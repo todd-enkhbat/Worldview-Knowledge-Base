@@ -1,5 +1,13 @@
 # Roadmap
 
+## Proposed next delivery sequence (2026-11-22)
+
+See the [workspace update plan](WORKSPACE-UPDATE-PLAN.md#delivery-order-and-acceptance-gates) for milestones, acceptance gates, migration and rollback, and the [research report](WORKSPACE-UPDATE-RESEARCH.md) for verified capability boundaries. The proposed priority is capture → find → read → synthesize → review, with the existing XYZ world/history retained as a first-class Explore workspace. This is proposed work; historical entries below do not establish current feature completeness.
+
+The user confirmed failures across capture/organization, retrieval/use and the spatial/daily interface. The first complete replacement therefore requires milestones 0–5 and their integrated workflow gate; milestones 0–3 are an early foundation.
+
+## Historical roadmap
+
 Phase 4 (built 2026-10-16; see DECISIONS.md): **Engine**, **Embeddings**, **Omnibox**, **Layout** below. Still to build: **Capture**, **Desktop**, **Publish**, and semantic (embedding) demon matching.
 
 

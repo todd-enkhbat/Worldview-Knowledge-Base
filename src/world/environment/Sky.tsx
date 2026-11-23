@@ -64,16 +64,17 @@ void main() {
 }
 `
 
-export type SkyVariant = 'main' | 'env'
+export type SkyVariant = 'main' | 'env' | 'field'
 
 export function createSkyMaterial(variant: SkyVariant): ShaderMaterial {
   const env = variant === 'env'
+  const field = variant === 'field'
   return new ShaderMaterial({
     uniforms: {
-      uZenith: { value: new Color('#010102') },
-      uHorizon: { value: new Color(env ? '#16130f' : '#0b0a09') },
-      uNadir: { value: new Color(env ? '#0c0b0a' : '#040404') },
-      uGlow: { value: new Color(PALETTE.ember).multiplyScalar(env ? 0.22 : 0.06) },
+      uZenith: { value: new Color(field ? '#020d12' : '#010102') },
+      uHorizon: { value: new Color(field ? '#08252a' : env ? '#16130f' : '#0b0a09') },
+      uNadir: { value: new Color(field ? '#020d12' : env ? '#0c0b0a' : '#040404') },
+      uGlow: { value: new Color(field ? '#a2c8b5' : PALETTE.ember).multiplyScalar(env ? 0.22 : field ? 0.03 : 0.06) },
       uGlowDir: { value: new Vector3(-0.8, 0, 0.6) },
     },
     vertexShader: SKY_VERT,

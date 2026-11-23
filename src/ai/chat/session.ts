@@ -62,6 +62,7 @@ export interface ChatState extends Persisted {
   /** Tool calls from the last assistant turn that still need a result. */
   pending: PendingTool[]
   staged: IntakeItem[]
+  intakeBusy: boolean
   usage: { input: number; output: number; cacheRead: number }
 }
 
@@ -79,6 +80,7 @@ export const useChat = create<ChatState>()(() => ({
   error: null,
   pending: [],
   staged: [],
+  intakeBusy: false,
   usage: { input: 0, output: 0, cacheRead: 0 },
 }))
 
@@ -131,7 +133,7 @@ export async function loadChat(): Promise<void> {
 }
 
 export function resetChat(): void {
-  useChat.setState({ ...empty, pending: [], staged: [], live: '', error: null, busy: false })
+  useChat.setState({ ...empty, pending: [], staged: [], intakeBusy: false, live: '', error: null, busy: false })
   save()
 }
 
@@ -213,6 +215,11 @@ export async function send(text = '', opts: { hidden?: boolean } = {}): Promise<
   }))
   save()
   await runTurns()
+  // A missing key or broken connection must not consume the only visible copy of a
+  // dropped file. Keep it available for the local save path and for another attempt.
+  if (useChat.getState().error && s.staged.length) {
+    useChat.setState((st) => ({ staged: [...s.staged.filter((item) => !st.staged.includes(item)), ...st.staged] }))
+  }
 }
 
 async function runTurns(): Promise<void> {
@@ -226,6 +233,8 @@ async function runTurns(): Promise<void> {
       useChat.setState((st) => ({ history: [...st.history, { role: 'user', content: toolResults() }], pending: [] }))
       save()
     }
+  } catch (e) {
+    useChat.setState({ error: `The reply was interrupted. Your message is still here. ${e instanceof Error ? e.message : String(e)}` })
   } finally {
     useChat.setState({ busy: false, live: '', toolHint: null })
     save()
@@ -247,7 +256,7 @@ async function streamTurn(): Promise<boolean> {
     return false
   }
   if (res.status === 404) return useChat.setState({ error: 'The chat needs the dev server (npm run dev). Obsidian import and export still work.' }), false
-  if (res.status === 503) return useChat.setState({ error: 'Add ANTHROPIC_API_KEY to .env.local and restart the dev server. Obsidian import and export still work.' }), false
+  if (res.status === 503) return useChat.setState({ error: 'AI is not configured for this world yet. Your draft and files are safe. Use Save to keep them locally; imports and exports work without AI.' }), false
   if (!res.ok || !res.body) return useChat.setState({ error: `The chat failed (${res.status}).` }), false
 
   let done: Extract<ChatStreamEvent, { t: 'done' }> | null = null
@@ -256,6 +265,7 @@ async function streamTurn(): Promise<boolean> {
   for (;;) {
     const { value, done: eof } = await reader.read()
     if (value) buf += value
+    if (eof && buf.trim()) buf += '\n'
     let nl: number
     while ((nl = buf.indexOf('\n')) >= 0) {
       const line = buf.slice(0, nl).trim()
@@ -269,7 +279,10 @@ async function streamTurn(): Promise<boolean> {
     }
     if (eof) break
   }
-  if (!done) return false
+  if (!done) {
+    if (!useChat.getState().error) useChat.setState({ error: 'The reply was interrupted. Your message and original files are still here; try again or save them directly.' })
+    return false
+  }
 
   const content = done.content as Anthropic.ContentBlock[]
   void recordUsage(done.model, done.usage)
@@ -471,6 +484,56 @@ export async function keepStaged(): Promise<number> {
     error: failed.length ? `Not attached (add ${failed.length === 1 ? 'it' : 'them'} again): ${failed.join(', ')}` : null,
   }))
   return kept.length
+}
+
+/** A deliberate local capture: preserve the user's words and originals without an AI request. */
+export async function saveThought(text: string, opts: { reflection?: boolean } = {}): Promise<string | null> {
+  const body = text.trim()
+  if (!body) {
+    await keepStaged()
+    return null
+  }
+  const settings = useWorld.getState().settings
+  if (!settings || useChat.getState().busy) return null
+  const now = Date.now()
+  const staged = useChat.getState().staged.filter((item) => item.file || item.url)
+  const urls = [...new Set([...(body.match(URL_RE) ?? []), ...staged.flatMap((item) => item.url ? [item.url] : [])])]
+  const id = crypto.randomUUID()
+  const title = body.split('\n').find((line) => line.trim())!.replace(/^#+\s*/, '').slice(0, 100)
+  const proposal: ProposedNote = {
+    key: id,
+    kind: opts.reflection ? 'memory' : 'idea',
+    title,
+    body,
+    date: { iso: isoDay(now), precision: 'day', certain: true },
+    tags: [...new Set([...(opts.reflection ? ['reflection'] : []), ...Array.from(body.matchAll(/(?:^|\s)#([\p{L}\p{N}_-]+)/gu), (m) => m[1].toLowerCase())])],
+    links: [],
+    source: {},
+    embeds: urls.map((url) => ({ kind: /(?:youtube\.com|youtu\.be)/.test(url) ? 'youtube' as const : 'web' as const, url })),
+  }
+  useChat.setState({ busy: true, error: null })
+  try {
+    const draft = proposalToDraft(proposal, id, new Map(), settings, now, 'none')
+    await addNodes([draft], { label: opts.reflection ? 'Saved daily reflection' : 'Saved thought' })
+    const failed = new Set<IntakeItem>()
+    for (const item of staged) {
+      if (item.file) {
+        try { await addAttachment(id, item.file, item.file.name) } catch { failed.add(item) }
+      }
+    }
+    useChat.setState((st) => ({
+      staged: st.staged.filter((item) => !staged.includes(item) || failed.has(item)),
+      error: failed.size ? 'Your thought was saved. Some files could not be attached; they are still staged so you can try again.' : null,
+      laterKept: [...st.laterKept, `${title} (${id})`],
+    }))
+    save()
+    return id
+  } catch (e) {
+    useChat.setState({ error: `Could not save: ${e instanceof Error ? e.message : String(e)}` })
+    return null
+  } finally {
+    useChat.setState({ busy: false })
+  }
 }
 
 /** Start the interview when there is no conversation yet. */

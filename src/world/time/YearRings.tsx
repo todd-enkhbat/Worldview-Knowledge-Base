@@ -36,8 +36,8 @@ const BOTTOM_CLEAR = 100
 /** Room kept at the right edge for a year label (px). */
 const LABEL_ROOM = 56
 
-const DIM = new Color('#d9d4c7').multiplyScalar(0.1)
-const MARKED = new Color('#d9d4c7').multiplyScalar(0.22)
+const DIM = new Color('#a7bdce').multiplyScalar(0.025)
+const MARKED = new Color('#a7bdce').multiplyScalar(0.12)
 const FOCUS = new Color('#e8b04a').multiplyScalar(1.6)
 
 function ringGeometry(ys: readonly number[], r: number): BufferGeometry {
@@ -155,7 +155,7 @@ export function YearRings() {
     _p.set(_right.x, cam.position.y, _right.z).project(cam)
     _q.set(_right.x, cam.position.y + settings.yPerYear, _right.z).project(cam)
     const pxPerYear = Math.abs(_q.y - _p.y) * 0.5 * size.height
-    const stride = labelStride(pxPerYear, 24)
+    const stride = labelStride(pxPerYear, 48)
 
     const s = st.current
     if (stride !== s.stride || focus !== s.focus || rings !== s.rings) {

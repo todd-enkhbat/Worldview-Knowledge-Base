@@ -7,7 +7,7 @@ import type { PoseTable } from '../poses.ts'
 
 // The O layer of render pose = O(P(n), t, log). The pose writer calls this once per frame
 // after writing the physics poses and before readers see them. It adds, per node:
-//   dy  the Hebbian elevation Y_h, bounded to ±HEBB.Y_MAX (Y stays time);
+//   dy  bounded Hebbian elevation in the semantic spatial Y axis;
 //   dxz the demon easing r = x + w(t)(s − x) toward the node's lattice slot (XZ only).
 // Offsets are display-smoothed (TAU_MS) so a visit or a demon toggling off glides instead
 // of jumping; the targets themselves are a pure function of (t, log, records). Nothing here
@@ -34,6 +34,8 @@ function heldId(): string | null {
 export const TAU_MS = 350
 /** Offsets closer than this to their target snap to it, so a settled table stops changing. */
 const SNAP = 1e-3
+/** A saved query may emphasize local neighbors, never teleport a topic across the world. */
+export const MAX_DEMON_OFFSET = 8
 
 interface HookState {
   pos: Float32Array | null
@@ -66,7 +68,10 @@ function step(cur: number, target: number, k: number): number {
  * Apply the overlays at wall-clock time `t` (epoch ms) to the table in place and return it.
  * `fields` defaults to the engine's cached fields at t (tests pass their own).
  */
-export function applyOverlays(table: PoseTable, t: number, fields: OverlayFields = getOverlayFields(t)): PoseTable {
+export function applyOverlays(
+  table: PoseTable, t: number, fields: OverlayFields = getOverlayFields(t),
+  pins?: ReadonlyMap<string, readonly [number, number]>,
+): PoseTable {
   const pos = table.pos
   if (st.pos !== pos) {
     // A new layout: the writer has just filled it with P positions.
@@ -92,6 +97,10 @@ export function applyOverlays(table: PoseTable, t: number, fields: OverlayFields
   const held = heldId()
   for (const [id, row] of table.index) {
     const o = row * 3
+    // Semantic pins change the presentation anchor in XZ, preserving the worker's deltas.
+    // Keep them outside the smoothed O offset so paused frames and drags cannot stack them.
+    const px = pins?.get(id)?.[0] ?? 0
+    const pz = pins?.get(id)?.[1] ?? 0
     let tx = 0
     let tz = 0
     const ty = nodes.get(id)?.y ?? 0
@@ -100,9 +109,15 @@ export function applyOverlays(table: PoseTable, t: number, fields: OverlayFields
       const drow = table.index.get(a.demonId)
       if (drow !== undefined) {
         const w = rampWeight(t, activation.get(a.demonId) ?? null)
-        tx = w * (base[drow * 3] + a.dx - base[o])
-        tz = w * (base[drow * 3 + 2] + a.dz - base[o + 2])
+        const demonPin = pins?.get(a.demonId)
+        tx = w * (base[drow * 3] + (demonPin?.[0] ?? 0) + a.dx - (base[o] + px))
+        tz = w * (base[drow * 3 + 2] + (demonPin?.[1] ?? 0) + a.dz - (base[o + 2] + pz))
       }
+    }
+    const targetDistance = Math.hypot(tx, tz)
+    if (targetDistance > MAX_DEMON_OFFSET) {
+      tx *= MAX_DEMON_OFFSET / targetDistance
+      tz *= MAX_DEMON_OFFSET / targetDistance
     }
     let v = off.get(id)
     if (!v) off.set(id, (v = Float64Array.of(tx, ty, tz)))
@@ -111,9 +126,14 @@ export function applyOverlays(table: PoseTable, t: number, fields: OverlayFields
       v[1] = step(v[1], ty, k)
       v[2] = step(v[2], tz, k)
     }
+    const displayedDistance = Math.hypot(v[0]!, v[2]!)
+    if (displayedDistance > MAX_DEMON_OFFSET) {
+      v[0] *= MAX_DEMON_OFFSET / displayedDistance
+      v[2] *= MAX_DEMON_OFFSET / displayedDistance
+    }
     for (let c = 0; c < 3; c++) {
       const prev = pos[o + c]
-      pos[o + c] = base[o + c] + v[c]
+      pos[o + c] = base[o + c] + (c === 0 ? px : c === 2 ? pz : 0) + v[c]
       written[o + c] = pos[o + c]
       if (pos[o + c] !== prev) changed = true
     }

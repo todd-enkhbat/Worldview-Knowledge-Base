@@ -126,6 +126,12 @@ describe('validateNode', () => {
     expect(codes(validateNode(rec({ anchorXZ: [Infinity, 0] }), ctx([])))).toContain('type')
   })
 
+  it('accepts semantic landscape pins and rejects non-finite or unbounded pins', () => {
+    expect(validateNode(rec({ fieldAnchorXZ: [120, -75] }), ctx([])).ok).toBe(true)
+    expect(codes(validateNode(rec({ fieldAnchorXZ: [Infinity, 0] }), ctx([])))).toContain('type')
+    expect(codes(validateNode(rec({ fieldAnchorXZ: [MAX_ANCHOR_RADIUS, 0] }), ctx([])))).toContain('anchor-range')
+  })
+
   it('snaps an anchor that is closer than σ when a free spot is near', () => {
     const a = rec({ anchorXZ: [30, 0] })
     const b = rec({ anchorXZ: [31, 0.5], temporalOrigin: a.temporalOrigin })
@@ -182,7 +188,7 @@ describe('validateNode', () => {
 
   it('requires a well-formed, unique slug', () => {
     const a = rec({ title: 'Entropy' })
-    expect(codes(validateNode(rec({ slug: 'entropy' }), ctx([a])))).toEqual(['slug-taken'])
+    expect(codes(validateNode(rec({ slug: 'entropy' }, [a]), ctx([a])))).toEqual(['slug-taken'])
     expect(validateNode(a, ctx([a])).ok).toBe(true)
     expect(codes(validateNode(rec({ slug: 'Not A Slug' }), ctx([])))).toEqual(['slug-format'])
     expect(codes(validateNode(rec({ slug: '' }), ctx([])))).toEqual(['slug-format'])

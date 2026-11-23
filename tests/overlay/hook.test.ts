@@ -6,7 +6,7 @@ import type { OverlayFields } from '../../src/overlay/fields.ts'
 import { HEBB } from '../../src/overlay/hebbian.ts'
 import type { NodePlasticity } from '../../src/overlay/hebbian.ts'
 import type { PoseTable } from '../../src/world/poses.ts'
-import { TAU_MS, applyOverlays, resetOverlayHook } from '../../src/world/time/overlayHook.ts'
+import { MAX_DEMON_OFFSET, TAU_MS, applyOverlays, resetOverlayHook } from '../../src/world/time/overlayHook.ts'
 
 const T = Date.UTC(2026, 0, 1)
 
@@ -52,6 +52,42 @@ describe('applyOverlays', () => {
     expect(Math.abs(HEBB.Y_MAX)).toBe(2.5)
   })
 
+  it('composes semantic XZ pins before overlays without losing physics deltas or stacking paused offsets', () => {
+    const tb = table({ a: [10.25, 120.125, 20.5], b: [0, 132, 0] })
+    const pins = new Map<string, [number, number]>([['a', [30, -10]]])
+    const f = fields(T, { a: 0.5 })
+    applyOverlays(tb, T, f, pins)
+    expect(at(tb, 'a')).toEqual([40.25, 120.625, 10.5])
+    applyOverlays(tb, T + 16, f, pins)
+    applyOverlays(tb, T + 32, f, pins)
+    expect(at(tb, 'a')).toEqual([40.25, 120.625, 10.5])
+    // A fresh worker pose remains a physics delta around the persisted anchor.
+    tb.pos.set([10.75, 120.25, 20.25], 0)
+    applyOverlays(tb, T + 48, f, pins)
+    expect(at(tb, 'a')).toEqual([40.75, 120.75, 10.25])
+    pins.set('a', [35, -5])
+    applyOverlays(tb, T + 64, f, pins)
+    expect(at(tb, 'a')).toEqual([45.75, 120.75, 15.25])
+    expect(at(tb, 'b')).toEqual([0, 132, 0])
+  })
+
+  it('bounds demon emphasis around the pinned spatial anchor while preserving Y', () => {
+    const tb = table({ d: [100, 50, 100], n: [90, 40, 95] })
+    const plan: DemonPlan = {
+      matches: new Map(),
+      assignments: new Map([['n', { demonId: 'd', dx: 4, dz: -4, score: 1, rank: 0 }]]),
+    }
+    const pins = new Map<string, [number, number]>([['d', [20, -10]], ['n', [-5, 8]]])
+    const f = fields(T, {}, plan, [['d', T - DEMON.RAMP_MS - 1]])
+    applyOverlays(tb, T, f, pins)
+    expect(at(tb, 'd')).toEqual([120, 50, 90])
+    const distance = Math.hypot(124 - 85, 86 - 103)
+    const expected = [85 + MAX_DEMON_OFFSET * 39 / distance, 40, 103 - MAX_DEMON_OFFSET * 17 / distance]
+    at(tb, 'n').forEach((v, i) => expect(v).toBeCloseTo(expected[i], 5))
+    applyOverlays(tb, T + 16, f, pins)
+    at(tb, 'n').forEach((v, i) => expect(v).toBeCloseTo(expected[i], 5))
+  })
+
   it('glides to a new target with the display time constant', () => {
     const tb = table({ a: [0, 10, 0] })
     applyOverlays(tb, T, fields(T, { a: 0 }))
@@ -62,7 +98,7 @@ describe('applyOverlays', () => {
     expect(at(tb, 'a')[1]).toBe(11)
   })
 
-  it('eases demon matches toward their lattice slot in XZ only, r = x + w(t)(s − x)', () => {
+  it('eases demon matches in XZ without pulling them out of their spatial neighborhood', () => {
     const tb = table({ d: [100, 50, 100], n: [90, 40, 95] })
     const plan: DemonPlan = {
       matches: new Map([['d', { demonId: 'd', candidates: 2, hits: [{ id: 'n', score: 1 }], bitsPerMatch: 1 }]]),
@@ -72,12 +108,27 @@ describe('applyOverlays', () => {
     // Before the activation: w = 0 → untouched.
     applyOverlays(tb, T, fields(T, {}, plan, [['d', tAct]]))
     expect(at(tb, 'n')).toEqual([90, 40, 95])
-    // Long after: settled on the slot (smoothing converged), Y untouched.
+    // Long after: local emphasis has settled, but the remote slot cannot teleport the note.
     let t = T
     for (let i = 0; i < 200; i++) applyOverlays(tb, (t += 50), fields(t, {}, plan, [['d', tAct]]))
     expect(t - tAct).toBeGreaterThan(DEMON.RAMP_MS)
-    expect(at(tb, 'n')).toEqual([104, 40, 96])
+    const [x, y, z] = at(tb, 'n')
+    expect(Math.hypot(x - 90, z - 95)).toBeCloseTo(MAX_DEMON_OFFSET, 5)
+    expect((x - 90) / (z - 95)).toBeCloseTo(14, 4)
+    expect(y).toBe(40)
     expect(at(tb, 'd')).toEqual([100, 50, 100])
+  })
+
+  it('never moves a distant semantic neighbor more than 8u even across repeated frames', () => {
+    const tb = table({ d: [500, 90, -500], n: [-200, 55, 200] })
+    const plan: DemonPlan = { matches: new Map(), assignments: new Map([['n', { demonId: 'd', dx: 4, dz: -4, score: 1, rank: 0 }]]) }
+    for (let i = 0; i < 100; i++) {
+      const t = T + i * 100
+      applyOverlays(tb, t, fields(t, {}, plan))
+      const [x, y, z] = at(tb, 'n')
+      expect(Math.hypot(x + 200, z - 200)).toBeLessThanOrEqual(MAX_DEMON_OFFSET + 1e-4)
+      expect(y).toBe(55)
+    }
   })
 
   it('holds the offset of the node being flown into until the camera is back out', () => {

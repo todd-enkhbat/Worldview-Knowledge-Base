@@ -6,7 +6,7 @@ import { useApp, useWorld } from '../app/store.ts'
 // device. Hidden while a camera mode shows its own key hint (ModeHint).
 
 const KEY = 'hyperspace.oriented'
-const TEXT = 'Height is time · lines are relations · click a node to read it'
+const TEXT = 'XYZ is space · timeline is history · select a note to read it'
 
 function seen(): boolean {
   try {

@@ -1,4 +1,5 @@
-import { yOf } from '../domain/time.ts'
+import { computeSpatialWorld } from '../domain/spatial.ts'
+import type { PoseTable } from '../world/poses.ts'
 import type { NodeRecord, WorldSettings } from '../domain/types.ts'
 import type { AnchorOf, DemonLedger, DemonPlan } from './demon.ts'
 import { nodePlasticity, synapsesAt } from './hebbian.ts'
@@ -19,8 +20,16 @@ export interface OverlayFields {
   activation: Map<string, number | null>
 }
 
-export function anchorOfFor(settings: Pick<WorldSettings, 'T0' | 'yPerYear'>): AnchorOf {
-  return (n) => [n.anchorXZ[0], yOf(n.temporalOrigin, settings.T0, settings.yPerYear), n.anchorXZ[1]]
+export function anchorOfFor(
+  _settings: Pick<WorldSettings, 'T0' | 'yPerYear'>, records: Iterable<NodeRecord> = [],
+  poses?: Pick<PoseTable, 'index' | 'pos' | 'born'>,
+): AnchorOf {
+  const spatial = computeSpatialWorld(records).positions
+  return (record) => {
+    const row = poses?.index.get(record.id)
+    if (row !== undefined && poses!.born[row] === 1) return [poses!.pos[row * 3]!, poses!.pos[row * 3 + 1]!, poses!.pos[row * 3 + 2]!]
+    return spatial.get(record.id) ?? computeSpatialWorld([record]).positions.get(record.id) ?? [0, 0, 0]
+  }
 }
 
 export function computeFields(

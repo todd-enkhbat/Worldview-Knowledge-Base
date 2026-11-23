@@ -113,14 +113,16 @@ export interface NodeRecord {
   title: string
   contentMd: string
   tags: string[]
-  /** When this entered the user's life or worldview (epoch ms). Sets Y and the birth step. */
+  /** When this entered the user's life or worldview (epoch ms). Sets the history birth step; XYZ are semantic space. */
   temporalOrigin: number
   temporalPrecision: TemporalPrecision
   /** Display-only historical date (e.g. Boltzmann's H-theorem, 1872). Never affects layout. */
   referenceDate: ReferenceDate | null
   thermo: ThermoBlock
-  /** Semantic XZ placement, frozen at creation (only a tag change or a drag re-places it). */
+  /** Legacy placement hint retained for imports/editors. Shared semantic XYZ are derived from tags and links. */
   anchorXZ: [number, number]
+  /** Explicit XZ pin set by dragging; baked into the shared spatial anchor, while Y remains semantic. */
+  fieldAnchorXZ?: [number, number]
   links: Link[]
   attachments: Attachment[]
   /** Live things the note points at (videos, pages, places). Optional: older records have none. */

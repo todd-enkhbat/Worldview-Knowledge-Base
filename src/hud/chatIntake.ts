@@ -60,7 +60,7 @@ async function intakeFolder(name: string, files: FolderFile[], staged: IntakeIte
 }
 
 /** Open the chat and take in what was dropped, pasted or picked. */
-export async function intake(files: readonly File[], entries: readonly FileSystemEntry[] = []): Promise<void> {
+async function intakeFiles(files: readonly File[], entries: readonly FileSystemEntry[] = []): Promise<void> {
   useApp.getState().togglePanel('chat', true)
   const dirs = entries.filter((e): e is FileSystemDirectoryEntry => e.isDirectory)
   const dirNames = new Set(dirs.map((d) => d.name))
@@ -86,7 +86,7 @@ export async function intake(files: readonly File[], entries: readonly FileSyste
 }
 
 /** A folder picked with <input webkitdirectory> (no directory entries there). */
-export async function intakeFolderFiles(files: readonly File[]): Promise<void> {
+async function intakePickedFolder(files: readonly File[]): Promise<void> {
   useApp.getState().togglePanel('chat', true)
   if (!files.length) return
   const root = files[0].webkitRelativePath.split('/')[0] || 'folder'
@@ -101,3 +101,22 @@ export async function intakeFolderFiles(files: readonly File[]): Promise<void> {
   if (staged.length) stage(staged)
   useChat.setState({ error: errors.length ? errors.join(' ') : null })
 }
+
+let activeIntakes = 0
+async function withIntake(work: () => Promise<void>): Promise<void> {
+  activeIntakes++
+  useChat.setState({ intakeBusy: true, error: null })
+  try { await work() } catch (e) {
+    useChat.setState({ error: `Could not prepare these files: ${e instanceof Error ? e.message : String(e)}` })
+  } finally {
+    activeIntakes--
+    useChat.setState({ intakeBusy: activeIntakes > 0 })
+  }
+}
+
+/** Prepare originals with a visible progress state; failures leave existing staged files intact. */
+export const intake = (files: readonly File[], entries: readonly FileSystemEntry[] = []): Promise<void> =>
+  withIntake(() => intakeFiles(files, entries))
+
+export const intakeFolderFiles = (files: readonly File[]): Promise<void> =>
+  withIntake(() => intakePickedFolder(files))

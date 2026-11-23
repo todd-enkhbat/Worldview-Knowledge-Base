@@ -1,3 +1,5 @@
+import { checkAuth, signedIn } from '../data/auth.ts'
+import { adoptServerDefault, probeEngine } from '../data/engine.ts'
 import { initRepo, useRepoStatus } from '../data/repo.ts'
 import type { RepoStatus } from '../data/repo.ts'
 import { installDevApi } from './devApi.ts'
@@ -15,7 +17,17 @@ export function bootData(): Promise<RepoStatus | null> {
     installDevApi()
     markOnce('boot-start')
     try {
-      const status = await initRepo()
+      // A hosted server with accounts: sign in first, then the world is the account's, on the
+      // server. Locally: a browser with no world of its own starts on the server engine.
+      const health = await probeEngine()
+      const auth = health?.auth ?? 'none'
+      if (auth !== 'none') {
+        if ((await checkAuth(auth)) !== 'signed-in') await signedIn()
+      } else {
+        await checkAuth('none')
+        await adoptServerDefault(health).catch((e) => console.warn('[boot] engine default', e))
+      }
+      const status = await initRepo(auth !== 'none' ? { engine: 'sqlite' } : {})
       markOnce('repo-ready')
       // Opt-in per browser (a 175 MB model download): only resume if it was turned on.
       if (isSemanticEnabled()) startSemantic().catch((e) => console.warn('[boot] semantic index failed to start', e))

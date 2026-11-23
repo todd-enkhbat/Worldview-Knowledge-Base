@@ -26,6 +26,19 @@ describe('field time', () => {
     expect(noteState(rec(), T + 3.3 * YEAR, 2)).toEqual(a)
   })
 
+  it('creates an immediate bounded support envelope and gives significant connected notes more presence', () => {
+    const newborn = noteState(rec(), T, 0)
+    expect(newborn.born).toBe(true)
+    expect(newborn.amp).toBeGreaterThan(0.5)
+    expect(newborn.amp).toBeLessThan(2)
+    expect(noteState(rec(), T - 1, 0).amp).toBe(0)
+    const old = T + 40 * YEAR
+    const slight = noteState(rec(T, 0.25), old, 0)
+    const significant = noteState(rec(T, 4), old, 9)
+    expect(significant.amp).toBeGreaterThan(slight.amp * 3)
+    expect(significant.width).toBeGreaterThan(slight.width)
+  })
+
   it('raises land where born notes are, and ripples outward from recent births', () => {
     const s = noteState(rec(), T + YEAR, 0)
     const hf = buildHeightfield([{ xz: [10, 0], state: s }], { cx: 0, cz: 0, half: 50 }, 64)
@@ -33,6 +46,14 @@ describe('field time', () => {
     expect(sampleHeight(hf, 10, 0)).toBeCloseTo(s.amp, 0)
     expect(activeRipples([{ rec: rec(), xz: [1, 2] }], T + 0.5 * YEAR)).toHaveLength(1)
     expect(activeRipples([{ rec: rec(), xz: [1, 2] }], T + 3 * YEAR)).toHaveLength(0)
+  })
+
+  it('keeps the support envelope empty without born records, with no decorative height', () => {
+    const empty = buildHeightfield([], { cx: 0, cz: 0, half: 32 }, 65)
+    expect(empty.h.every((h) => h === 0)).toBe(true)
+    const unborn = noteState(rec(), T - 1, 0)
+    const hf = buildHeightfield([{ xz: [0, 0], state: unborn }], { cx: 0, cz: 0, half: 32 }, 65)
+    expect(hf.h.every((h) => h === 0)).toBe(true)
   })
 })
 

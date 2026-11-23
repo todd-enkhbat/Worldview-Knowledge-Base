@@ -13,6 +13,7 @@ import type { ThreeEvent } from '@react-three/fiber'
 import { canTransition, useApp, useWorld } from '../../app/store.ts'
 import type { NodeRecord } from '../../domain/types.ts'
 import type { PoseTable } from '../poses.ts'
+import { spatialWorldFor } from '../field/layout.ts'
 
 // Shared plumbing for the instanced archetype families: the per-node basis (pose · yaw ·
 // scale), instanced-mesh construction, and pointer handlers that map instanceId → node id.
@@ -36,12 +37,14 @@ export function nodePhase(id: string): number {
 }
 
 /**
- * Yaw that turns the node's +Z face toward the world axis (the core and the catwalk), so
- * engraved faces, plaques and lens axes read from the walkway. Nodes on the axis fall back to
- * a hashed angle. Ideas and demons have no front; they get a hashed jitter on top.
+ * Engraved faces and lens axes face their own neighborhood's shared ground. There is no
+ * central world axis. Ideas and queries keep an identity-seeded variation.
  */
 export function nodeYaw(rec: NodeRecord): number {
-  const [x, z] = rec.anchorXZ
+  const world = spatialWorldFor(useWorld.getState().nodes)
+  const position = world.positions.get(rec.id)
+  const cluster = world.clusters.find((c) => c.id === world.clusterOf.get(rec.id))
+  const [x, z] = position && cluster ? [position[0] - cluster.center[0], position[2] - cluster.center[2]] : rec.anchorXZ
   const facing = Math.hypot(x, z) < 1e-3 ? nodePhase(rec.id) * Math.PI * 2 : Math.atan2(-x, -z)
   if (rec.archetype === 'idea' || rec.archetype === 'demon') return facing + nodePhase(rec.id) * Math.PI * 2
   return facing
@@ -55,12 +58,11 @@ export function nodeScale(rec: NodeRecord): number {
 
 /**
  * Distance boost that keeps nodes the hero of a wide shot. Within `near` of the camera (the
- * catwalk, inspection, the fly-in) a node has its true size; beyond it the scale grows
+ * inspection or fly-in) a node has its true size; beyond it the scale grows
  * linearly with distance, so the apparent size levels off like a map marker, up to `max`.
- * At 100 u a node is ≈ 2.7× and from ≈ 160 u on 4×: a 2.4 u tesseract still covers
- * ≈ 50 px of a 768 px-tall view from 150 u.
+ * The larger ceiling keeps recognizable forms visible across the distributed world.
  */
-export const FAR_SCALE = { near: 24, per: 45, max: 4 } as const
+export const FAR_SCALE = { near: 24, per: 45, max: 10 } as const
 
 export function farScale(distance: number): number {
   return distance <= FAR_SCALE.near ? 1 : Math.min(FAR_SCALE.max, 1 + (distance - FAR_SCALE.near) / FAR_SCALE.per)
@@ -71,7 +73,7 @@ export function farScale(distance: number): number {
  * true size up close (spurs and the catwalk are laid out for a 2.4 u cube), but a steeper,
  * higher boost so the scene inside still reads from the orbit view.
  */
-export const TERRARIUM_FAR_SCALE = { near: 24, per: 18, max: 9 } as const
+export const TERRARIUM_FAR_SCALE = { near: 24, per: 18, max: 14 } as const
 
 export function terrariumFarScale(distance: number): number {
   const f = TERRARIUM_FAR_SCALE

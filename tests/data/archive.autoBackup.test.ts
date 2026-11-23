@@ -118,8 +118,10 @@ describe('auto-backup', () => {
       ctl.notifyChange()
       await vi.advanceTimersByTimeAsync(30_000)
     }
-    expect(dir.files.size).toBe(1)
     ctl.cancel()
+    // The deadline starts an asynchronous archive stream. Wait for its atomic close,
+    // rather than making the assertion depend on worker-pool timing under the full suite.
+    await vi.waitFor(() => expect(dir.files.size).toBe(1))
   })
 
   it('skips when disabled, without a folder, or when the permission must be re-granted', async () => {

@@ -8,14 +8,14 @@ import type { Bm25Index, Hit } from './bm25.ts'
 // the arrow of time that never uses the word. Hybrid scores are a node's BM25 score over the
 // demon's best, plus SEMANTIC.WEIGHT × how far its cosine clears the threshold.
 //
-// Matching. A demon's candidates are the live, non-demon nodes whose ANCHOR (anchorXZ, Y of
-// temporalOrigin) lies within `radius` of the demon's anchor (3D). Anchors, not live poses,
-// so a match depends on the records only and is reproducible. A node claimed by several
+// Matching. A demon's candidates are the born, non-demon nodes within `radius` of its
+// actual shared 3D pose. Callers use deterministic semantic anchors before poses arrive.
+// Time changes birth eligibility; all three position axes are spatial. A node claimed by several
 // active demons goes to the one that scores it highest (ties: smaller demon id).
 //
 // Placement. Matched nodes ease toward square-lattice slots around the demon's live XZ pose,
-// best match nearest: r = x + w(t)(s − x), XZ only. Y stays the node's date (plus the bounded
-// Hebbian offset): Y is time. Diorama-bearing memories are measured (they count toward C and
+// best match nearest. The pose hook caps this XZ presentation displacement at 8u, preserving
+// semantic neighborhoods; Y receives only the bounded Hebbian offset. Diorama-bearing memories are measured (they count toward C and
 // M) but never moved: they are the cold nodes PLAN keeps still for Spark (#347). w(t) ramps 0 → 1 over RAMP_MS of wall-clock time after the
 // demon's latest activation in the log (smoothstep); with no activation logged (log
 // compacted, another tab) an active demon is simply settled, w = 1.

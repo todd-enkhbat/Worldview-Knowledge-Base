@@ -77,7 +77,7 @@ describe('overlay engine', () => {
     await idea('Gibbs free energy')
     await idea('Maxwell')
     await idea('Entropy and the arrow of time')
-    const d = await createNode({ archetype: 'demon', title: 'Sorter', demon: { query: 'entropy', radius: 1000, active: true } })
+    const d = await createNode({ archetype: 'demon', title: 'Sorter', demon: { query: 'entropy', radius: 3000, active: true } })
     stop = startOverlays()
     await refreshOverlays()
 
@@ -110,11 +110,11 @@ describe('overlay engine', () => {
   it('treats a query edit of an active demon as an activation', async () => {
     await idea('Gibbs')
     await idea('Entropy')
-    const d = await createNode({ archetype: 'demon', title: 'Sorter', demon: { query: 'entropy', radius: 1000, active: true } })
+    const d = await createNode({ archetype: 'demon', title: 'Sorter', demon: { query: 'entropy', radius: 3000, active: true } })
     stop = startOverlays()
     await refreshOverlays()
     expect(useOverlaySummary.getState().demonEvents).toBe(0)
-    await updateNode(d.id, { demon: { query: 'gibbs', radius: 1000, active: true } })
+    await updateNode(d.id, { demon: { query: 'gibbs', radius: 3000, active: true } })
     await vi.waitFor(async () => {
       await refreshOverlays(false)
       expect(useOverlaySummary.getState().demonEvents).toBe(1)

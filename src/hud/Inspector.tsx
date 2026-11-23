@@ -4,6 +4,7 @@ import { canTransition, useApp, useWorld } from '../app/store.ts'
 import { logEvent, useRepoStatus } from '../data/repo.ts'
 import { memoryLabel, memoryOrdinal } from '../domain/memoryIndex.ts'
 import { formatByPrecision } from '../domain/time.ts'
+import { spatialWorldFor } from '../world/field/layout.ts'
 import type { Archetype, Attachment, LinkKind, NodeRecord } from '../domain/types.ts'
 import { flyTo } from '../world/camera/flyTo.ts'
 import { useIngestJobs } from '../world/splats/ingest/jobs.ts'
@@ -92,6 +93,9 @@ function InspectorPanel({ id }: { id: string }) {
   const trash = useWorld((s) => s.trash)
   const writer = useRepoStatus((s) => s.writer)
   const node = nodes.get(id)
+  const spatial = useMemo(() => spatialWorldFor(nodes), [nodes])
+  const position = spatial.positions.get(id)
+  const neighborhood = spatial.clusters.find((cluster) => cluster.id === spatial.clusterOf.get(id))
 
   const ordinal = useMemo(() => memoryOrdinal(nodes, id), [nodes, id])
   const backlinks = useMemo(() => {
@@ -131,7 +135,9 @@ function InspectorPanel({ id }: { id: string }) {
         </h2>
 
         <dl className="m-0 mb-4 border-y border-bone/10 py-2">
-          <Row label="Entered">
+          {neighborhood && <Row label="Neighborhood">{neighborhood.label}<span className="ml-2 text-concrete">{neighborhood.count} {neighborhood.count === 1 ? 'note' : 'notes'}</span></Row>}
+          {position && <Row label="Spatial anchor"><span className="inspector-spatial-position">X {position[0].toFixed(1)} · Y {position[1].toFixed(1)} · Z {position[2].toFixed(1)}</span><span className="block text-[11px] text-concrete">Y is spatial elevation</span></Row>}
+          <Row label="History date">
             {formatByPrecision(node.temporalOrigin, node.temporalPrecision)}
             <span className="ml-2 text-concrete">/{node.temporalPrecision}</span>
           </Row>

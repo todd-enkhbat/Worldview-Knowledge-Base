@@ -43,7 +43,8 @@ function memoryKey(nodes: Map<string, NodeRecord>): string {
   let key = ''
   for (const n of nodes.values()) {
     if (n.archetype !== 'memory') continue
-    key += `${n.id},${n.anchorXZ[0]},${n.anchorXZ[1]},${n.temporalOrigin};`
+    const xz = n.fieldAnchorXZ ?? n.anchorXZ
+    key += `${n.id},${xz[0]},${xz[1]},${n.temporalOrigin};`
   }
   return key
 }
@@ -52,7 +53,7 @@ export function collectMemories(nodes: Map<string, NodeRecord>, T0: number, yPer
   const out: PathMemory[] = []
   for (const n of nodes.values()) {
     if (n.archetype !== 'memory') continue
-    out.push({ id: n.id, anchorXZ: n.anchorXZ, y: yOf(n.temporalOrigin, T0, yPerYear) })
+    out.push({ id: n.id, anchorXZ: n.fieldAnchorXZ ?? n.anchorXZ, y: yOf(n.temporalOrigin, T0, yPerYear) })
   }
   return out
 }

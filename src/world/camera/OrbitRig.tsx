@@ -4,34 +4,52 @@ import { CameraControls, type CameraControlsImpl } from '@react-three/drei'
 import { Vector3, type Camera, type PerspectiveCamera } from 'three'
 import { useApp, useWorld } from '../../app/store.ts'
 import { setPostFocus } from '../post/postMode.ts'
-import { establishingShot } from './establish.ts'
-import { fieldShot } from '../field/layout.ts'
-import { fieldLayoutFor } from '../field/runtime.ts'
+import { spatialWorldFor } from '../field/layout.ts'
+import { groundYAt, spatialGroundFor, type SpatialGroundPlan } from '../environment/knowledgeGround.ts'
+import { spatialShot } from './spatialFrame.ts'
 import { getOrbitControls, registerOrbitControls, takeOrbitPivot } from './flyTo.ts'
 import { registerDevApi } from '../../app/devApi.ts'
 import { updateProximity } from './proximity.ts'
+import { createOrbitMotionDriver, stopOrbitMotion } from './orbitMotion.ts'
 
 // Free orbit around the world (the default mode). Mounted only while the mode wants it, so
 // camera-controls never fights the avatar, Spark or the fly-in for the camera. On mount it
 // adopts the pose the previous rig left behind (no snap back to an old orbit), then applies
 // any flyTo() that was parked while switching modes.
 
-/** World scale: the core is r 6, the helix r 13, memories sit ~20–60 u out, the column rises
- *  12 u a year, so a whole life is a few hundred units tall. */
+/** The semantic world spans multiple 3-D neighborhoods, with close inspection available. */
 export const ORBIT_LIMITS = {
   minDistance: 2.5,
-  maxDistance: 900,
+  maxDistance: 9000,
   /** Keep a sliver off the poles so the up vector never flips. */
   minPolarAngle: 0.04,
-  /** Below the horizon, so you can look up the column; further capped per frame by FLOOR_Y. */
+  /** Allow a low view across neighborhoods; the local ground further caps this each frame. */
   maxPolarAngle: Math.PI * 0.62,
 } as const
 
-/** The camera never sinks under the reflector floor (y = 0) plus this clearance. */
-const FLOOR_Y = 0.6
+/** Clearance above the shared ground, including raised districts and connecting ramps. */
+export const ORBIT_GROUND_CLEARANCE = 0.6
 
 const pivot = new Vector3()
 const target = new Vector3()
+const position = new Vector3()
+
+/** Update the controls themselves so their next interpolation cannot undo the clearance. */
+export function applyOrbitGroundClearance(c: CameraControlsImpl, ground: SpatialGroundPlan): void {
+  c.getTarget(target, false)
+  c.getPosition(position, false)
+  const floorY = groundYAt(ground, position.x, position.z) + ORBIT_GROUND_CLEARANCE
+  if (position.y < floorY - 1e-5) {
+    // Lifting at the same XZ avoids sliding sideways into a still higher part of a district.
+    // Correct the live controls, preserving the pivot, rather than fighting their camera.
+    void c.setLookAt(position.x, floorY, position.z, target.x, target.y, target.z, false)
+    c.update(0)
+    c.getPosition(position, false)
+  }
+  const distance = Math.max(position.distanceTo(target), 1e-3)
+  const k = Math.min(1, Math.max(-1, (floorY - target.y) / distance))
+  c.maxPolarAngle = Math.max(ORBIT_LIMITS.minPolarAngle, Math.min(ORBIT_LIMITS.maxPolarAngle, Math.acos(k)))
+}
 
 /** First mount keeps the camera the Canvas was created with (the page frames the world). */
 let mountedBefore = false
@@ -49,8 +67,32 @@ let requested = false
 
 /** Frame the world afresh on the next orbit mount (after switching between field and classic). */
 export function requestEstablishingShot(): void {
+  stopOrbitMotion()
   established = false
   requested = true
+}
+
+function worldShot(camera: Camera) {
+  const { nodes, settings } = useWorld.getState()
+  if (!settings) return null
+  const cam = camera as PerspectiveCamera
+  return spatialShot(spatialWorldFor(nodes).bounds, cam.fov ?? 50, cam.aspect || 1, ORBIT_LIMITS.maxDistance * 0.9)
+}
+
+/** Explicit user action: reframe live orbit controls, or park the shot until orbit mounts. */
+export function recenterWorld(): boolean {
+  const app = useApp.getState()
+  if (app.mode !== 'orbit' && !app.setMode('orbit')) return false
+  requestEstablishingShot()
+  const c = getOrbitControls()
+  if (!c) return true
+  const shot = worldShot(c.camera)
+  if (!shot) return false
+  establishNote = `recenter ${app.view.world} ${shot.target.map(Math.round).join(',')}`
+  established = true
+  requested = false
+  void c.setLookAt(...shot.position, ...shot.target, true)
+  return true
 }
 const _t = new Vector3()
 
@@ -62,7 +104,7 @@ registerDevApi('orbit', () => {
 })
 
 /**
- * Once the world has nodes, glide to the establishing shot (establish.ts), unless the user
+ * Once the world has nodes, glide to its shared spatial bounds, unless the user
  * or a flyTo() moved the camera first (a drag, or an orbit target that is no longer the one
  * this mount started with). Returns the cleanup.
  */
@@ -78,11 +120,7 @@ function establishWhenLoaded(c: CameraControlsImpl, camera: Camera): () => void 
     if (c.getTarget(_t).distanceToSquared(start) > 1e-6) return forfeit()
     const { nodes, settings } = useWorld.getState()
     if (!settings || nodes.size === 0) return
-    const cam = camera as PerspectiveCamera
-    const shot =
-      useApp.getState().view.world === 'field'
-        ? fieldShot(fieldLayoutFor(nodes), cam.fov ?? 50, cam.aspect || 1, ORBIT_LIMITS.maxDistance * 0.9)
-        : establishingShot(nodes.values(), settings, cam.fov ?? 50, cam.aspect || 1, ORBIT_LIMITS.maxDistance * 0.9)
+    const shot = worldShot(camera)
     if (!shot) return
     establishNote = `shot ${useApp.getState().view.world} ${shot.target.map(Math.round).join(',')}`
     established = true
@@ -100,6 +138,7 @@ function establishWhenLoaded(c: CameraControlsImpl, camera: Camera): () => void 
 
 export function OrbitRig({ proximity = true }: { proximity?: boolean }) {
   const ref = useRef<CameraControlsImpl>(null)
+  const motion = useRef<ReturnType<typeof createOrbitMotionDriver> | null>(null)
   const camera = useThree((s) => s.camera)
 
   // Layout phase: the previous rig's layout cleanup (handoff, lastOrbitTarget) has already
@@ -116,23 +155,23 @@ export function OrbitRig({ proximity = true }: { proximity?: boolean }) {
     // Before registering: a fly parked while switching modes is applied there and wins.
     const stopEstablish = established && !requested ? null : establishWhenLoaded(c, camera)
     registerOrbitControls(c)
+    motion.current = createOrbitMotionDriver(c)
     return () => {
+      motion.current?.dispose()
+      motion.current = null
       stopEstablish?.()
       registerOrbitControls(null)
       setPostFocus(null)
     }
   }, [camera])
 
-  // Runs after camera-controls' own update (priority −1), so the cap applies next frame.
-  useFrame(() => {
+  // Runs after camera-controls' own update (priority −1), before this frame is drawn.
+  useFrame((_, delta) => {
     const c = ref.current
     if (!c) return
     if (established) requested = false
-    c.getTarget(target, false)
-    // camY = targetY + d·cos(polar) ≥ FLOOR_Y  ⇒  polar ≤ acos((FLOOR_Y − targetY) / d)
-    const d = Math.max(c.distance, 1e-3)
-    const k = Math.min(1, Math.max(-1, (FLOOR_Y - target.y) / d))
-    c.maxPolarAngle = Math.max(ORBIT_LIMITS.minPolarAngle, Math.min(ORBIT_LIMITS.maxPolarAngle, Math.acos(k)))
+    motion.current?.update(delta)
+    applyOrbitGroundClearance(c, spatialGroundFor(useWorld.getState().nodes))
     // What you orbit is what is sharp: flyTo() moves the target onto a node, so this also
     // covers selection. Released on unmount so the next rig's focus rules apply.
     setPostFocus(target)

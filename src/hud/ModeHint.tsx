@@ -5,10 +5,10 @@ import type { CameraMode } from '../app/store.ts'
 // visible way out (Esc goes through useApp.escape in every one of them).
 
 const HINTS: Partial<Record<CameraMode, string>> = {
-  autonav: 'Riding the worldline · Esc exits',
+  autonav: 'Riding memories · Esc exits',
   first_person: 'First person · WASD move · Q/E down/up · drag look · Esc exits',
   interior: 'Inside the memory · WASD move · Q/E down/up · Z/C roll · Esc flies out',
-  third_person: 'Catwalk · W/S walk through time · A/D step onto a spur · O orbit',
+  third_person: 'Walking · WASD move · drag look · O orbit',
 }
 
 export function ModeHint() {

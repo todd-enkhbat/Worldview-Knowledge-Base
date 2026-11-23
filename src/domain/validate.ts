@@ -236,6 +236,13 @@ export function validateNode(record: NodeRecord, ctx: ValidateNodeContext): Vali
     err('thermo.temperature', `temperature must be in [${TEMPERATURE_RANGE[0]}, ${TEMPERATURE_RANGE[1]}]`, 'range')
 
   // anchor
+  if (r.fieldAnchorXZ !== undefined) {
+    const field = r.fieldAnchorXZ
+    if (!Array.isArray(field) || field.length !== 2 || !isNum(field[0]) || !isNum(field[1]))
+      err('fieldAnchorXZ', 'field placement must be two finite numbers', 'type')
+    else if (Math.hypot(field[0], field[1]) >= MAX_ANCHOR_RADIUS)
+      err('fieldAnchorXZ', `field placement must lie within ${MAX_ANCHOR_RADIUS} u`, 'anchor-range')
+  }
   const a = r.anchorXZ
   const anchorOk = Array.isArray(a) && a.length === 2 && isNum(a[0]) && isNum(a[1])
   if (!anchorOk) err('anchorXZ', 'anchorXZ must be two finite numbers', 'type')

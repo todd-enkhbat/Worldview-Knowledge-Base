@@ -1,0 +1,112 @@
+:root { --galaxy-base:#090d17; --galaxy-panel:#101621; --galaxy-text:#e6e8ee; --galaxy-muted:#929aaa; --galaxy-line:#b5c3e118; --galaxy-amber:#d8b887; --nav-width:190px; --chat-width:320px; --color-void:#090d17; --color-bone:#d8dce6; --color-concrete:#959eaf; --color-signal:#d4b789; --color-ember:#dfbf8d; --color-glass:#91baca; }
+.world-workspace { background:#03060d; }
+.workspace-nav { background:linear-gradient(160deg,#101622,#090d18 75%); border-right:1px solid var(--galaxy-line); padding:28px 13px 18px; }
+.workspace-brand { color:#f0ece6; font-size:20px; font-weight:500; gap:9px; letter-spacing:-.4px; padding:0 5px 28px; }.workspace-brand svg { color:#d1b687; }
+.workspace-search { color:#afb7c5; border-color:#d4dff126; background:#9caac207; padding:10px 9px; }.workspace-search kbd { color:#a4adbc; }
+.workspace-add { background:#d2b68814; border:1px solid #d2b68828; color:#d8c49f; font-size:11px; padding:10px 11px; margin-top:13px; }.workspace-add:hover { background:#d2b68822; }
+.workspace-links { gap:5px; margin-top:23px; }.workspace-links button { color:#b5bece; border:1px solid transparent; border-radius:7px; padding:10px; font-size:12px; }.workspace-links button.is-active { border-color:#91b5d02b; background:linear-gradient(90deg,#729bb522,#9eb4d209); color:#edf1f5; }.workspace-links button.is-active svg { color:#bad7e4; }.workspace-links button:hover { background:#c6d3e40a; }.workspace-links small { color:#a6c3c6; }
+.workspace-recents { border-top-color:var(--galaxy-line); margin-top:24px; padding-top:20px; }.workspace-recents h2 { color:#a1a8b8; font-weight:400; font-size:11px; }.workspace-recents button { gap:7px; padding:9px 4px; }.workspace-recents button[aria-current=true] { background:#a5bad110; }.workspace-recents strong { color:#c2c9d6; font-size:11px; }.workspace-recents small { color:#6f7c90; font-size:10px; }.recent-icon { color:#98a6bd!important; width:21px; }.recent-icon.kind-memory { color:#cab385!important; }.recent-icon.kind-idea { color:#90b6c7!important; }
+.workspace-nav-footer { color:#69758a; }.workspace-nav-footer button { color:#a7b0c1; font-size:11px; }.workspace-nav-footer > div { border-top-color:var(--galaxy-line); }.storage-dot { background:#8caeaf; box-shadow:none; }
+.world-toolbar { min-height:98px; padding:25px 28px; background:linear-gradient(#030710c9,#03071000); }.world-toolbar h1 { font-size:26px; font-weight:400; color:#ebe3d7; letter-spacing:-.6px; }.world-toolbar p { color:#a0a9bb; font-size:11px; margin-top:9px; }.world-view-switch { background:#0a122280; border:1px solid #b8cee11a; padding:2px; border-radius:8px; }.world-view-switch button { color:#8191a7; padding:7px 9px; font-size:10px; }.world-view-switch button[aria-pressed=true] { background:#9aadc118; color:#d2dfec; }.world-icon-button { color:#a5b6cd; }.world-icon-button:hover { background:#a5b6cd12; }.world-flow-toggle[aria-pressed=false] { color:#dec392; background:#d4ad6510; }
+.workspace-chat { background:#10151f; border-left:1px solid var(--galaxy-line); color:var(--galaxy-text); }
+.world-tools-menu { background:#121b2b; color:#d0d8e6; border:1px solid #a7bbd529; box-shadow:0 12px 45px #0008; }.world-tools-menu button:hover { background:#9cb5da11; }
+.world-banners { inset-block-start:99px; }.world-banners button { color:inherit; }
+.world-guide { color:#8c9bb3; font-size:10px; text-shadow:0 1px 5px #000; bottom:140px; }.world-guide-help { color:#9daec1; }.world-explore-tools { bottom:135px; }.world-explore-tools > button { background:#0a1224aa; border-color:#a7bdda21; color:#bdc9d8; }
+.world-timeline { inset-inline:28px; bottom:18px; }.timeline-panel { background:linear-gradient(transparent,#030710df); color:#bac6d8; padding-bottom:8px; }.timeline-heading { color:#8e9db2; }.timeline-date { color:#c6d0df; }.timeline-line { background:#9aacc340; }.timeline-play { color:#17202e; background:#c2cad5; width:28px; height:28px; }.timeline-reverse { color:#8190a8; }.timeline-year { color:#7b8ba4; }.timeline-year i { background:#8fa0b257; }.timeline-birth { background:#dfbd787a; height:4px; border-radius:50%; }.timeline-head { background:#e3c187; }.timeline-head span { background:#f1d8a7; box-shadow:0 0 9px #e5bd8780; }.timeline-now { background:#9fbad3; }.timeline-present { color:#bdcadb; }.timeline-speed { color:#9bacbf; border-color:#a7bdda21; background:#0a1224aa; }.timeline-context { color:#7587a0; }.timeline-context button { color:#c5b18e; }
+.wv-labels.is-molecular .wv-label { text-shadow:0 1px 5px #030510,0 0 14px #030510; }.wv-labels.is-molecular .wv-label-title { color:#d5dfed; font-size:12px; }.wv-labels.is-molecular .wv-label:before { background:#e3c290; box-shadow:0 0 6px #edc089; }.wv-labels.is-molecular .wv-label.is-selected { background:#0c1729db; border:1px solid #afc7df25; }.wv-labels.is-molecular .wv-label.is-selected .wv-label-tag { color:#819aba; }
+.hud-panel { background:#10192bea; color:#cbd4e5; border-color:#aec1db20; box-shadow:0 18px 45px #0004; }.hud-btn { border-color:#c2d2e32b; }.hud-label { color:#889bb5; }.world-panels .hud-panel > footer button { background:#c5d6f006; }.world-empty { background:#07101e99; color:#e4e7ef; border:1px solid #a9bcdc16; }.world-empty p,.world-empty small { color:#8ea2bc; }.world-empty-mark { color:#d9bd8c; }.product-primary { color:#19202d; background:#d7be97; }.product-primary:hover { background:#e4cdaa; }.world-example-button { color:#b9bdc7; }
+:root .product-modal-backdrop { background:#020611bd; }:root .product-modal { background:#101725; color:#d4dce9; border:1px solid #a7bbd52b; border-radius:15px; box-shadow:0 25px 100px #0008; }:root .product-modal-header { background:#101725; border-bottom-color:#a7bbd51a; }:root .product-modal-header h2 { color:#e3e6ed; font-weight:500; }:root .product-modal-header p { color:#8797ad; }:root .product-modal-close { background:#afc3e211; color:#9caec5; }:root .product-modal-close:hover { background:#afc3e220; }:root .product-modal-body { color:#c0ccdd; }:root .product-button { color:#c4d0e0; border-color:#a4bad32a; background:#b1c3df06; font-weight:500; }:root .product-button:hover { background:#b1c3df13; }:root .product-button.primary { color:#152033; background:#d5bb91; border-color:#d5bb91; }:root .product-button.primary:hover { background:#e3cda9; }:root .product-input { background:#070f1b; border-color:#a4bad32e; color:#d2daea; color-scheme:dark; }:root .product-input::placeholder { color:#667b98; }:root .product-status { color:#9ec4c8; background:#80b7c00b; border-color:#80b7c025; }:root .product-error { color:#d2a38b; background:#c89a7f0b; }
+:root .product-modal .sources-import h3,:root .product-modal .sources-guide h3,:root .product-modal .sources-link label,:root .product-modal .reflection-prompt h3,:root .product-modal .reflection-saved h3,.world-help dt { color:#d8e2ef; }:root .product-modal .sources-import p,:root .product-modal .sources-guide p,:root .product-modal .sources-link small,:root .product-modal .sources-connection-note,.world-help dd { color:#8fa3bf; }:root .product-modal .sources-service { color:#c5d4e8; }:root .product-modal .sources-service:hover { background:#92acc811; }:root .product-modal .sources-service.is-active { background:#92acc81b; border-color:#a6c2dd30; }:root .product-modal .sources-service-mark { background:#9db5d00e; color:#b6c9de; }:root .product-modal .sources-service small { color:#7d91ad; }:root .product-modal .sources-guide { border-top-color:#9fb7d51d; }:root .product-modal .sources-guide-heading > span { color:#b5a585; }:root .product-modal .reflection-prompt > span,:root .product-modal .reflection-prompt > button { color:#c0ad8f; }:root .product-modal .reflection-controls > label,:root .product-modal .reflection-privacy,:root .product-modal .reflection-saved p { color:#8195b2; }:root .product-modal .reflection-history { border-top-color:#9fb7d51d; }:root .product-modal .reflection-history h3 { color:#9daac0; }:root .product-modal .reflection-history > button { color:#ced7e7; border-bottom-color:#9fb7d51d; }:root .product-modal .reflection-history small { color:#8496ae; }
+.welcome { background:#101725; color:#d9e0ec; }.welcome-world { background:#030711 url('/galaxy/milky-way.png') center/cover; }.welcome-world:after { content:''; position:absolute; inset:0; background:linear-gradient(0deg,#030711c9,transparent 65%); }.welcome-brand,.welcome-world-caption { z-index:1; }.welcome-brand svg,.welcome-mobile-brand svg { color:#e0bc87; }.welcome-galaxy { display:none; }.welcome-world-caption span { color:#b6c1d4; }.welcome-world-caption p { color:#eee2ce; }.welcome-eyebrow { color:#b5a07f; }.welcome-intro { color:#91a0b8; }.welcome-choices legend { color:#9cacc1; }.welcome-choices label { border-color:#9db5d029; background:#b1c3df04; }.welcome-choices label.is-selected { border-color:#d3b98a6b; background:#d3b98a0c; }.welcome-choices input { accent-color:#d3b98a; }.welcome-choices small { color:#8295b1; }.welcome-time,.welcome-time small,.welcome-restore,.welcome-privacy { color:#7186a3; }.welcome-time input { background:#070f1b; color:#d5deec; border-color:#9db5d029; }.welcome-enter { background:#d7be97; color:#142033; }.welcome-enter:hover { background:#e2cca9; }
+@media(min-width:1600px) { :root { --nav-width:210px; --chat-width:350px; } }
+@media(max-width:1200px) { :root { --nav-width:178px; --chat-width:300px; }.workspace-brand { font-size:19px; }.world-toolbar { padding:24px 22px; }.world-toolbar h1 { font-size:24px; } }
+@media(max-width:900px) { :root { --nav-width:60px; --chat-width:300px; }.workspace-nav { padding:24px 6px 16px; }.workspace-brand { padding:0 9px 28px; }.workspace-links { gap:5px; }.workspace-links button { padding:11px; }.workspace-add { padding:11px; }.world-view-switch { display:none; }.world-toolbar h1 { font-size:23px; }.world-timeline { inset-inline:20px; }.world-guide { font-size:9px; max-width:185px; }.world-toolbar { padding-inline:21px; } }
+@media(max-width:660px) { :root { --chat-width:min(340px,calc(100vw - 60px)); }.world-toolbar { padding:23px 19px; }.world-timeline { inset-inline:17px; }.world-guide { max-width:150px; font-size:8px; }.world-empty { top:43%; }.workspace-chat { border-left-color:#a7bbd52b; } }
+/* Spatial-world reading cues: one coordinate system in either render treatment. */
+.world-guide { top:100px; right:28px; bottom:auto; left:28px; align-items:flex-start; max-width:none; font-size:11px; line-height:1.6; z-index:3; }
+.world-guide-help { margin-top:2px; }
+.world-axis-cue { margin:0; color:#c6cfdb; font-size:11px; }
+.world-control-cue { margin:3px 0 0; color:#9aabbe; font-size:11px; }
+.world-banners { inset-block-start:157px; }
+.world-explore-tools { bottom:143px; right:28px; gap:5px; flex-wrap:wrap; max-width:calc(100% - 56px); }
+.world-explore-tools > button { font-size:11px; padding:8px 10px; }
+.world-explore-tools > button[aria-pressed=true] { color:#ecdbc0; border-color:#d3b58260; background:#282c32e6; }
+.world-tools-menu button:disabled { opacity:.4; }
+.world-timeline .timeline-context { font-size:11px; color:#9aaac0; }
+@media(max-width:1200px) {
+  .world-guide { left:21px; right:21px; }
+  .world-explore-tools { right:21px; max-width:calc(100% - 42px); }
+}
+@media(max-width:900px) {
+  .world-guide { top:100px; left:20px; right:20px; }
+  .world-axis-cue,.world-control-cue { font-size:10px; }
+  .world-explore-tools { bottom:148px; right:20px; max-width:calc(100% - 40px); }
+  .world-explore-tools > button { font-size:10px; padding:7px 9px; }
+  .world-timeline .timeline-context { font-size:10px; }
+}
+@media(max-width:660px) {
+  .world-guide { left:18px; right:18px; top:102px; }
+  .world-control-cue { display:none; }
+  .world-explore-tools { right:17px; bottom:153px; max-width:calc(100% - 34px); }
+  .world-banners { inset-block-start:152px; }
+}
+
+/* Labels yield to the planned object embodiments in a full-world overview. */
+.wv-label { background:#111c29ed; border-color:#9fb5cb38; box-shadow:0 3px 12px #0003; }
+.wv-label-tag { color:#91a9bc; }
+.wv-label-title { color:#d5e0e8; }
+.wv-label.is-selected { border-color:#c5af865c; background:#1b2835f2; }
+.wv-label.is-overview { background:#0b1622c9; border-color:#8da7bc21; padding:3px 6px; box-shadow:none; }
+.wv-label.is-overview .wv-label-tag { display:none; }
+.wv-label.is-overview .wv-label-title { font-size:11px; line-height:17px; font-weight:400; }
+.wv-year { color:#91a8b8; font:10px/1.5 var(--font-sans); text-shadow:0 1px 4px #08101a; }
+.world-link-legend { bottom:64px; right:18px; }
+.inspector-spatial-position { font-size:11px; line-height:1.8; font-variant-numeric:tabular-nums; }
+
+/* Keep recovery notices readable without consuming the molecular viewport on a phone. */
+@media(max-width:660px) {
+  .world-banners [role=status], .world-banners [role=alert] {
+    display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center;
+    gap:8px; padding:10px 12px;
+  }
+  .world-banners [role=status] > strong, .world-banners [role=alert] > strong {
+    grid-column:1; grid-row:1;
+  }
+  .world-banners [role=status] > span:first-of-type, .world-banners [role=alert] > span:first-of-type {
+    grid-column:1 / -1; grid-row:2; min-width:0;
+    font:11px/1.45 var(--font-sans);
+  }
+  .world-banners [role=status] > span.shrink-0, .world-banners [role=alert] > span.shrink-0 {
+    grid-column:2; grid-row:1; justify-content:flex-end;
+  }
+}
+
+/* Camera navigation has one primary action; specialist modes stay in a single picker. */
+.world-explore-tools { display:flex; align-items:center; gap:4px; padding:4px; border:1px solid #a7bbd522; border-radius:10px; background:#09111fe8; box-shadow:0 5px 24px #0003; z-index:5; }
+.world-explore-tools > button,.world-navigation-picker > button { display:inline-flex; align-items:center; justify-content:center; gap:7px; min-height:36px; padding:8px 11px; border:0; border-radius:7px; background:transparent; color:#b6c4d5; font:11px/1.3 var(--font-sans); white-space:nowrap; cursor:pointer; }
+.world-explore-tools > .world-orbit-control { background:#b6c9da14; color:#e2eaf2; }
+.world-explore-tools > .world-orbit-control[aria-pressed=true] { background:#d2b78b20; color:#e6cda7; }
+.world-explore-tools button:hover { background:#a9bfd51b; color:#f1f4f7; }
+.world-explore-tools button:focus-visible,.world-motion-control:focus-visible { outline:2px solid #d6b989; outline-offset:3px; }
+.world-explore-tools button:disabled { opacity:.4; cursor:default; }
+.world-navigation-picker { position:relative; pointer-events:auto; }
+.world-navigation-choices { position:absolute; right:0; bottom:calc(100% + 10px); width:260px; max-height:min(420px,calc(100dvh - 210px)); overflow-y:auto; overscroll-behavior:contain; padding:5px; background:#101a28fa; border:1px solid #a5b9d32e; border-radius:10px; box-shadow:0 12px 35px #0007; }
+.world-navigation-choices button { display:flex; align-items:center; gap:11px; width:100%; padding:11px 10px; background:transparent; border:0; border-radius:6px; color:#d1dbe7; text-align:left; font:12px/1.4 var(--font-sans); cursor:pointer; }
+.world-navigation-choices button span { flex:1; }
+.world-navigation-choices small { display:block; margin-top:3px; color:#8c9db3; font-size:10px; }
+.world-navigation-choices kbd { color:#7d8fa6; font:10px var(--font-sans); }
+.world-navigation-section-title { margin:6px 10px 5px; color:#879ab2; font:10px/1.4 var(--font-sans); }
+.world-navigation-section-title.is-separated { border-top:1px solid #9fb7d31a; padding-top:10px; margin-top:7px; }
+.world-navigation-clusters { max-height:170px; overflow-y:auto; overscroll-behavior:contain; scrollbar-width:thin; }
+.world-navigation-clusters .world-navigation-cluster { padding:7px 10px; font-size:11px; gap:12px; }
+.world-navigation-clusters .world-navigation-cluster small { margin:0; color:#8296af; font-size:10px; white-space:nowrap; }
+.world-motion-control { display:inline-flex; align-items:center; gap:6px; min-height:34px; padding:7px 9px; border:1px solid #a7bbd522; border-radius:7px; background:#09111f70; color:#bac7d7; font:10px/1.3 var(--font-sans); cursor:pointer; }
+.world-motion-control[aria-pressed=false] { color:#dec69f; background:#b59b7010; }
+.world-motion-control:hover { background:#a7bbd514; }
+@media(max-width:660px) {
+  .world-explore-tools { flex-wrap:nowrap; gap:2px; padding:3px; }
+  .world-explore-tools > button,.world-navigation-picker > button { min-height:36px; padding:8px; font-size:10px; gap:5px; }
+  .world-frame-control span,.world-motion-control span { display:none; }
+  .world-motion-control { padding:8px; min-width:32px; }
+  .world-navigation-choices { width:min(260px,calc(100vw - 94px)); }
+}

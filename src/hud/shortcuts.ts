@@ -1,12 +1,11 @@
 import { useEffect } from 'react'
 import { create } from 'zustand'
-import { useApp, useWorld } from '../app/store.ts'
+import { canTransition, useApp, useWorld } from '../app/store.ts'
 import type { CameraMode } from '../app/store.ts'
 import { softDelete } from '../data/repo.ts'
-import { stepAtEpoch, yOf } from '../domain/time.ts'
+import { stepAtEpoch } from '../domain/time.ts'
 import type { Archetype } from '../domain/types.ts'
 import { flyTo } from '../world/camera/flyTo.ts'
-import { requestEstablishingShot } from '../world/camera/OrbitRig.tsx'
 import { isEditableTarget } from '../world/camera/keyboard.ts'
 import { saveWorldArchive } from './DurabilityKit.tsx'
 
@@ -57,15 +56,25 @@ export function isModalOpen(s = useApp.getState()): boolean {
 }
 
 /**
- * Switch how the world is drawn (Settings → World view, the palette). The camera reframes for
- * the new world, and modes that only exist in the classic world fall back to orbit.
+ * Change the render treatment. Both views share spatial coordinates and the same navigation modes.
  */
 export function setWorldView(next: 'field' | 'classic'): void {
   const app = useApp.getState()
   if (app.view.world === next) return
-  if (next === 'field' && (app.mode === 'third_person' || app.mode === 'autonav')) app.setMode('orbit')
-  requestEstablishingShot()
   app.setView({ world: next })
+}
+
+/** Whether a navigation control can act without interrupting a memory fly-in or interior. */
+export function canNavigateTo(next: CameraMode, from = useApp.getState().mode): boolean {
+  return canTransition(from, next) || (canTransition(from, 'orbit') && canTransition('orbit', next))
+}
+
+/** Navigation buttons may return through orbit; protected memory transitions stay intact. */
+export function navigateTo(next: CameraMode): boolean {
+  const app = useApp.getState()
+  if (!canNavigateTo(next, app.mode)) return false
+  if (!canTransition(app.mode, next) && !app.setMode('orbit')) return false
+  return useApp.getState().setMode(next)
 }
 
 export function selectAndFly(id: string): boolean {
@@ -98,12 +107,12 @@ export async function deleteNode(id: string): Promise<void> {
   }
 }
 
-/** Move the playhead to now and fly to the present on the worldline. */
+/** Return history to now without moving or rearranging the spatial world. */
 export function goToPresent(now = Date.now()): boolean {
   const settings = useWorld.getState().settings
   if (!settings) return false
   useApp.getState().setClock({ step: Math.max(0, Math.round(stepAtEpoch(now, settings.T0, settings.stepsPerYear))) })
-  return flyTo([0, yOf(now, settings.T0, settings.yPerYear), 0], { distance: 40 })
+  return true
 }
 
 /**

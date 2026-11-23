@@ -1,0 +1,23 @@
+.reflection-prompt > span { color: #5f7e61; font-size: 12px; font-weight: 600; }
+.reflection-prompt h3 { max-width: 23ch; margin: 12px 0; color: #25372f; font-size: 25px; font-weight: 500; letter-spacing: -.6px; line-height: 1.35; }
+.reflection-prompt > button { margin: 0 0 20px; padding: 0; border: 0; background: none; color: #47725b; font: inherit; font-size: 12px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.reflection-answer { min-height: 170px; resize: vertical; }
+.reflection-controls { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-top: 16px; }
+.reflection-controls > label { display: flex; flex-direction: column; gap: 6px; color: #657367; font-size: 11px; }
+.reflection-controls input { width: 165px; padding: 7px 10px; font-size: 12px; }
+.reflection-privacy { margin: 16px 0 0; color: #71806e; font-size: 11px; }
+.reflection-saved { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 12px; padding: 25px 10px; text-align: center; }
+.reflection-orb { display: block; width: 52px; height: 52px; margin: 0 calc(50% - 26px) 5px; border: 1px solid #9db99b; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #edf3d4, #91b69e 55%, #4e8b73); box-shadow: 0 4px 20px rgb(83 138 120 / 15%); }
+.reflection-saved h3 { width: 100%; margin: 0; font-size: 23px; font-weight: 500; letter-spacing: -.5px; }
+.reflection-saved p { width: 100%; max-width: 47ch; margin: 0 0 10px; color: #667363; font-size: 13px; }
+.reflection-history { margin-top: 28px; padding-top: 20px; border-top: 1px solid #dde4d9; }
+.reflection-history h3 { margin: 0 0 8px; color: #627360; font-size: 12px; font-weight: 600; }
+.reflection-history > button { display: flex; align-items: center; justify-content: space-between; gap: 18px; width: 100%; margin: 0; padding: 14px 0; border: 0; border-bottom: 1px solid #e5e9e1; background: none; color: #3c614b; text-align: left; cursor: pointer; }
+.reflection-history > button:hover { color: #23472e; }
+.reflection-history strong { display: block; font-size: 13px; font-weight: 500; }
+.reflection-history small { display: -webkit-box; margin-top: 4px; overflow: hidden; color: #71806e; font-size: 12px; line-height: 1.5; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+@media (max-width: 500px) {
+  .reflection-prompt h3 { font-size: 22px; }
+  .reflection-controls { flex-direction: column; align-items: stretch; }
+  .reflection-controls input { width: 100%; }
+}

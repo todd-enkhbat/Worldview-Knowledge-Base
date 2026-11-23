@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { useWorld } from '../app/store.ts'
+import { useApp, useWorld } from '../app/store.ts'
 import { KIND_PRECEDENCE, LINK_STYLE, buildTypedLinks } from '../world/links/style.ts'
 
 // Link key, bottom-left over the stage. Open on a first visit, then remembered per device.
@@ -35,6 +35,7 @@ function Swatch({ kind }: { kind: keyof typeof LINK_STYLE }) {
 }
 
 export function LinkLegend() {
+  const inspecting = useApp((s) => s.panels.inspector && s.selectedId !== null)
   const nodes = useWorld((s) => s.nodes)
   const counts = useMemo(() => {
     const c = new Map<string, number>()
@@ -51,9 +52,9 @@ export function LinkLegend() {
       // Storage blocked: the choice lasts for this session.
     }
   }
-  if (nodes.size === 0) return null
+  if (nodes.size === 0 || inspecting) return null
   return (
-    <div data-label-avoid className="hud-panel pointer-events-auto absolute bottom-3 right-3 z-10 px-2 py-1.5">
+    <div data-label-avoid className="world-link-legend hud-panel pointer-events-auto absolute bottom-3 right-3 z-10 px-2 py-1.5">
       <button type="button" className="hud-label flex w-full items-center justify-between gap-3" aria-expanded={open} onClick={toggle}>
         <span>Links</span>
         <span aria-hidden="true">{open ? '−' : '+'}</span>
