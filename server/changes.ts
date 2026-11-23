@@ -11,10 +11,10 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 export interface ChangeEnvelope {
   v: 1
   from: string
-  change: { type: string; ids?: string[] }
+  change: { type: string; ids?: string[]; keys?: string[] }
 }
 
-const TYPES = new Set(['nodes', 'settings', 'events', 'assets', 'wipe', 'import'])
+const TYPES = new Set(['nodes', 'settings', 'events', 'assets', 'kv', 'wipe', 'import'])
 const MAX_IDS = 10_000
 const HEARTBEAT_MS = 25_000
 
@@ -26,6 +26,10 @@ export function parseEnvelope(raw: unknown): ChangeEnvelope | null {
   if (c.type === 'nodes' || c.type === 'assets') {
     if (!Array.isArray(c.ids) || c.ids.length > MAX_IDS || !c.ids.every((i) => typeof i === 'string')) return null
     return { v: 1, from: e.from, change: { type: c.type, ids: c.ids as string[] } }
+  }
+  if (c.type === 'kv') {
+    if (!Array.isArray(c.keys) || c.keys.length > MAX_IDS || !c.keys.every((key) => typeof key === 'string' && key.length <= 200)) return null
+    return { v: 1, from: e.from, change: { type: 'kv', keys: c.keys as string[] } }
   }
   return { v: 1, from: e.from, change: { type: c.type } }
 }

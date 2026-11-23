@@ -3,9 +3,9 @@ import { readFile, stat } from 'node:fs/promises'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { extname, join, normalize, resolve, sep } from 'node:path'
 import { pipeline } from 'node:stream/promises'
-import { createChat } from './chat.ts'
 import { createHost } from './host.ts'
-import { createRefiner } from './refine.ts'
+import { createAi } from './ai.ts'
+import { telegramIds } from './telegramCapture.ts'
 
 // The app as one Node process: the built client (dist/, `npm run build`) plus the /api engine,
 // on one origin. This is what runs when the app is hosted (Dockerfile, docs/HOSTING.md) and
@@ -97,13 +97,15 @@ export function createStatic({ dist }: StaticOptions) {
 }
 
 export function startServer(env: NodeJS.ProcessEnv = process.env) {
-  const apiKey = env.ANTHROPIC_API_KEY || undefined
+  const ai = createAi({ env })
   const host = createHost({
-    dataDir: env.HYPERSPACE_DATA ?? 'data',
+    dataDir: env.HYPERSPACE_DATA_DIR ?? env.HYPERSPACE_DATA ?? 'data',
     accounts: env.HYPERSPACE_ACCOUNTS === '1',
     signup: env.HYPERSPACE_SIGNUP === 'open' ? 'open' : 'first',
-    refine: apiKey ? createRefiner({ apiKey }) : undefined,
-    chat: apiKey ? createChat({ apiKey }) : undefined,
+    ai,
+    refine: ai.refine,
+    chat: ai.chat,
+    telegram: { token: env.TELEGRAM_BOT_TOKEN, allowedUserIds: telegramIds(env.TELEGRAM_ALLOWED_USER_IDS), allowedChatIds: telegramIds(env.TELEGRAM_ALLOWED_CHAT_IDS) },
   })
   const serveStatic = createStatic({ dist: env.HYPERSPACE_DIST ?? 'dist' })
   const server = createServer((req, res) => {
@@ -119,7 +121,7 @@ export function startServer(env: NodeJS.ProcessEnv = process.env) {
   server.listen(port, bind, () => {
     const a = server.address()
     const shown = typeof a === 'object' && a ? `${bind}:${a.port}` : `${bind}:${port}`
-    console.log(`[hyperspace] serving on http://${shown} · accounts ${host.accounts ? 'on' : 'off'} · AI ${apiKey ? 'on' : 'off'}`)
+    console.log(`[hyperspace] serving on http://${shown} · accounts ${host.accounts ? 'on' : 'off'} · AI ${ai.configured ? ai.provider : 'off'}`)
   })
   const stop = () => {
     server.close()

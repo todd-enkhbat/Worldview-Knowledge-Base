@@ -4,7 +4,8 @@ import reactHooks from 'eslint-plugin-react-hooks'
 import tseslint from 'typescript-eslint'
 
 export default tseslint.config(
-  { ignores: ['dist', 'node_modules', 'public', 'fixtures', '.claude'] },
+  // Downloaded upstream sources are inert research material, outside our application.
+  { ignores: ['dist', 'node_modules', 'public', 'fixtures', '.claude', 'data/research/**'] },
   {
     files: ['**/*.{ts,tsx,js}'],
     extends: [js.configs.recommended, ...tseslint.configs.recommended],

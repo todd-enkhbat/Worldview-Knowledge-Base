@@ -1,0 +1,24 @@
+.folder-capture { padding-block: 1.5rem; border-top: 1px solid #28384b; color: #ced8e5; }
+.folder-capture-heading { display: flex; align-items: center; gap: .6rem; }
+.folder-capture-heading h2 { margin: 0; color: #edf2f8; font-size: 1.1rem; font-weight: 600; }
+.folder-capture p { margin: .65rem 0; max-width: 75ch; font-size: .9rem; line-height: 1.6; }
+.folder-capture-add { margin-top: 1rem; }
+.folder-capture-add label { display: block; margin-bottom: .45rem; font-size: .9rem; }
+.folder-capture-add > div { display: flex; flex-wrap: wrap; gap: .6rem; }
+.folder-capture input { min-width: 200px; flex: 1 1 260px; max-width: 38rem; min-height: 2.6rem; padding: .55rem .75rem; border: 1px solid #3b5069; border-radius: .5rem; background: #101c2b; color: #edf2f8; font: inherit; }
+.folder-capture button { display: inline-flex; align-items: center; justify-content: center; gap: .4rem; min-height: 2.6rem; padding: .5rem .75rem; border: 1px solid #3b5069; border-radius: .5rem; background: #152335; color: #dce6f1; font: inherit; font-size: .88rem; cursor: pointer; }
+.folder-capture button:disabled { cursor: default; opacity: .5; }
+.folder-capture button:hover:not(:disabled) { background: #203149; }
+.folder-capture input:focus-visible, .folder-capture button:focus-visible, .folder-capture summary:focus-visible { outline: 2px solid #8bc4d2; outline-offset: 3px; }
+.folder-capture .folder-capture-note, .folder-capture .folder-capture-unavailable { color: #a6b6ca; font-size: .83rem; }
+.folder-capture-list { list-style: none; margin: 1.2rem 0 0; padding: 0; }
+.folder-capture-list > li { padding: 1rem 0; border-bottom: 1px solid #28384b; }
+.folder-capture-folder { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: .6rem; }
+.folder-capture-folder strong { overflow-wrap: anywhere; font-size: .93rem; font-weight: 500; }
+.folder-capture-folder span { font-size: .83rem; color: #a6c8db; }
+.folder-capture-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+.folder-capture .folder-capture-error { color: #efbe9a; }
+.folder-capture details { margin-top: .8rem; font-size: .84rem; }
+.folder-capture summary { cursor: pointer; color: #b5c9df; }
+.folder-capture details ul { padding-left: 1.2rem; line-height: 1.7; overflow-wrap: anywhere; }
+@media (max-width: 660px) { .folder-capture input { min-width: 0; flex-basis: 100%; font-size: 1rem; } .folder-capture button { min-height: 44px; } }

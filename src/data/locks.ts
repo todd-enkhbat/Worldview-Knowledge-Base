@@ -171,7 +171,7 @@ export interface Sync {
   close(): void
 }
 
-const CHANGE_TYPES = new Set<StoreChange['type']>(['nodes', 'settings', 'events', 'assets', 'wipe', 'import'])
+const CHANGE_TYPES = new Set<StoreChange['type']>(['nodes', 'settings', 'events', 'assets', 'kv', 'wipe', 'import'])
 
 function isStringArray(v: unknown): v is string[] {
   return Array.isArray(v) && v.every((x) => typeof x === 'string')
@@ -181,9 +181,10 @@ function isStringArray(v: unknown): v is string[] {
 export function parseChange(data: unknown): StoreChange | null {
   if (typeof data !== 'object' || data === null) return null
   const env = data as Partial<Envelope>
-  const c = env.change as { type?: unknown; ids?: unknown } | undefined
+  const c = env.change as { type?: unknown; ids?: unknown; keys?: unknown } | undefined
   if (env.v !== 1 || !c || !CHANGE_TYPES.has(c.type as StoreChange['type'])) return null
   if ((c.type === 'nodes' || c.type === 'assets') && !isStringArray(c.ids)) return null
+  if (c.type === 'kv' && !isStringArray(c.keys)) return null
   return c as StoreChange
 }
 
@@ -234,7 +235,8 @@ export interface SyncedStoreOptions {
 
 /**
  * Wrap a store so every write is refused in read-only tabs and announced to other tabs once
- * it has committed. kv writes are local app state and are not announced.
+ * it has committed. Versioned world-state writes announce their changed keys; ordinary
+ * device-local kv writes do not generate scene refreshes.
  */
 export function withSync(store: WorldStore, opts: SyncedStoreOptions): WorldStore {
   const post = (c: StoreChange) => opts.sync?.post(c)
@@ -251,6 +253,18 @@ export function withSync(store: WorldStore, opts: SyncedStoreOptions): WorldStor
     }
   return {
     info: store.info,
+    readWorldSnapshot: store.readWorldSnapshot?.bind(store),
+    getKnowledgeRevision: store.getKnowledgeRevision?.bind(store),
+    commitKnowledge: store.commitKnowledge ? async (delta, options) => {
+      guard()
+      const applied = await store.commitKnowledge!(delta, options)
+      if (applied) {
+        post({ type: 'kv', keys: ['knowledge.v1', ...(options.state ?? []).map((entry) => entry.key)] })
+        if (options.nodes?.length) post({ type: 'nodes', ids: options.nodes.map((node) => node.id) })
+        if (options.assets?.length) post({ type: 'assets', ids: options.assets.map((asset) => asset.id) })
+      }
+      return applied
+    } : undefined,
     getSettings: () => store.getSettings(),
     listNodes: () => store.listNodes(),
     getNode: (id) => store.getNode(id),
@@ -269,8 +283,15 @@ export function withSync(store: WorldStore, opts: SyncedStoreOptions): WorldStor
     putBlob: write((input) => store.putBlob(input), (input) => ({ type: 'assets', ids: [input.meta.id] })),
     deleteBlob: write((id) => store.deleteBlob(id), (id) => ({ type: 'assets', ids: [id] })),
     putKv: write((key: string, value: unknown) => store.putKv(key, value), null),
+    async compareAndSwapKv(key, value, expectedRevision) {
+      guard()
+      const applied = await store.compareAndSwapKv(key, value, expectedRevision)
+      if (applied) post({ type: 'kv', keys: [key] })
+      return applied
+    },
     deleteKv: write((key: string) => store.deleteKv(key), null),
     wipe: write(() => store.wipe(), () => ({ type: 'wipe' })),
+    resetWithKv: write((key: string, value: unknown, preserveKeys?: readonly string[], expectedKnowledgeRevision?: number) => store.resetWithKv(key, value, preserveKeys, expectedKnowledgeRevision), () => ({ type: 'import' })),
     close: () => store.close(),
   }
 }

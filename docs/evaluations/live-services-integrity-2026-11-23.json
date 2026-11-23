@@ -1,0 +1,29 @@
+{
+  "verifiedAt": "2026-11-23T16:14:30.038Z",
+  "backup": "data/backups/before-live-services-d28b44e8-4aae-4cb4-a968-431cb15c14e9",
+  "tables": {
+    "nodes": {
+      "before": 14,
+      "after": 14,
+      "identical": true
+    },
+    "links": {
+      "before": 4,
+      "after": 4,
+      "identical": true
+    },
+    "attachments": {
+      "before": 0,
+      "after": 0,
+      "identical": true
+    }
+  },
+  "originals": {
+    "count": 23,
+    "changed": []
+  },
+  "spatialFiles": {
+    "count": 152,
+    "changed": []
+  }
+}

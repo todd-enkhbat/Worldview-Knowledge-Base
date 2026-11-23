@@ -1,0 +1,85 @@
+.maintained-knowledge { display: flex; flex-direction: column; gap: 1.75rem; min-width: 0; color: var(--kb-text); font-size: .9375rem; line-height: 1.7; }
+.maintained-summary p { color: var(--kb-muted); margin: 0 0 .75rem; }
+.maintained-health { display: flex; flex-wrap: wrap; gap: .5rem 1.5rem; font-size: .8125rem; color: var(--kb-muted); }
+.maintained-layout { display: grid; grid-template-columns: minmax(12rem, 16rem) minmax(0, 1fr); gap: 2rem; }
+.maintained-index { border-right: 1px solid var(--kb-line); padding-right: 1.25rem; min-width: 0; }
+.maintained-index-actions, .maintained-section-title { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .6rem; margin-bottom: 1rem; }
+.maintained-knowledge h2, .maintained-knowledge h3, .maintained-knowledge h4 { margin: 0; font-weight: 500; }
+.maintained-index h2 { font-size: 1rem; }
+.maintained-page-list { list-style: none; padding: 0; margin: 1rem 0; display: flex; flex-direction: column; gap: .35rem; }
+.maintained-page-list button { display: flex; flex-direction: column; align-items: flex-start; gap: .35rem; width: 100%; padding: .8rem; text-align: left; color: var(--kb-text); border: 0; border-radius: .4rem; background: transparent; }
+.maintained-page-list button[aria-pressed=true] { background: var(--kb-hover); }
+.maintained-page-list span, .maintained-page-list small, .maintained-detail small, .maintained-origin { color: var(--kb-muted); font-size: .8125rem; line-height: 1.6; }
+.maintained-detail { min-width: 0; max-width: 78ch; }
+.maintained-field { display: flex; flex-direction: column; gap: .5rem; font-size: .875rem; margin-bottom: 1.25rem; color: var(--kb-text); }
+.maintained-field input, .maintained-field select, .maintained-field textarea, .maintained-selected-evidence select { box-sizing: border-box; min-height: 42px; width: 100%; background: var(--kb-bg); border: 1px solid var(--kb-line); color: var(--kb-text); padding: .65rem .8rem; border-radius: .4rem; font: inherit; }
+.maintained-field textarea { resize: vertical; min-height: 7rem; line-height: 1.7; }
+.maintained-field select option, .maintained-selected-evidence select option { color: var(--kb-text); background: var(--kb-panel); }
+.maintained-check { display: flex; gap: .65rem; align-items: flex-start; font-size: .875rem; line-height: 1.6; }
+.maintained-check input { margin-top: .3rem; accent-color: var(--kb-accent); flex-shrink: 0; }
+.maintained-check span { min-width: 0; }
+.maintained-check small { display: block; }
+.maintained-source-picker { border: 1px solid var(--kb-line); margin: 1rem 0; padding: 1.125rem; border-radius: .4rem; min-width: 0; }
+.maintained-source-picker legend { padding: 0 .4rem; font-size: .85rem; }
+.maintained-source-picker p, .maintained-create > p, .maintained-edit p, .maintained-history > p, .maintained-claim-editor > p, .maintained-review > p { color: var(--kb-muted); line-height: 1.7; font-size: .875rem; }
+.maintained-source-options, .maintained-passage-picker { display: flex; flex-direction: column; gap: .75rem; max-height: 19rem; overflow-y: auto; }
+.maintained-page-header { display: flex; flex-direction: column; gap: 1rem; padding-bottom: 1rem; }
+.maintained-page-header h2 { font-size: clamp(1.5rem, 2.6vw, 1.875rem); line-height: 1.3; letter-spacing: -.025em; margin: .5rem 0; overflow-wrap: anywhere; }
+.maintained-page-header p { color: var(--kb-text); line-height: 1.7; }
+.maintained-actions, .maintained-tabs { display: flex; flex-wrap: wrap; align-items: center; gap: .55rem; }
+.maintained-tabs { border-bottom: 1px solid var(--kb-line); padding: .5rem 0 1rem; margin-bottom: 1.5rem; }
+.maintained-tabs button[aria-pressed=true] { background: var(--kb-line); border-color: var(--kb-accent); }
+.maintained-body, .maintained-history-body { max-width: 76ch; font-size: .9375rem; line-height: 1.85; overflow-wrap: anywhere; }
+.maintained-body > h1, .maintained-history-body > h1 { font-size: 1.4rem; }
+.maintained-body > h2, .maintained-history-body > h2 { font-size: 1.2rem; margin-top: 1.5rem; }
+.maintained-body blockquote, .maintained-history-body blockquote, .maintained-evidence blockquote { border-left: 2px solid var(--kb-accent); margin: .75rem 0; padding: .2rem 0 .2rem 1rem; white-space: pre-wrap; color: var(--kb-text); }
+.maintained-claims, .maintained-claim-editor { border-top: 1px solid var(--kb-line); padding-top: 1.5rem; margin-top: 1.5rem; }
+.maintained-claim, .maintained-proposal { padding: 1.25rem 0; border-bottom: 1px solid var(--kb-line); line-height: 1.7; overflow-wrap: anywhere; }
+.maintained-claim > p { margin: .5rem 0; }
+.maintained-dates { display: flex; flex-wrap: wrap; gap: .65rem 1.5rem; font-size: .8125rem; }
+.maintained-dates div { display: flex; flex-direction: column; gap: .1rem; }
+.maintained-dates dt { color: var(--kb-muted); }
+.maintained-dates dd { margin: 0; color: var(--kb-text); }
+.maintained-evidence { margin: .9rem 0; font-size: .875rem; }
+.maintained-evidence summary, .maintained-review summary { color: var(--kb-cyan); cursor: pointer; }
+.maintained-evidence > div { padding: .8rem 0; border-bottom: 1px solid var(--kb-line); }
+.maintained-evidence strong, .maintained-evidence small { display: block; }
+.maintained-evidence a, .maintained-selected-evidence a { color: var(--kb-cyan); }
+.maintained-diff { display: flex; flex-direction: column; gap: 1rem; margin: 1rem 0; }
+.maintained-diff pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 20rem; overflow-y: auto; margin: .5rem 0; padding: .75rem; background: var(--kb-bg); font: inherit; line-height: 1.7; }
+.maintained-diff del { color: var(--kb-muted); text-decoration-thickness: 1px; background: color-mix(in srgb, var(--kb-accent) 10%, transparent); }
+.maintained-diff ins { color: var(--kb-text); text-decoration: underline; text-decoration-color: var(--kb-cyan); text-underline-offset: .2em; background: color-mix(in srgb, var(--kb-cyan) 12%, transparent); }
+.maintained-date-inputs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; }
+.maintained-selected-evidence { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; margin-bottom: .8rem; }
+.maintained-selected-evidence select { width: auto; }
+.maintained-job { display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-start; justify-content: space-between; border-bottom: 1px solid var(--kb-line); padding: 1rem 0; }
+.maintained-job small { display: block; }
+.maintained-job p { color: var(--kb-accent); max-width: 40rem; line-height: 1.7; }
+.maintained-activity { padding-left: 1.2rem; line-height: 1.7; }
+.maintained-activity li { margin: .85rem 0; }
+.maintained-activity strong, .maintained-activity small { display: block; }
+.maintained-activity p { margin: .2rem 0; color: var(--kb-muted); }
+.maintained-empty { max-width: 40rem; line-height: 1.8; }
+.maintained-empty p { color: var(--kb-muted); }
+@media (max-width: 980px) { .maintained-layout { grid-template-columns: 1fr; } .maintained-index { border-right: 0; border-bottom: 1px solid var(--kb-line); padding: 0 0 1rem; } .maintained-page-list { display: grid; grid-template-columns: repeat(auto-fit,minmax(13rem,1fr)); max-height: 15rem; overflow: auto; } }
+@media (max-width: 520px) { .maintained-date-inputs { grid-template-columns: 1fr; } .maintained-page-header h2 { font-size: 1.35rem; } .maintained-source-picker { padding: .6rem; } }
+@media (pointer: coarse) { .maintained-knowledge button, .maintained-knowledge input, .maintained-knowledge select { min-height: 44px; } .maintained-knowledge textarea, .maintained-knowledge input { font-size: 16px; } .maintained-check { min-height: 44px; align-items: center; } .maintained-check input { min-height: 20px; min-width: 20px; } }
+
+.maintained-knowledge button { min-height: 36px; }
+.maintained-page-list button { font: inherit; font-size: .875rem; line-height: 1.55; cursor: pointer; }
+.maintained-page-list button:hover { background: var(--kb-hover); }
+.maintained-page-list button strong { font-weight: 500; overflow-wrap: anywhere; }
+.maintained-knowledge :is(button, a, input, select, textarea, summary):focus-visible { outline: 2px solid var(--kb-accent); outline-offset: 3px; border-radius: .3rem; }
+.maintained-knowledge :is(input, select, textarea):disabled { opacity: .6; }
+.maintained-field :is(input, select, textarea):focus { border-color: var(--kb-accent); }
+.maintained-body :is(p, ul, ol), .maintained-history-body :is(p, ul, ol) { margin-block: 1em; }
+.maintained-body :is(h1, h2, h3, h4), .maintained-history-body :is(h1, h2, h3, h4) { line-height: 1.4; scroll-margin-top: 5rem; }
+.maintained-body pre, .maintained-history-body pre { overflow-x: auto; padding: 1rem; background: var(--kb-bg); border: 1px solid var(--kb-line); border-radius: .5rem; font-size: .875rem; line-height: 1.7; }
+.maintained-body img, .maintained-history-body img { max-width: 100%; height: auto; }
+.maintained-body a, .maintained-history-body a { color: var(--kb-cyan); text-underline-offset: .2em; }
+.maintained-evidence summary, .maintained-review summary { padding-block: .4rem; }
+.maintained-source-options, .maintained-passage-picker { scrollbar-width: thin; scrollbar-color: var(--kb-line) transparent; padding: .2rem; }
+.maintained-selected-evidence select { min-width: 9rem; max-width: 100%; }
+@media (max-width: 520px) { .maintained-detail { max-width: 100%; } .maintained-selected-evidence { align-items: stretch; flex-direction: column; } .maintained-selected-evidence select { width: 100%; } .maintained-page-list { grid-template-columns: 1fr; } }
+
+@media (pointer: coarse) { .maintained-knowledge button { min-height: 44px; } }

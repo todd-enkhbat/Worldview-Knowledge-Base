@@ -6,5 +6,6 @@ dist
 public/fixtures/*
 !public/fixtures/.gitkeep
 bench-results/
-data/
+/data/
 .env.local
+/:memory:.ses

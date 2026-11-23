@@ -22,12 +22,15 @@ export const useTranscriber = create<{ phase: 'idle' | 'loading-model' | 'busy' 
 
 let worker: Worker | null = null
 let nextId = 1
+let generation = 0
 const waiting = new Map<number, { resolve: (t: Transcript) => void; reject: (e: Error) => void }>()
 
 function getWorker(): Worker {
   if (worker) return worker
-  worker = new Worker(new URL('./transcribe.worker.ts', import.meta.url), { type: 'module' })
-  worker.onmessage = (e: MessageEvent<TranscribeReply>) => {
+  const current = new Worker(new URL('./transcribe.worker.ts', import.meta.url), { type: 'module' })
+  worker = current
+  current.onmessage = (e: MessageEvent<TranscribeReply>) => {
+    if (worker !== current) return
     const m = e.data
     if (m.type === 'progress') return void useTranscriber.setState({ phase: 'loading-model', download: m.total > 0 ? m.loaded / m.total : 0 })
     if (m.type === 'ready') return void useTranscriber.setState({ phase: 'busy', config: m.config })
@@ -37,7 +40,23 @@ function getWorker(): Worker {
     if (m.type === 'error') w?.reject(new Error(m.error))
     else w?.resolve({ text: m.text, chunks: m.chunks })
   }
+  current.onerror = (error) => {
+    if (worker !== current) return
+    for (const request of waiting.values()) request.reject(new Error(error.message || 'Local transcription stopped unexpectedly. Original retained.'))
+    waiting.clear()
+    current.terminate(); worker = null
+    useTranscriber.setState({ phase: 'error', config: null, error: error.message || 'Local transcription failed.' })
+  }
   return worker
+}
+
+/** A restore, account switch or policy revocation must settle pending local inference. */
+export function stopTranscription(): void {
+  generation++
+  worker?.terminate(); worker = null
+  for (const request of waiting.values()) request.reject(new Error('Local transcription cancelled. The original is retained.'))
+  waiting.clear()
+  useTranscriber.setState({ phase: 'idle', download: 0, config: null, error: null })
 }
 
 /** Average channels and resample to 16 kHz mono (pure; linear interpolation after a box filter). */
@@ -86,7 +105,9 @@ export function transcriptMarkdown(t: Transcript): string {
 
 /** Speech in `blob` as text, or null when it has no decodable sound. Downloads Whisper on first use. */
 export async function transcribe(blob: Blob, opts: { language?: string } = {}): Promise<Transcript | null> {
+  const token = generation
   const audio = await decodeSpeech(blob)
+  if (token !== generation) throw new Error('Local transcription cancelled. The original is retained.')
   if (!audio || audio.length < SAMPLE_RATE / 4) return null
   const id = nextId++
   const w = getWorker()

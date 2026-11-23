@@ -11,10 +11,12 @@ export const REFINE_MODEL = 'claude-haiku-5-5'
 export interface RefinerOptions {
   apiKey?: string
   client?: Pick<Anthropic, 'messages'>
+  model?: string
 }
 
 export function createRefiner(opts: RefinerOptions = {}): (body: unknown) => Promise<RefineResult> {
   const client = opts.client ?? new Anthropic({ apiKey: opts.apiKey, timeout: 30_000, maxRetries: 1 })
+  const model = opts.model ?? REFINE_MODEL
   return async (body) => {
     const input = RefineInput.safeParse(body)
     if (!input.success) return { ok: false, reason: 'invalid', message: `bad request: ${input.error.issues[0]?.message ?? 'invalid'}` }
@@ -33,7 +35,7 @@ export function createRefiner(opts: RefinerOptions = {}): (body: unknown) => Pro
     let response: Anthropic.Message
     try {
       response = await client.messages.create({
-        model: REFINE_MODEL,
+        model,
         max_tokens: 2048,
         thinking: { type: 'disabled' },
         output_config: { effort: 'low', format: { type: 'json_schema', schema: REFINE_JSON_SCHEMA } },

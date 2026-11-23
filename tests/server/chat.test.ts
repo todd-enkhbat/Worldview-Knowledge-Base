@@ -71,7 +71,7 @@ describe('chat relay', () => {
   })
 
   it('declares eager-streamed tools whose schemas match the validators', () => {
-    expect(CHAT_TOOLS.map((t) => t.name)).toEqual(['search_world', 'propose_notes', 'ask_user'])
+    expect(CHAT_TOOLS.map((t) => t.name)).toEqual(['read_memory_context', 'search_world', 'read_record', 'search_passages', 'read_passage', 'propose_notes', 'ask_user'])
     expect(CHAT_TOOLS.every((t) => t.eager_input_streaming && t.input_schema.type === 'object')).toBe(true)
     const ok = ProposeNotesInput.safeParse({
       notes: [{ key: 'n1', kind: 'idea', title: 'T', body: '', date: { iso: '2019-05', precision: 'month', certain: false }, tags: [], links: [], source: {} }],

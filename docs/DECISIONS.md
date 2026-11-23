@@ -1,5 +1,20 @@
 # Decisions
 
+## 2026-11-23 — local workspace and interface refinement
+
+The user paused API use and requested a polished everyday app while retaining the 3D world. Cloud providers now require explicit `AI_PROVIDER=openai|anthropic`; the default and this workspace are `none`. Existing keys are retained privately. Cloud-off capture saves notes and original attachments without provider calls; source reading, local QMD, local Whisper and portable exports remain available. Optional connections are disclosed only when requested.
+
+The workspace uses its existing React 19.3, Phosphor icons and self-hosted Inter type. Native CSS opacity/transform transitions and native dialog semantics meet the interaction needs without adding an animation framework. Reviewed primary guidance: [Motion accessibility](https://motion.dev/docs/react-accessibility), [WAI modal dialogs](https://www.w3.org/WAI/ARIA/apg/patterns/dialog-modal/) and [React Activity](https://react.dev/reference/react/Activity). Reduced-motion preferences disable physical transitions. No third-party product styles or unlicensed assets are copied.
+
+A persistent account-keyed shell replaces section-keyed remounts. Visited capture/search/library panels preserve their state with React Activity, pausing hidden effects; sources and connection controls mount only when opened. Device-only appearance/sidebar preferences stay separate from spatial data. Both themes use the same semantic tokens. Quick-capture drafts are account-scoped workspace resume state, separate from saved notes and the model conversation. Main UX additions are keyboard commands, reliable capture focus, responsive navigation, clearer reading surfaces and collapsed integration setup. The existing route names and world renderer remain intact.
+
+
+## 2026-11-23 — live local services and OpenAI provider
+
+The user requested actual QMD/Telegram setup and live AI/voice verification while preserving the existing spatial world. QMD `@tobilu/qmd@2.9.0` is installed in an ignored, isolated `data/tools/qmd` runtime with its own lockfile, config/index/cache. Local model downloads are authorized; personal evidence stays local. Telegram requires an explicit token, allowlist and enabled capture policy.
+
+The configured Anthropic credential was rejected by the provider's live models endpoint (401); no generation was billed. The user chose an OpenAI API key. Add official `openai@7.62.0` exactly for a Responses API adapter retaining the current browser protocol, validated tools, evidence policies and optional Anthropic path. Prefer OpenAI when its key is configured unless an explicit provider is selected. Default OpenAI model `gpt-6.2-sol` balances cost and tool use per current official model documentation; actual account access is verified before live testing. Keys remain server-only, and the live tests use synthetic evidence with token usage recorded.
+
 Deviations from the original spec and from [PLAN.md](PLAN.md), with reasons. Each phase gate appends its acceptance results and any stretch-goal cuts.
 
 ## Stack (2026-10-13, verified with `npm view` at scaffold time)
@@ -923,3 +938,29 @@ The final video selects the continuous 21.4–35.0-second section of the real ap
 The November 4 `clustered-world-*.jpg` captures, earlier `planned-world-*`/`planned-memory-detail.jpg`, and mountain/molecular-sheet/galaxy-only references remain historical. Their former test totals and screenshots do not verify this revision.
 
 Local capture, original attachments, saved typed links, reflection, source imports, backups, and the integer engine remain. This visual correction adds no claim of authenticated external sync, proactive phone delivery, or automatic animated-3D reconstruction from arbitrary images or videos.
+
+## 2026-11-23 — A source-backed daily workspace on the molecular world
+
+The user authorized implementation directly on the latest pushed commit, `2984e02`, after confirming that capture, retrieval and the daily/spatial workflow all needed work. The prior molecular rendering, shared XYZ poses, pins and integer engine remain the spatial foundation. No package dependencies were added.
+
+The daily interface now loads independently of WebGL. Sources, immutable versions, exact-offset passages, receipts and bounded organization jobs live in `knowledge.v1`; `NodeRecord` remains the existing edit/render projection. Revision compare-and-swap is implemented by every store and serialized through the repository writer queue. SQLite FTS5 is disposable derived state updated transactionally with the authority. The snapshot approach is an incremental compatibility decision; normalized corpus tables and query pagination remain necessary before claiming large-corpus UI scalability.
+
+Capture acknowledges after retained original bytes, pending source metadata and the world projection are committed. Organization runs separately with durable checkpoints and bounded stages. Imports retain raw originals before extraction; unsupported formats and unavailable PDF extraction produce honest receipts. Manual imports support structured ChatGPT/Claude histories, path-aware vault files, Markdown/text, DOCX and local Poppler PDF extraction. The local folder service accepts only explicitly registered roots and is disabled for hosted accounts. It excludes symlinks, hidden/dependency folders and oversized inputs, reports partial coverage, preserves edits/pins, and retains missing external files. It does not implement bidirectional vault editing or cloud account sync.
+
+Corpus inclusion and AI use are separate permissions. The latter gates local embeddings as well as remote companion tools. Tools recheck scope and policy before reads, bound returned context, isolate outbound history after scope changes, and render only issued citation identifiers. Legacy human chat can become a searchable source without creating another world object; cached world/tool evidence and assistant replies are not relabeled as the user's beliefs. The full local chat history remains intact.
+
+Workspace context and saved investigations use separate scoped, versioned state. Device context wins during ordinary remote refresh; portable backup state can initialize a fresh device. Archive exports include source history, jobs, projects, context and originals. The new segmented directory format writes its manifest last, verifies hashes and references, and requires an independently verified current backup before replacement. Restore markers survive failure. Existing ZIP recovery remains available.
+
+Permanent deletion of a conversation purges a shared raw export if it contains that conversation. Other contained conversations keep their normalized versions, explicitly marked as lacking the purged original. This avoids retaining deleted content through a sibling's raw download. Previously exported backups remain independent copies.
+
+Live evaluation found two spatial integration defects: empty worldline geometry read unallocated attributes, and the timeline counted fractional birth dates differently from the integer engine. Empty geometry now draws zero vertices and allocates when needed; timeline and reader-to-world reveal use the existing canonical rounded birth step. Neither correction changes the engine's physics or date-independent anchors. New regression tests cover both lifecycles.
+
+Implementation and current verification are recorded in [design/IMPLEMENTATION.md](design/IMPLEMENTATION.md#knowledge-workspace-update--november-23-2026). Desktop/mobile packaging, cloud connectors, encrypted offline sync and a general belief/assertion revision model remain roadmap work.
+
+## 2026-11-23 — Integrate the researched memory architecture
+
+The user authorized the complete integration plan in the existing application, with the 3D world intact. A consistent SQLite backup and all 23 original blobs were verified before integration under `data/backups/before-full-integration-50751001-6417-4477-b8bf-39274008bac6/`; a source archive is retained there too.
+
+Add exact dependencies `immer@11.2.10` and `@modelcontextprotocol/sdk@1.32.2`. Immer supplies copy-on-write command drafts so unchanged source text is neither cloned nor serialized on every capture; repository serialization, expected revisions and restore generations still govern concurrency. The official MCP SDK supplies protocol negotiation/transports and validation for the shared read interface. These are small supporting boundaries rather than adoption of another knowledge database. Installation used `--ignore-scripts`. Existing rendering, physics and model dependencies stay pinned.
+
+Reuse selected MIT GBrain validity/fusion logic, MIT Obsidian format guidance and Apache Claude-Mem context-budget patterns with upstream commit/file attribution and retained licenses. No AGPL core code or unlicensed gist prose is incorporated. New source/claim history, voice intake, exports, and indexes derive from the same authority; none may change the world XYZ/pin contract or turn generated interpretations into primary evidence.

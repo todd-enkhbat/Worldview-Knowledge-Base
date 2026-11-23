@@ -3,6 +3,14 @@ import { dirname } from 'node:path'
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite'
 import { load as loadVec } from 'sqlite-vec'
 import type { AssetMeta, Attachment, InteractionEvent, Link, NodeRecord, WorldSettings } from '../src/domain/types.ts'
+import { assertRevisionMutation, stateRevision, WorldStateConflictError } from '../src/data/worldState.ts'
+import { KnowledgeIndex } from './knowledgeIndex.ts'
+import type { KnowledgeSnapshot, SearchFilters, SearchHit } from '../src/knowledge/types.ts'
+import type { WorldSnapshot } from '../src/data/WorldStore.ts'
+import { PORTABLE_WORLD_KEYS } from '../src/data/worldSnapshot.ts'
+import { assertKnowledgeReceipt, diffKnowledgeSnapshots, isKnowledgeSnapshot, KNOWLEDGE_KEY, KNOWLEDGE_MIGRATION_KEY, KNOWLEDGE_RECEIPTS_KEY, validateKnowledgeCommit, type KnowledgeCommitOptions, type KnowledgeDelta } from '../src/knowledge/storage.ts'
+import { SqliteKnowledgeStore } from './knowledgeStore.ts'
+import { createKnowledgeMigrationBackup } from './knowledgeMigrationBackup.ts'
 
 // The SQLite engine (Phase 4): node:sqlite + sqlite-vec, synchronous, one connection per
 // server process. It stores exactly what the browser stores, normalised per
@@ -36,18 +44,69 @@ export function openWorldDb(path: string): WorldDb {
   loadVec(db)
   db.exec('PRAGMA foreign_keys = ON')
   const version = num((db.prepare('PRAGMA user_version').get() as Row).user_version)
+  if (version > 3) { db.close(); throw new Error('This world was written by a newer storage version. Update the app before opening it.') }
   if (version === 0) {
     db.exec(readFileSync(SCHEMA_URL, 'utf8'))
-    db.exec('PRAGMA user_version = 1')
-  }
-  return new WorldDb(db)
+    db.exec('PRAGMA user_version = 2')
+  } else if (version === 1) migrateFileKinds(db)
+  try { return new WorldDb(db, version < 3 ? createKnowledgeMigrationBackup(db, path) : undefined) }
+  catch (error) { db.close(); throw error }
+}
+
+/** The existing file attachment contract needs the same allowed kinds on old SQLite worlds. */
+function migrateFileKinds(db: DatabaseSync): void {
+  db.exec('BEGIN IMMEDIATE')
+  try {
+    db.exec(`
+      ALTER TABLE assets RENAME TO assets_v1;
+      CREATE TABLE assets (
+        id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL CHECK (kind IN ('splat-proxy','splat-interior','splat-thumb','image','image-thumb','text','file')),
+        mime TEXT NOT NULL, bytes INTEGER NOT NULL CHECK (bytes >= 0),
+        created_at INTEGER NOT NULL, node_id TEXT, data BLOB
+      );
+      INSERT INTO assets SELECT * FROM assets_v1;
+      DROP TABLE assets_v1;
+      CREATE INDEX assets_node ON assets (node_id);
+      ALTER TABLE attachments RENAME TO attachments_v1;
+      CREATE TABLE attachments (
+        id TEXT PRIMARY KEY, node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+        kind TEXT NOT NULL CHECK (kind IN ('image','text','file')),
+        name TEXT NOT NULL, mime TEXT NOT NULL, bytes INTEGER NOT NULL CHECK (bytes >= 0),
+        blob_id TEXT NOT NULL, thumb_blob_id TEXT, created_at INTEGER NOT NULL, ord INTEGER NOT NULL
+      );
+      INSERT INTO attachments SELECT * FROM attachments_v1;
+      DROP TABLE attachments_v1;
+      CREATE INDEX attachments_node ON attachments (node_id, ord);
+      PRAGMA user_version = 2;
+      COMMIT;
+    `)
+  } catch (error) { db.exec('ROLLBACK'); throw error }
 }
 
 export class WorldDb {
   readonly db: DatabaseSync
+  readonly knowledge: KnowledgeIndex
+  readonly corpus: SqliteKnowledgeStore
 
-  constructor(db: DatabaseSync) {
+  constructor(db: DatabaseSync, migrationBackup?: Record<string, unknown>) {
     this.db = db
+    this.knowledge = new KnowledgeIndex(db)
+    this.corpus = new SqliteKnowledgeStore(db)
+    // Rebuildable after migration/restore; no source content is changed by the index.
+    this.tx(() => {
+      if (migrationBackup && Number((db.prepare('PRAGMA data_version').get() as Row).data_version) !== migrationBackup.dataVersion) throw new Error('The world changed after its pre-migration backup; retry startup before switching knowledge storage.')
+      const migrated = this.corpus.migrateLegacy(migrationBackup)
+      const indexed = db.prepare('SELECT revision FROM knowledge_index_state WHERE id = 1').get() as Row | undefined
+      if (migrated || !indexed || Number(indexed.revision) !== this.corpus.revision()) this.knowledge.update(this.getKv(KNOWLEDGE_KEY))
+      db.exec('PRAGMA user_version = 3')
+    })
+    db.exec(`CREATE TRIGGER IF NOT EXISTS knowledge_refuse_legacy_insert BEFORE INSERT ON kv
+      WHEN NEW.key = 'knowledge.v1' AND EXISTS(SELECT 1 FROM knowledge_store_state WHERE key = 'head')
+      BEGIN SELECT RAISE(ABORT, 'This world uses incremental knowledge storage; reload the app before writing.'); END;
+      CREATE TRIGGER IF NOT EXISTS knowledge_refuse_legacy_update BEFORE UPDATE ON kv
+      WHEN NEW.key = 'knowledge.v1' AND EXISTS(SELECT 1 FROM knowledge_store_state WHERE key = 'head')
+      BEGIN SELECT RAISE(ABORT, 'This world uses incremental knowledge storage; reload the app before writing.'); END;`)
   }
 
   /** Run fn in one transaction: all of it commits or none of it does. */
@@ -64,6 +123,11 @@ export class WorldDb {
   }
 
   // ── settings ──
+
+  readWorldSnapshot(keys: readonly string[]): WorldSnapshot {
+    if (keys.some((key) => !PORTABLE_WORLD_KEYS.includes(key))) throw new StoreInputError('Only portable world keys are allowed in a backup snapshot')
+    return this.tx(() => ({ settings: this.getSettings(), nodes: this.listNodes(), events: this.listEvents(), assets: this.listAssets(), kv: Object.fromEntries(keys.flatMap((key) => { const value = this.getKv(key); return value === undefined ? [] : [[key, value]] })) }))
+  }
 
   getSettings(): WorldSettings | null {
     const r = this.db.prepare('SELECT * FROM settings WHERE id = 1').get() as Row | undefined
@@ -254,17 +318,100 @@ export class WorldDb {
 
   // ── kv ──
 
+  getKv<T = unknown>(key: string): T | undefined
   getKv(key: string): unknown {
+    if (key === KNOWLEDGE_KEY && this.corpus.head()) return this.corpus.read()
+    if (key === KNOWLEDGE_RECEIPTS_KEY) { const rows = this.corpus.receipts(); return rows.length ? rows : undefined }
+    if (key === KNOWLEDGE_MIGRATION_KEY) return this.corpus.state('migration')
     const r = this.db.prepare('SELECT value FROM kv WHERE key = ?').get(key) as Row | undefined
     return r ? JSON.parse(str(r.value)) : undefined
   }
 
   putKv(key: string, value: unknown): void {
+    if (key === KNOWLEDGE_KEY || key === KNOWLEDGE_RECEIPTS_KEY) {
+      this.tx(() => this.writeKv(key, value))
+    } else this.writeKv(key, value)
+  }
+
+  private writeKv(key: string, value: unknown): void {
+    if (key === KNOWLEDGE_RECEIPTS_KEY) { this.corpus.setReceipts(value); return }
+    if (key === KNOWLEDGE_KEY && isKnowledgeSnapshot(value)) {
+      this.corpus.replace(value)
+      this.db.prepare('DELETE FROM kv WHERE key = ?').run(key)
+      this.knowledge.update(value)
+      return
+    }
+    if (key === KNOWLEDGE_KEY && this.corpus.head()) throw new StoreInputError('Unsupported knowledge format; the current corpus was preserved.')
     this.db.prepare('INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)').run(key, JSON.stringify(value))
+    if (key === 'knowledge.v1') this.knowledge.update(value)
+  }
+
+  compareAndSwapKv(key: string, value: unknown, expectedRevision: number): boolean {
+    try { assertRevisionMutation(value, expectedRevision) } catch (e) {
+      throw new StoreInputError(e instanceof Error ? e.message : 'Invalid state revision')
+    }
+    return this.tx(() => {
+      if ((key === KNOWLEDGE_KEY ? this.getKnowledgeRevision() : stateRevision(this.getKv(key))) !== expectedRevision) return false
+      if (key === KNOWLEDGE_KEY && isKnowledgeSnapshot(value)) return this.writeKnowledgeDelta(diffKnowledgeSnapshots(this.corpus.read(), value), { expectedRevision, idempotencyKey: `compat:${crypto.randomUUID()}` })
+      this.writeKv(key, value)
+      return true
+    })
+  }
+
+  /** Local capture commits a ledger and its projections together after asynchronous I/O. */
+  compareAndSwapKnowledge(value: KnowledgeSnapshot, expectedRevision: number, nodes: readonly NodeRecord[], expectedNodes: Readonly<Record<string, number | null>> = {}, assets: readonly AssetMeta[] = []): boolean {
+    try { assertRevisionMutation(value, expectedRevision) } catch (error) { throw new StoreInputError(error instanceof Error ? error.message : 'Invalid knowledge revision') }
+    for (const node of nodes) assertNode(node)
+    return this.tx(() => {
+      if (this.getKv('importInProgress') !== undefined) return false
+      if (this.getKnowledgeRevision() !== expectedRevision) return false
+      for (const node of nodes) {
+        const current = this.getNode(node.id)
+        if (!(node.id in expectedNodes) || (current?.updatedAt ?? null) !== expectedNodes[node.id]) return false
+        // A background source refresh never changes a user's spatial placement inputs.
+        if (current && (JSON.stringify(node.anchorXZ) !== JSON.stringify(current.anchorXZ) || JSON.stringify(node.fieldAnchorXZ) !== JSON.stringify(current.fieldAnchorXZ))) return false
+      }
+      return this.writeKnowledgeDelta(diffKnowledgeSnapshots(this.corpus.read(), value), { expectedRevision, idempotencyKey: `capture:${crypto.randomUUID()}`, nodes: [...nodes], assets: [...assets] })
+    })
   }
 
   deleteKv(key: string): void {
-    this.db.prepare('DELETE FROM kv WHERE key = ?').run(key)
+    this.tx(() => {
+      this.db.prepare('DELETE FROM kv WHERE key = ?').run(key)
+      if (key === KNOWLEDGE_KEY) { this.corpus.clear(); this.knowledge.clear() }
+      if (key === KNOWLEDGE_RECEIPTS_KEY) this.corpus.setReceipts([])
+    })
+  }
+
+  searchKnowledge(query: string, filters: SearchFilters = {}): { revision: number; hits: SearchHit[] } {
+    return this.knowledge.search(query, filters)
+  }
+
+  getKnowledgeRevision(): number {
+    const head = this.corpus.head()
+    if (head) return head.revision
+    const legacy = this.db.prepare('SELECT value FROM kv WHERE key = ?').get(KNOWLEDGE_KEY) as Row | undefined
+    return legacy ? stateRevision(JSON.parse(String(legacy.value))) : 0
+  }
+
+  commitKnowledge(delta: KnowledgeDelta, opts: KnowledgeCommitOptions): boolean {
+    try { validateKnowledgeCommit(delta, opts) } catch (error) { throw new StoreInputError(error instanceof Error ? error.message : 'Invalid knowledge command') }
+    for (const node of opts.nodes ?? []) assertNode(node)
+    return this.tx(() => this.writeKnowledgeDelta(delta, opts))
+  }
+
+  private writeKnowledgeDelta(delta: KnowledgeDelta, opts: KnowledgeCommitOptions): boolean {
+    const fingerprint = validateKnowledgeCommit(delta, opts)
+    if (assertKnowledgeReceipt(this.corpus.receipt(opts.idempotencyKey), fingerprint)) return true
+    if (this.getKv('importInProgress') !== undefined || this.getKnowledgeRevision() !== opts.expectedRevision) return false
+    for (const entry of opts.state ?? []) if (stateRevision(this.getKv(entry.key)) !== entry.expectedRevision) return false
+    for (const [id, expected] of Object.entries(opts.expectedNodes ?? {})) if ((this.getNode(id)?.updatedAt ?? null) !== expected) return false
+    if (!this.corpus.commit(delta, opts)) return false
+    for (const meta of opts.assets ?? []) this.putAssetMeta(meta)
+    for (const node of opts.nodes ?? []) this.writeNode(node)
+    for (const entry of opts.state ?? []) this.writeKv(entry.key, entry.value)
+    this.knowledge.updateDelta(delta, (id) => this.corpus.row('versions', id), (id) => this.corpus.row('sources', id))
+    return true
   }
 
   // ── embeddings (derived; never exported) ──
@@ -313,9 +460,25 @@ export class WorldDb {
   }
 
   /** Everything except embeddings (those are derived from the records, not part of the world). */
+  resetWithKv(key: string, value: unknown, preserveKeys: readonly string[] = [], expectedKnowledgeRevision?: number): void {
+    const marker = JSON.parse(JSON.stringify(value)) as unknown
+    this.tx(() => {
+      if (expectedKnowledgeRevision !== undefined && (!Number.isSafeInteger(expectedKnowledgeRevision) || expectedKnowledgeRevision < 0 || stateRevision(this.getKv('knowledge.v1')) !== expectedKnowledgeRevision)) throw new WorldStateConflictError()
+      const kept = preserveKeys.filter((name) => name !== key).map((name) => [name, this.getKv(name)] as const)
+      for (const table of ['links', 'attachments', 'nodes', 'events', 'assets', 'kv', 'settings']) this.db.exec(`DELETE FROM ${table}`)
+      this.corpus.clear()
+      this.knowledge.clear()
+      for (const [name, item] of kept) if (item !== undefined) this.writeKv(name, item)
+      this.writeKv(key, marker)
+    })
+  }
+
+  /** Everything except embeddings (those are derived from the records, not part of the world). */
   wipe(): void {
     this.tx(() => {
       for (const t of ['links', 'attachments', 'nodes', 'events', 'assets', 'kv', 'settings']) this.db.exec(`DELETE FROM ${t}`)
+      this.corpus.clear()
+      this.knowledge.clear()
     })
   }
 

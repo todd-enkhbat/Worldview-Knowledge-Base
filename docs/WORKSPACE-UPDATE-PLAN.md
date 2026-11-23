@@ -1,14 +1,24 @@
 # Worldview workspace update proposal
 
-Prepared November 22, 2026. Status: researched implementation proposal; application changes have not been made. Evidence and competitor sources: [research report](WORKSPACE-UPDATE-RESEARCH.md).
+Prepared November 22, 2026; implementation updated November 23. The core workspace rebuild is implemented on commit `2984e02`, preserving its molecular world. Evidence and competitor sources: [research report](WORKSPACE-UPDATE-RESEARCH.md). The original proposal below remains the broader roadmap; it is not a claim that every milestone or release target has passed.
+
+## Implemented update
+
+The application now has Today, Search, Library, Projects & Topics, Review, Sources & Activity, and lazy-loaded Explore. Capture works without a model. Source versions retain original bytes, complete text, message attribution, timestamps and passage offsets. Repeat imports preserve identity; edits preserve prior wording and spatial pins. SQLite full-text search and optional local passage embeddings support grounded retrieval; citation tools validate identifiers and current access before returning evidence. Saved investigations keep their source/date/author filters and manual open questions. Connection proposals are explicit lexical suggestions with evidence, review and undo.
+
+Sources now includes real local folder capture with explicit registered roots, background edits, durable receipts, pause/resume, rescan and stop controls. Backups cover source history, originals, projects, jobs and workspace context; the segmented directory format avoids a single ZIP32 archive and verifies a pre-replacement backup. Existing browser worlds remain in place until an explicit engine migration. A consistent SQLite and original-blob backup was verified before this update; live evaluation uses a separate synthetic corpus and data directory.
+
+Implementation and verification details are recorded in [the implementation record](design/IMPLEMENTATION.md#knowledge-workspace-update--november-23-2026). Full model-backed answer quality and 30-question relevance targets require a separate evaluation with a configured model; automated provider tests use fixtures. The corpus authority is currently an atomically revisioned snapshot with disposable SQLite full-text tables, not a fully normalized or paginated corpus database. Packaged desktop/mobile delivery, selected cloud connectors, encrypted offline multi-device writes, general assertion revisions and global spatial regrouping previews remain outstanding.
 
 ## Recommendation
+
+The November 23 [eight-repository source study](research/second-brains/2026-11-23/README.md) refines the next implementation choices. Its [integration plan](research/second-brains/2026-11-23/INTEGRATION-PLAN.md) prioritizes measured retrieval, incremental corpus writes, ambiguity-safe vault ingestion, a shared memory interface and reviewable knowledge synthesis. Those are proposed next changes; downloaded references and their licenses are available without replacing this implementation.
 
 Build a dependable personal knowledge workspace around a durable record of the user's thinking. Capture should work immediately; useful organization should arrive progressively; every answer and inferred connection should lead back to evidence. The 3D world remains a first-class way to explore the same knowledge and revisit its history.
 
 The current implementation invests deeply in embodiment, simulation and navigation while importing, reading and reusing the record remain fragmented. Another visual reset will not resolve those workflow gaps. Reuse the working storage, local capture, originals, archive recovery, spatial contracts and integer engine; strengthen the knowledge system underneath and give daily work a readable interface.
 
-This proposal preserves the [governing XYZ-space/history amendment](PLAN.md#current-product-amendment--xyz-space-history-as-the-fourth-dimension-2026-11-04). Recommended new default: Today on first launch, then restore the user's last workspace, including Explore. This default remains a product recommendation for implementation.
+This update preserves the [governing XYZ-space/history amendment](PLAN.md#current-product-amendment--xyz-space-history-as-the-fourth-dimension-2026-11-04). The new default is Today on first launch, then the user's saved workspace context, including Explore.
 
 ### Confirmed problem scope
 
@@ -200,6 +210,6 @@ Run meaningful new ingestion/retrieval/migration tests and `npm run check` for i
 
 Research licensing/royalties, cryptographic timestamp services, speculative digital twins, custom graph infrastructure, a new renderer, another cosmetic reset, broad autonomous external actions and automatic photo/video-to-3D reconstruction do not solve the first-release journeys. They require separate justification after the knowledge loop is useful. Existing splat imports, physics diagnostics and rich exploration remain available.
 
-## Study verification
+## Original study verification (before implementation)
 
-This change is documentation only. `npm run check` passed typecheck and lint. Its initial test run passed 107 suites/745 tests and failed 17 tests in four suites because the sandbox denied localhost listeners (`listen EPERM 127.0.0.1`). Rerunning those four suites with localhost access passed all 61 tests in them. Thus all 111 suites/762 tests passed across the original run and the affected-suite rerun; a single unrestricted full run was not performed. This establishes automated baseline coverage, not live corpus/browser acceptance. No application or user-data changes were performed for this proposal.
+The original research change was documentation only. Its initial `npm run check` passed typecheck and lint; 107 suites/745 tests passed and 17 tests in four suites failed because the sandbox denied localhost listeners (`listen EPERM 127.0.0.1`). Rerunning those four suites with localhost access passed all 61 tests. Those historical results establish the study baseline, not verification of the implementation above. The later pushed molecular-world baseline reported 788 tests across 115 files. Current implementation evidence is maintained separately in the implementation record.

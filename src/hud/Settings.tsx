@@ -44,6 +44,7 @@ import {
 } from './durability.ts'
 import { BTN, BTN_DANGER, BTN_PRIMARY, ConfirmDialog, FOCUS, HudDialog, saveWorldArchive, useInstallPrompt, useNow } from './DurabilityKit.tsx'
 import { setWorldView } from './shortcuts.ts'
+import { DirectoryBackup } from './DirectoryBackup.tsx'
 
 const INPUT = `border border-bone/30 bg-transparent px-2 py-1 font-mono text-[12px] text-bone placeholder:text-concrete/60 ${FOCUS}`
 
@@ -377,7 +378,7 @@ function BackupsSection({ canWrite }: { canWrite: boolean }) {
 
   const p = progressText(progress)
   return (
-    <Section title="Backups" intro="Browser storage is the only copy. An export is a single .zip you can keep anywhere and import later.">
+    <Section title="Backups" intro="Keep a separate copy of your record. Choose a ZIP archive or a verified folder backup for a large corpus.">
       <KV k="Last">
         <span className={nag ? 'text-signal' : 'text-bone'}>{settings ? backupAgeLabel(settings.lastBackupAt, now) : '—'}</span>
         {settings?.lastBackupAt != null && <span className="text-concrete"> · {formatDay(settings.lastBackupAt)}</span>}
@@ -391,6 +392,7 @@ function BackupsSection({ canWrite }: { canWrite: boolean }) {
       </div>
       {!canWrite && <Note tone="warn">Exports from a read-only tab do not reset the backup reminder.</Note>}
       <Outcome {...msg} />
+      <DirectoryBackup canWrite={canWrite} />
       <div className="border-t border-bone/10 pt-4">
         <AutoBackup canWrite={canWrite} />
       </div>
@@ -819,7 +821,7 @@ function EngineSection({ canWrite }: { canWrite: boolean }) {
     >
       <KV k="Now">{name(current)}</KV>
       <KV k="SQLite">
-        {health === 'checking' ? 'checking…' : health ? `running · Claude refinement ${health.refine ? 'on' : 'off (no ANTHROPIC_API_KEY)'}` : 'not running'}
+        {health === 'checking' ? 'checking…' : health ? `running · Cloud refinement ${health.refine ? 'on' : 'off'}` : 'not running'}
       </KV>
       <Note>
         Moving copies the whole world through an export archive and checks its records hash. The engine you leave keeps its copy untouched, so
@@ -918,7 +920,7 @@ function UsageSection({ canWrite }: { canWrite: boolean }) {
   return (
     <Section
       title="AI usage"
-      intro="What the chat and refinement have used, kept with this world. Dollars are an estimate at list prices; your Anthropic bill is the real number."
+      intro="What the chat and refinement have used, kept with this world. Dollars are an estimate at list prices; your provider billing dashboard is the real number."
     >
       {models.length === 0 ? (
         <Note>No AI calls yet{ledger.since ? ` since ${new Date(ledger.since).toLocaleDateString()}` : ''}. Adding files with “Keep as notes”, the Obsidian bridge and everything else costs nothing.</Note>

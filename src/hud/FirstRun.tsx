@@ -42,7 +42,6 @@ function Welcome() {
     try {
       useApp.getState().setView({ world: 'field' })
       await completeFirstRun({ T0, start })
-      useApp.getState().togglePanel('chat', true)
     } catch (err) { setError(err instanceof Error ? err.message : String(err)); setBusy(false) }
   }
   async function restore(file: File) {
@@ -61,14 +60,14 @@ function Welcome() {
       <span className="welcome-eyebrow"><Leaf size={17} /> Your personal second brain</span>
       <h1 ref={heading} tabIndex={-1} id="welcome-title">Make room<br />for your mind.</h1>
       <p className="welcome-intro">Bring your thoughts, memories, and files together. Discover the connections in a living world that grows with you.</p>
-      <fieldset className="welcome-choices"><legend>How would you like to begin?</legend><label className={start === 'empty' ? 'is-selected' : ''}><input type="radio" name="start" checked={start === 'empty'} onChange={() => setStart('empty')} /><span><strong>Make it my own</strong><small>Start with a thought, a file, or a conversation.</small></span></label><label className={start === 'demo' ? 'is-selected' : ''}><input type="radio" name="start" checked={start === 'demo'} onChange={() => setStart('demo')} /><span><strong>Look around first</strong><small>Explore an example world with connected notes.</small></span><Sparkle size={19} /></label></fieldset>
+      <fieldset className="welcome-choices"><legend>How would you like to begin?</legend><label className={start === 'empty' ? 'is-selected' : ''}><input type="radio" name="start" checked={start === 'empty'} onChange={() => setStart('empty')} /><span><strong>Make it my own</strong><small>Start with a thought, a memory, or a file.</small></span></label><label className={start === 'demo' ? 'is-selected' : ''}><input type="radio" name="start" checked={start === 'demo'} onChange={() => setStart('demo')} /><span><strong>Look around first</strong><small>Explore an example world with connected notes.</small></span><Sparkle size={19} /></label></fieldset>
       <details className="welcome-time"><summary>Have older memories to bring in?</summary><label htmlFor="world-start">Earliest year or date in your world</label><input id="world-start" value={date} onChange={(e) => setDate(e.target.value)} placeholder="e.g. 1995" autoComplete="off" /><small>Optional. We leave 30 years of history by default. You can change this in Settings.</small></details>
       {error && <p className="product-error" role="alert">{error}</p>}
       {!writer && <p className="product-error" role="alert">Another tab is editing this world. Close it to continue here.</p>}
       <button className="product-primary welcome-enter" type="submit" disabled={busy || !writer}>{busy ? 'Growing your world…' : 'Step into your world'}<ArrowRight size={18} /></button>
       <button className="welcome-restore" type="button" disabled={busy || !writer} onClick={() => fileRef.current?.click()}><UploadSimple size={15} />Restore a Worldview backup</button>
       <input ref={fileRef} hidden type="file" accept=".zip,application/zip" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void restore(f) }} />
-      <p className="welcome-privacy">Your world is saved on this device. Export a backup in Settings to keep another copy. AI is optional; sending a message shares it with the AI service.</p>
+      <p className="welcome-privacy">Your world is saved on this device. Export a backup in Settings to keep another copy. Cloud AI stays off until you choose to enable it.</p>
     </form></section>
   </div></Overlay>
 }

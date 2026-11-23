@@ -1,9 +1,11 @@
 import { Inflate, Zip, ZipPassThrough } from 'fflate'
+import { PORTABLE_WORLD_KEYS, readWorldSnapshot, referencedWorldAssets, voiceOriginalReferences } from './worldSnapshot.ts'
 import { ARCHETYPES, SCHEMA_VERSION } from '../domain/types.ts'
 import type { AssetMeta, InteractionEvent, InteractionKind, NodeRecord, WorldSettings } from '../domain/types.ts'
 import type { WorldStore } from './WorldStore.ts'
-import { hashRecords } from './hash.ts'
+import { hashBytes, hashRecords } from './hash.ts'
 import { backupsAvailable, pruneBackups, readBackup, writeBackup } from './opfs.ts'
+import { stateRevision, WorldStateConflictError } from './worldState.ts'
 
 // Streaming export / import of the whole world as a STORED (uncompressed) zip: SPZ splats
 // are already compressed, so deflate would burn CPU for nothing.
@@ -41,7 +43,7 @@ export const PRE_IMPORT_BACKUPS_KEPT = 3
 /** kv entries that belong to this device, not to the world: kept across an import. */
 export const DEVICE_KV_KEYS: readonly string[] = ['autoBackupDir']
 /** kv entries that belong to the world: exported in kv.json and restored on import. */
-export const WORLD_KV_KEYS: readonly string[] = ['chat.v1', 'overlay.landauerPaid', 'ai.usage']
+export const WORLD_KV_KEYS: readonly string[] = PORTABLE_WORLD_KEYS
 /**
  * kv key present while an import is replacing the world (written right after the wipe,
  * removed after the last write). If the tab dies in between, the next start finds it and can
@@ -52,6 +54,7 @@ export const IMPORT_MARKER_KV = 'importInProgress'
 export interface ImportMarker {
   /** Pre-import backup to restore from, or null when the import ran without one. */
   backupName: string | null
+  backupKind?: 'zip' | 'directory'
   startedAt: number
 }
 
@@ -317,13 +320,12 @@ const ZIP_EPOCH = Date.UTC(1980, 0, 2)
  */
 export async function exportArchive(store: WorldStore, sink: ArchiveSink, opts: ExportOptions = {}): Promise<ExportResult> {
   const now = opts.now ?? Date.now()
-  const [settings, nodes, events, metas, worldKv] = await Promise.all([
-    store.getSettings(),
-    store.listNodes(),
-    store.listEvents(),
-    store.listAssets(),
-    readWorldKv(store),
-  ])
+  const snapshot = await readWorldSnapshot(store, WORLD_KV_KEYS)
+  const { settings, nodes, events, assets: metas, kv: worldKv } = snapshot
+  const requiredAssets = referencedWorldAssets(snapshot)
+  const voiceHashes = new Map(voiceOriginalReferences(worldKv).map((voice) => [voice.id, voice.hash]))
+  const knownAssets = new Set(metas.map((meta) => meta.id))
+  for (const id of requiredAssets) if (!knownAssets.has(id)) throw new ArchiveError('corrupt', `Referenced original ${id} is missing from the asset index. The backup was not completed.`)
   const trash = nodes.filter((n) => n.deletedAt !== null).length
   const recordsHash = await hashRecords(nodes)
 
@@ -399,9 +401,12 @@ export async function exportArchive(store: WorldStore, sink: ArchiveSink, opts: 
     for (const meta of metas) {
       const blob = await store.getBlob(meta.id)
       if (!blob) {
+        if (requiredAssets.has(meta.id)) throw new ArchiveError('corrupt', `Referenced original ${meta.id} disappeared while exporting. The backup was not completed.`)
         missingAssets.push(meta.id)
         continue
       }
+      if (requiredAssets.has(meta.id) && blob.size !== meta.bytes) throw new ArchiveError('corrupt', `Referenced original ${meta.id} changed while exporting. The backup was not completed.`)
+      if (voiceHashes.has(meta.id) && await hashBytes(blob) !== voiceHashes.get(meta.id)) throw new ArchiveError('hash-mismatch', 'A voice original differs from its retained SHA-256 receipt. The backup was not completed.')
       await addEntry(assetEntryName(meta.id), streamChunks(blob.stream()))
       exported.push(meta)
       assetBytes += blob.size
@@ -791,15 +796,6 @@ function checkAssetIndex(raw: unknown): AssetMeta[] {
 
 // ─── import ────────────────────────────────────────────────────────────────────────
 
-async function readWorldKv(store: WorldStore): Promise<Record<string, unknown>> {
-  const out: Record<string, unknown> = {}
-  for (const k of WORLD_KV_KEYS) {
-    const v = await store.getKv(k)
-    if (v !== undefined) out[k] = v
-  }
-  return out
-}
-
 export interface ParsedArchive {
   manifest: ArchiveManifest
   nodes: NodeRecord[]
@@ -892,6 +888,19 @@ export async function readArchive(file: Blob, onProgress?: (p: ArchiveProgress) 
 
   const verify = tick('verify')
   for (const meta of assets) await drainEntry(file, index, need(assetEntryName(meta.id)), verify)
+  const assetData = async (id: string): Promise<Blob> => {
+    const entry = need(assetEntryName(id))
+    if (entry.method === 0) {
+      const [start, end] = await dataRange(file, index, entry)
+      return file.slice(start, end)
+    }
+    const parts: BlobPart[] = []
+    for await (const chunk of entryChunks(file, index, entry)) parts.push(chunk as Uint8Array<ArrayBuffer>)
+    return new Blob(parts)
+  }
+  const assetIds = new Set(assets.map((asset) => asset.id))
+  for (const id of referencedWorldAssets({ settings: null, nodes, events, assets, kv })) if (!assetIds.has(id)) throw new ArchiveError('corrupt', `Referenced original ${id} is missing. Nothing was restored.`)
+  for (const voice of voiceOriginalReferences(kv)) if (await hashBytes(await assetData(voice.id)) !== voice.hash) throw new ArchiveError('hash-mismatch', 'A voice original differs from its retained SHA-256 receipt. Nothing was restored.')
 
   return {
     manifest,
@@ -899,17 +908,7 @@ export async function readArchive(file: Blob, onProgress?: (p: ArchiveProgress) 
     events,
     assets,
     kv,
-    async assetData(id) {
-      const entry = need(assetEntryName(id))
-      if (entry.method === 0) {
-        const [start, end] = await dataRange(file, index, entry)
-        // Zero-copy: the store streams this slice of the user's file straight into OPFS.
-        return file.slice(start, end)
-      }
-      const parts: BlobPart[] = []
-      for await (const chunk of entryChunks(file, index, entry)) parts.push(chunk as Uint8Array<ArrayBuffer>)
-      return new Blob(parts)
-    },
+    assetData,
   }
 }
 
@@ -981,6 +980,8 @@ export interface ImportResult {
 export async function importArchive(store: WorldStore, file: Blob, opts: ImportOptions = {}): Promise<ImportResult> {
   const now = opts.now ?? Date.now()
   const parsed = await readArchive(file, opts.onProgress)
+  // A background folder capture may commit while its pre-import backup is streaming.
+  const expectedKnowledgeRevision = stateRevision(await store.getKv('knowledge.v1'))
 
   let target: BackupTarget | null = opts.backup ?? null
   if (!target && (await backupsAvailable())) target = opfsBackupTarget()
@@ -1002,8 +1003,11 @@ export async function importArchive(store: WorldStore, file: Blob, opts: ImportO
 
   const marker: ImportMarker = { backupName, startedAt: now }
   try {
-    await replaceWorld(store, parsed, opts, marker)
+    await replaceWorld(store, parsed, opts, marker, expectedKnowledgeRevision >= 0 ? expectedKnowledgeRevision : undefined)
   } catch (e) {
+    // The guarded reset never touched the newer world. An automatic rollback here
+    // would itself overwrite the capture that caused the conflict.
+    if (e instanceof WorldStateConflictError) throw e
     const err = new ArchiveError('import-failed', 'The import failed part-way.', { cause: e })
     if (backupName && target?.read) {
       const backup = await target.read(backupName).catch(() => undefined)
@@ -1029,7 +1033,7 @@ export async function importArchive(store: WorldStore, file: Blob, opts: ImportO
   }
 }
 
-async function replaceWorld(store: WorldStore, parsed: ParsedArchive, opts: ImportOptions, marker: ImportMarker): Promise<void> {
+async function replaceWorld(store: WorldStore, parsed: ParsedArchive, opts: ImportOptions, marker: ImportMarker, expectedKnowledgeRevision?: number): Promise<void> {
   const keys = opts.preserveKv ?? DEVICE_KV_KEYS
   const kept = await Promise.all(keys.map(async (k) => [k, await store.getKv(k)] as const))
   const total = parsed.nodes.length + parsed.events.length + parsed.assets.length
@@ -1039,8 +1043,7 @@ async function replaceWorld(store: WorldStore, parsed: ParsedArchive, opts: Impo
     opts.onProgress?.({ phase: 'write', done, total })
   }
 
-  await store.wipe()
-  await store.putKv(IMPORT_MARKER_KV, marker)
+  await store.resetWithKv(IMPORT_MARKER_KV, marker, keys, expectedKnowledgeRevision)
   if (parsed.manifest.settings) await store.putSettings(parsed.manifest.settings)
   if (parsed.nodes.length) await store.putNodes(parsed.nodes)
   step(parsed.nodes.length)

@@ -1,7 +1,7 @@
 import { useApp } from '../app/store.ts'
 import { fileToIntake, importVault, isVault, readDirectoryEntry, type FolderFile, type IntakeItem } from '../ai/chat/apply.ts'
 import { formatBytes } from '../ai/chat/preview.ts'
-import { stage, useChat } from '../ai/chat/session.ts'
+import { chatSessionToken, isChatSessionTokenCurrent, stage, useChat } from '../ai/chat/session.ts'
 
 // Drop anything: files become staged attachments for the next chat message (Claude reads
 // them, the originals are kept with the notes); a folder of notes is imported as an Obsidian
@@ -21,10 +21,12 @@ export function entriesOf(dt: DataTransfer | null): FileSystemEntry[] {
   return out
 }
 
-async function intakeFolder(name: string, files: FolderFile[], staged: IntakeItem[], errors: string[]): Promise<void> {
+async function intakeFolder(name: string, files: FolderFile[], staged: IntakeItem[], errors: string[], token: number): Promise<void> {
+  if (!isChatSessionTokenCurrent(token)) return
   if (!files.length) return void errors.push(`${name} is empty.`)
   if (isVault(files)) {
-    const r = await importVault(files)
+    const r = await importVault(files, Date.now(), { shouldWrite: () => isChatSessionTokenCurrent(token) })
+    if (!isChatSessionTokenCurrent(token)) return
     staged.push({
       name: `Vault · ${name} (${r.added} notes)`,
       kind: 'text',
@@ -53,14 +55,17 @@ async function intakeFolder(name: string, files: FolderFile[], staged: IntakeIte
     ],
   })
   for (const f of take) {
+    if (!isChatSessionTokenCurrent(token)) return
     const item = await fileToIntake(f.file)
+    if (!isChatSessionTokenCurrent(token)) return
     if ('error' in item) errors.push(item.error)
     else staged.push(item)
   }
 }
 
 /** Open the chat and take in what was dropped, pasted or picked. */
-async function intakeFiles(files: readonly File[], entries: readonly FileSystemEntry[] = []): Promise<void> {
+async function intakeFiles(files: readonly File[], entries: readonly FileSystemEntry[], token: number): Promise<void> {
+  if (!isChatSessionTokenCurrent(token)) return
   useApp.getState().togglePanel('chat', true)
   const dirs = entries.filter((e): e is FileSystemDirectoryEntry => e.isDirectory)
   const dirNames = new Set(dirs.map((d) => d.name))
@@ -70,23 +75,31 @@ async function intakeFiles(files: readonly File[], entries: readonly FileSystemE
 
   for (const dir of dirs) {
     try {
-      await intakeFolder(dir.name, await readDirectoryEntry(dir), staged, errors)
+      const folder = await readDirectoryEntry(dir)
+      if (!isChatSessionTokenCurrent(token)) return
+      await intakeFolder(dir.name, folder, staged, errors, token)
+      if (!isChatSessionTokenCurrent(token)) return
     } catch (e) {
+      if (!isChatSessionTokenCurrent(token)) return
       errors.push(`${dir.name}: ${e instanceof Error ? e.message : String(e)}`)
     }
   }
   for (const f of files) {
+    if (!isChatSessionTokenCurrent(token)) return
     if (dirNames.has(f.name) && (f.size === 0 || f.type === '')) continue // the folder itself
     const item = await fileToIntake(f)
+    if (!isChatSessionTokenCurrent(token)) return
     if ('error' in item) errors.push(item.error)
     else staged.push(item)
   }
+  if (!isChatSessionTokenCurrent(token)) return
   if (staged.length) stage(staged)
   if (errors.length) useChat.setState({ error: errors.join(' ') })
 }
 
 /** A folder picked with <input webkitdirectory> (no directory entries there). */
-async function intakePickedFolder(files: readonly File[]): Promise<void> {
+async function intakePickedFolder(files: readonly File[], token: number): Promise<void> {
+  if (!isChatSessionTokenCurrent(token)) return
   useApp.getState().togglePanel('chat', true)
   if (!files.length) return
   const root = files[0].webkitRelativePath.split('/')[0] || 'folder'
@@ -94,29 +107,36 @@ async function intakePickedFolder(files: readonly File[]): Promise<void> {
   const staged: IntakeItem[] = []
   const errors: string[] = []
   try {
-    await intakeFolder(root, folder, staged, errors)
+    await intakeFolder(root, folder, staged, errors, token)
+    if (!isChatSessionTokenCurrent(token)) return
   } catch (e) {
+    if (!isChatSessionTokenCurrent(token)) return
     errors.push(e instanceof Error ? e.message : String(e))
   }
+  if (!isChatSessionTokenCurrent(token)) return
   if (staged.length) stage(staged)
   useChat.setState({ error: errors.length ? errors.join(' ') : null })
 }
 
-let activeIntakes = 0
-async function withIntake(work: () => Promise<void>): Promise<void> {
-  activeIntakes++
+const activeIntakes = new Map<number, number>()
+async function withIntake(work: (token: number) => Promise<void>): Promise<void> {
+  const token = chatSessionToken()
+  if (!isChatSessionTokenCurrent(token)) return
+  activeIntakes.set(token, (activeIntakes.get(token) ?? 0) + 1)
   useChat.setState({ intakeBusy: true, error: null })
-  try { await work() } catch (e) {
-    useChat.setState({ error: `Could not prepare these files: ${e instanceof Error ? e.message : String(e)}` })
+  try { await work(token) } catch (e) {
+    if (isChatSessionTokenCurrent(token)) useChat.setState({ error: `Could not prepare these files: ${e instanceof Error ? e.message : String(e)}` })
   } finally {
-    activeIntakes--
-    useChat.setState({ intakeBusy: activeIntakes > 0 })
+    const remaining = Math.max(0, (activeIntakes.get(token) ?? 1) - 1)
+    if (remaining) activeIntakes.set(token, remaining)
+    else activeIntakes.delete(token)
+    if (isChatSessionTokenCurrent(token)) useChat.setState({ intakeBusy: remaining > 0 })
   }
 }
 
 /** Prepare originals with a visible progress state; failures leave existing staged files intact. */
 export const intake = (files: readonly File[], entries: readonly FileSystemEntry[] = []): Promise<void> =>
-  withIntake(() => intakeFiles(files, entries))
+  withIntake((token) => intakeFiles(files, entries, token))
 
 export const intakeFolderFiles = (files: readonly File[]): Promise<void> =>
-  withIntake(() => intakePickedFolder(files))
+  withIntake((token) => intakePickedFolder(files, token))

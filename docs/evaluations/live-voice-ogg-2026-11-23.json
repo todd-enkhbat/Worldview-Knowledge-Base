@@ -1,0 +1,24 @@
+{
+  "measuredAt": "2026-11-23T06:47:16.018Z",
+  "mime": "audio/ogg",
+  "codec": "Opus",
+  "bytes": 38957,
+  "sha256": "32c0d93da7f7e96b9a306c129493122dc706f16119212e2795e714ff7eb8d7df",
+  "elapsedMs": 1112.8179579999999,
+  "result": {
+    "text": "The project Aurora decided to launch on December 12, the copper orchard budget is $312. This is synthetic speech for an integration test.",
+    "chunks": [
+      {
+        "start": 0,
+        "end": 7.2,
+        "text": "The project Aurora decided to launch on December 12, the copper orchard budget is $312."
+      },
+      {
+        "start": 7.2,
+        "end": 9.96,
+        "text": "This is synthetic speech for an integration test."
+      }
+    ]
+  },
+  "personalDataUsed": false
+}

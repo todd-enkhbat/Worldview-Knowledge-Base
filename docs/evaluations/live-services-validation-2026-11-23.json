@@ -1,0 +1,56 @@
+{
+  "checkedAt": "2026-11-23T16:14:30.014Z",
+  "typecheck": "passed",
+  "lint": "passed",
+  "productionBuild": "passed",
+  "focused": {
+    "providerConversationQmdDeliveryUsage": {
+      "files": 5,
+      "tests": 33,
+      "result": "passed"
+    },
+    "telegramHostVoice": {
+      "tests": 23,
+      "result": "passed"
+    },
+    "qmd": {
+      "tests": 14,
+      "result": "passed"
+    }
+  },
+  "live": {
+    "browserVoice": "passed real local WASM/q8 inference, retained original SHA256, exact timed citations and 7.2-second playback",
+    "nativeVoice": "passed WAV and OGG with real FFmpeg/Whisper",
+    "qmd": "passed actual hybrid HTTP and browser search over the browser transcript",
+    "mcp": "passed official SDK search/read/context and post-revocation401",
+    "telegramTransport": "not tested against Telegram servers: bot token and allowed sender/chat missing",
+    "cloudGeneration": "not tested: usable OpenAI key/credit missing; existing Anthropic credential returned401"
+  },
+  "regression": {
+    "command": "npx vitest run --maxWorkers=2",
+    "passed": 1072,
+    "failed": 1,
+    "skipped": 4,
+    "workerErrors": 1,
+    "remaining": [
+      "tests/physics/clock.test.ts: random scrub timeout",
+      "tests/hud/durabilityUi.test.tsx: worker startup timeout"
+    ],
+    "isolatedRecheck": {
+      "result": "passed",
+      "files": 2,
+      "tests": 18,
+      "durationSeconds": 38.03
+    },
+    "result": "All regression files covered successfully across the broad run and isolated reruns of two timeout-affected files; the broad invocation itself returned nonzero."
+  },
+  "integrity": "live-services-integrity-2026-11-23.json",
+  "screenshots": [
+    "../design/live-voice-citation-2026-11-23.png",
+    "../design/live-qmd-search-2026-11-23.png",
+    "../design/live-services-world-2026-11-23.png"
+  ],
+  "temporaryQaServer": "stopped",
+  "currentWorkspace": "Vite development server on127.0.0.1:5173",
+  "paidOpenAiGenerationRequests": 0
+}

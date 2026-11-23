@@ -12,10 +12,9 @@ export default defineConfig(({ mode }) => {
   // '' prefix: read ANTHROPIC_API_KEY too. It goes to the server plugin only; nothing
   // without the VITE_ prefix reaches the client bundle.
   const env = loadEnv(mode, process.cwd(), '')
-  const apiKey = env.ANTHROPIC_API_KEY || undefined
   return {
     // Vitest starts a Vite server too: keep tests off the real data/world.sqlite.
-    plugins: [react(), tailwindcss(), ...(process.env.VITEST ? [] : [hyperspaceEngine({ apiKey, accounts: env.HYPERSPACE_ACCOUNTS === '1' })])],
+    plugins: [react(), tailwindcss(), ...(process.env.VITEST ? [] : [hyperspaceEngine({ env, accounts: env.HYPERSPACE_ACCOUNTS === '1', dataDir: env.HYPERSPACE_DATA_DIR || undefined })])],
     server: { host: 'localhost', port: PORT, strictPort: true },
     preview: { host: 'localhost', port: PORT, strictPort: true },
     worker: { format: 'es' as const },

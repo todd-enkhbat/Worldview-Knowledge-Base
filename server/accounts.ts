@@ -50,6 +50,12 @@ export class Accounts {
   private readonly db: DatabaseSync
   private readonly now: () => number
 
+  /** Resolve a token's account before opening its world; unknown ids never create stores. */
+  userById(id: string): User | null {
+    const row = this.db.prepare('SELECT id,email,created_at FROM users WHERE id = ?').get(id)
+    return row ? { id: String(row.id), email: String(row.email), createdAt: Number(row.created_at) } : null
+  }
+
   constructor(path: string, now: () => number = Date.now) {
     if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true })
     this.db = new DatabaseSync(path)

@@ -1,6 +1,6 @@
 import type Anthropic from '@anthropic-ai/sdk'
 import { useWorld } from '../../app/store.ts'
-import { addAttachment, addNodes, type NodeDraftInput } from '../../data/repo.ts'
+import { addAttachment, addNodes, getStore, type NodeDraftInput } from '../../data/repo.ts'
 import { parseVault, type VaultFile } from '../../data/obsidian.ts'
 import { maxTemporalOrigin } from '../../domain/validate.ts'
 import type { Archetype, Embed, Link, NodeRecord, ReferenceDate, TemporalPrecision, WorldSettings } from '../../domain/types.ts'
@@ -8,7 +8,14 @@ import { fuzzyMatchFields } from '../../hud/fuzzy.ts'
 import { isSemanticReady, searchSemantic } from '../semanticIndex.ts'
 import { MAX_ATTACHMENT_BYTES, sniffBlob } from '../../data/attachments.ts'
 import { formatBytes, previewBytes } from './preview.ts'
-import type { ProposedNote } from './protocol.ts'
+import type { ProposedNote, ReadRecordInput } from './protocol.ts'
+import { initializeKnowledge, isKnowledgeNodeAllowed, readKnowledgePassage, searchKnowledge, useKnowledge } from '../../knowledge/index.ts'
+import { useWorkspace } from '../../workspace/state.ts'
+import type { KnowledgePassage, SearchFilters, SourceKind } from '../../knowledge/types.ts'
+import { resolveVaultLink } from '../../knowledge/vault.ts'
+import { buildEvidencePacket } from '../../knowledge/contextPacket.ts'
+import { artifactContext } from '../../knowledge/artifacts/policy.ts'
+import { ARTIFACTS_KV, emptyArtifacts, type ArtifactSnapshot } from '../../knowledge/artifacts/types.ts'
 
 // Turning intake into world records: proposals kept from the chat, Obsidian vaults, files
 // and pages as Claude content blocks, and search_world for the model.
@@ -161,38 +168,219 @@ export interface WorldHit {
   title: string
   kind: Archetype
   date: string
+  referenceDate: string | null
   tags: string[]
+  excerpt: string
+  start: number
+  end: number
+  digest: string
+  citationUrl: string
+  updatedAt: number
 }
 
-const hit = (r: NodeRecord): WorldHit => ({
-  id: r.id,
-  title: r.title,
-  kind: r.archetype,
-  date: new Date(r.referenceDate?.epochMs ?? r.temporalOrigin).toISOString().slice(0, 10),
-  tags: r.tags,
-})
+/** SHA-256 identifies the exact current record, not an unverifiable model-written quote. */
+export async function recordDigest(r: Pick<NodeRecord, 'id' | 'title' | 'contentMd' | 'updatedAt'>): Promise<string> {
+  const bytes = new TextEncoder().encode(JSON.stringify([r.id, r.title, r.contentMd, r.updatedAt]))
+  const digest = await crypto.subtle.digest('SHA-256', bytes)
+  return [...new Uint8Array(digest)].map((n) => n.toString(16).padStart(2, '0')).join('')
+}
+
+export interface EvidenceCitation {
+  citationUrl: string
+  title: string
+  nodeId?: string
+  sourceId?: string
+  passageId?: string
+  digest?: string
+  updatedAt?: number
+  versionId?: string
+}
+
+export function evidenceScope(): string[] {
+  return [...useWorkspace.getState().sourceIds]
+}
+
+export function evidenceFilters(): SearchFilters {
+  const state = useWorkspace.getState()
+  const after = state.authoredAfter ? Date.parse(`${state.authoredAfter}T00:00:00Z`) : NaN
+  const before = state.authoredBefore ? Date.parse(`${state.authoredBefore}T23:59:59.999Z`) : NaN
+  return {
+    aiOnly: true,
+    engine: state.retrievalEngine,
+    ...(state.sourceIds.length ? { sourceIds: evidenceScope() } : {}),
+    ...(state.role && state.role !== 'all' ? { role: state.role } : {}),
+    ...(state.sourceKind && state.sourceKind !== 'all' ? { kinds: [state.sourceKind as SourceKind] } : {}),
+    ...(Number.isFinite(after) ? { authoredAfter: after } : {}),
+    ...(Number.isFinite(before) ? { authoredBefore: before } : {}),
+  }
+}
+
+function passageInInvestigation(passage: Pick<KnowledgePassage, 'role' | 'authoredAt'>): boolean {
+  const filters = evidenceFilters()
+  if (filters.role && passage.role !== filters.role) return false
+  if (filters.authoredAfter !== undefined && (passage.authoredAt === null || passage.authoredAt < filters.authoredAfter)) return false
+  if (filters.authoredBefore !== undefined && (passage.authoredAt === null || passage.authoredAt > filters.authoredBefore)) return false
+  return true
+}
+
+function liveModelRecord(id: string): boolean {
+  const record = useWorld.getState().nodes.get(id)
+  return !!record && record.deletedAt === null && isKnowledgeNodeAllowed(id, true)
+}
+
+/** Source restrictions apply to generated projections as well as their original passages. */
+export function recordAllowedForModel(id: string): boolean {
+  if (!liveModelRecord(id)) return false
+  const filters = evidenceFilters()
+  const knowledge = useKnowledge.getState()
+  const sources = knowledge.sources.filter((s) => s.nodeId === id && !s.excluded && !s.deleted && s.aiAllowed && (!filters.sourceIds || filters.sourceIds.includes(s.id)) && (!filters.kinds || filters.kinds.includes(s.kind)))
+  if ((filters.sourceIds || filters.kinds) && !sources.length) return false
+  if (filters.role || filters.authoredAfter !== undefined || filters.authoredBefore !== undefined) {
+    // Reading a whole conversation would otherwise leak turns outside a human-only or
+    // dated investigation. Passage tools can select precisely within those sources.
+    const passages = knowledge.passages.filter((p) => sources.some((s) => s.id === p.sourceId && s.currentVersionId === p.versionId))
+    if (!passages.length || !passages.every(passageInInvestigation)) return false
+  }
+  return true
+}
+
+export function citationAllowed(citation: EvidenceCitation): boolean {
+  if (citation.nodeId && !(citation.passageId ? liveModelRecord(citation.nodeId) : recordAllowedForModel(citation.nodeId))) return false
+  if (citation.sourceId) {
+    const source = useKnowledge.getState().sources.find((s) => s.id === citation.sourceId)
+    if (!source || source.excluded || source.deleted || !source.aiAllowed) return false
+    if (citation.versionId && citation.versionId !== source.currentVersionId) return false
+    const filters = evidenceFilters()
+    if (filters.sourceIds && !filters.sourceIds.includes(source.id)) return false
+    if (filters.kinds && !filters.kinds.includes(source.kind)) return false
+    if (citation.passageId) {
+      const passage = useKnowledge.getState().passages.find((p) => p.id === citation.passageId && p.sourceId === source.id && p.versionId === source.currentVersionId)
+      if (!passage || !passageInInvestigation(passage)) return false
+    }
+  }
+  if (citation.nodeId && citation.updatedAt !== undefined && useWorld.getState().nodes.get(citation.nodeId)?.updatedAt !== citation.updatedAt) return false
+  return !!(citation.nodeId || citation.sourceId)
+}
+
+function excerptOf(text: string, query: string, length = 600): { excerpt: string; start: number; end: number } {
+  const lower = text.toLocaleLowerCase()
+  const terms = [query.trim(), ...query.trim().split(/\s+/)].filter(Boolean)
+  let match = -1
+  for (const term of terms) {
+    match = lower.indexOf(term.toLocaleLowerCase())
+    if (match >= 0) break
+  }
+  const start = Math.max(0, (match < 0 ? 0 : match) - 140)
+  const end = Math.min(text.length, start + length)
+  return { excerpt: text.slice(start, end), start, end }
+}
+
+async function hit(r: NodeRecord, query: string): Promise<WorldHit> {
+  const digest = await recordDigest(r)
+  return {
+    id: r.id,
+    title: r.title,
+    kind: r.archetype,
+    date: new Date(r.temporalOrigin).toISOString().slice(0, 10),
+    referenceDate: r.referenceDate ? new Date(r.referenceDate.epochMs).toISOString().slice(0, 10) : null,
+    tags: r.tags,
+    ...excerptOf(r.contentMd, query),
+    digest,
+    citationUrl: `#/library?record=${encodeURIComponent(r.id)}&digest=${digest}`,
+    updatedAt: r.updatedAt,
+  }
+}
 
 /** Semantic neighbours when the index is on, merged with keyword matches over title, tags and text. */
 export async function searchWorld(query: string, limit = 8): Promise<WorldHit[]> {
+  await initializeKnowledge()
+  const boundedLimit = Math.min(20, Math.max(1, Math.trunc(limit)))
   const nodes = useWorld.getState().nodes
-  const out = new Map<string, WorldHit>()
+  const out = new Map<string, NodeRecord>()
   if (isSemanticReady()) {
-    for (const n of await searchSemantic(query, limit).catch(() => [])) {
+    for (const n of await searchSemantic(query, boundedLimit).catch(() => [])) {
       const r = nodes.get(n.id)
-      if (r) out.set(r.id, hit(r))
+      if (r && recordAllowedForModel(r.id)) out.set(r.id, r)
     }
   }
   const ranked: { r: NodeRecord; score: number }[] = []
+  const phrase = query.trim().toLocaleLowerCase()
+  const terms = phrase.split(/\s+/).filter(Boolean)
   for (const r of nodes.values()) {
-    const m = fuzzyMatchFields(query, [r.title, r.tags.join(' '), r.contentMd.slice(0, 2000)])
-    if (m) ranked.push({ r, score: m.score })
+    if (!recordAllowedForModel(r.id)) continue
+    // The title matcher deliberately caps fields at 512 characters. Exact lexical
+    // matching scans the whole body instead of silently inheriting that UI limit.
+    const m = fuzzyMatchFields(query, [r.title, r.tags.join(' ')])
+    const body = r.contentMd.toLocaleLowerCase()
+    const all = `${r.title}\n${r.tags.join(' ')}\n${body}`.toLocaleLowerCase()
+    const lexical = body.includes(phrase) ? 150 : terms.length && terms.every((term) => all.includes(term)) ? 70 : null
+    if (m || lexical !== null) ranked.push({ r, score: Math.max(m?.score ?? -Infinity, lexical ?? -Infinity) })
   }
   ranked.sort((a, b) => b.score - a.score)
   for (const { r } of ranked) {
-    if (out.size >= limit) break
-    out.set(r.id, hit(r))
+    if (out.size >= boundedLimit) break
+    out.set(r.id, r)
   }
-  return [...out.values()].slice(0, limit)
+  // Policy or deletion can change while a semantic query or digest is being computed.
+  const results = await Promise.all([...out.values()].slice(0, boundedLimit).map((r) => hit(r, query)))
+  return results.filter((r) => {
+    const current = useWorld.getState().nodes.get(r.id)
+    return recordAllowedForModel(r.id) && current?.updatedAt === r.updatedAt && current.contentMd.slice(r.start, r.end) === r.excerpt
+  })
+}
+
+export async function readRecord(input: ReadRecordInput) {
+  await initializeKnowledge()
+  if (!recordAllowedForModel(input.id)) return { ok: false as const, error: 'not_available', message: 'This record is missing, deleted, outside the selected investigation or excluded from AI use.' }
+  const record = useWorld.getState().nodes.get(input.id)!
+  const digest = await recordDigest(record)
+  if (!recordAllowedForModel(input.id)) return { ok: false as const, error: 'not_available', message: 'This record is no longer available to AI.' }
+  if (useWorld.getState().nodes.get(input.id) !== record) return { ok: false as const, error: 'record_changed', message: 'The record changed while being read. Search again before citing it.' }
+  if (input.digest && input.digest !== digest) return { ok: false as const, error: 'record_changed', message: 'The record changed after search. Search again before citing its current content.' }
+  const offset = Math.min(record.contentMd.length, Math.max(0, Math.trunc(input.offset ?? 0)))
+  const end = Math.min(record.contentMd.length, offset + Math.min(8000, Math.max(1, Math.trunc(input.limit ?? 4000))))
+  return {
+    ok: true as const,
+    id: record.id,
+    title: record.title,
+    kind: record.archetype,
+    temporalOrigin: record.temporalOrigin,
+    temporalPrecision: record.temporalPrecision,
+    referenceDate: record.referenceDate,
+    createdAt: record.createdAt,
+    provenance: record.provenance ?? null,
+    authorship: 'Read provenance and original source roles before attributing this record to the user.',
+    text: record.contentMd.slice(offset, end),
+    offset,
+    end,
+    totalLength: record.contentMd.length,
+    nextOffset: end < record.contentMd.length ? end : null,
+    digest,
+    updatedAt: record.updatedAt,
+    citationUrl: `#/library?record=${encodeURIComponent(record.id)}&digest=${digest}`,
+  }
+}
+
+export async function searchPassagesForModel(query: string, limit = 8) {
+  await initializeKnowledge()
+  const hits = await searchKnowledge(query, { ...evidenceFilters(), limit: Math.min(20, Math.max(1, limit)) })
+  return hits.filter((h) => citationAllowed({ sourceId: h.sourceId, nodeId: h.nodeId, passageId: h.id, versionId: h.versionId, title: h.title, citationUrl: '' })).map((h) => ({ ...h, citationUrl: `#/library?passage=${encodeURIComponent(h.id)}` }))
+}
+
+export async function readPassageForModel(id: string) {
+  await initializeKnowledge()
+  const passage = await readKnowledgePassage(id, { aiOnly: true })
+  if (!passage || !citationAllowed({ sourceId: passage.sourceId, nodeId: passage.nodeId, passageId: passage.id, versionId: passage.versionId, title: passage.title, citationUrl: '' })) {
+    return { ok: false as const, error: 'not_available', message: 'This passage is missing, stale, outside the selected investigation or excluded from AI use.' }
+  }
+  return { ok: true as const, ...passage, citationUrl: `#/library?passage=${encodeURIComponent(passage.id)}` }
+}
+
+export async function readMemoryContextForModel(query: string, maxBytes = 16384) {
+  const hits = await searchPassagesForModel(query, 20)
+  const artifacts = await getStore().getKv<ArtifactSnapshot>(ARTIFACTS_KV) ?? emptyArtifacts()
+  const snapshot = useKnowledge.getState(), filters = evidenceFilters()
+  return buildEvidencePacket(query, snapshot, hits, artifactContext(artifacts, snapshot, { sourceIds: filters.sourceIds, aiOnly: true }), { filters, maxBytes })
 }
 
 // ─── files and pages as content blocks ───────────────────────────────────────────────
@@ -380,19 +568,23 @@ export function isVault(files: readonly FolderFile[]): boolean {
 export async function importVault(
   folder: readonly FolderFile[],
   now = Date.now(),
+  opts: { shouldWrite?: () => boolean } = {},
 ): Promise<{ added: number; lossless: number; unresolved: number; skipped: number; attached: number }> {
+  const active = () => opts.shouldWrite?.() !== false
+  if (!active()) return { added: 0, lossless: 0, unresolved: 0, skipped: 0, attached: 0 }
   const settings = useWorld.getState().settings
   if (!settings) throw new Error('The world is not ready yet.')
   const visible = folder.filter((f) => !f.path.split('/').some((p) => p.startsWith('.')))
   const md: VaultFile[] = await Promise.all(
     visible.filter((f) => /\.md$/i.test(f.path)).map(async (f) => ({ path: f.path, text: await f.file.text(), lastModified: f.file.lastModified })),
   )
+  if (!active()) return { added: 0, lossless: 0, unresolved: 0, skipped: 0, attached: 0 }
   const byPath = new Map<string, File>()
-  const byBase = new Map<string, File>()
+  const attachmentCandidates: { id: string; path: string }[] = []
   for (const f of visible) {
     if (/\.md$/i.test(f.path)) continue
     byPath.set(f.path.toLowerCase(), f.file)
-    byBase.set(f.path.split('/').pop()!.toLowerCase(), f.file)
+    attachmentCandidates.push({ id: f.path, path: f.path })
   }
   const { drafts, files, lossless, unresolved } = parseVault(md, { now })
   const fitted = drafts.map((d) =>
@@ -400,15 +592,20 @@ export async function importVault(
       ? d // exported by this app: already valid for a world, keep it exactly
       : { ...d, ...fitDate(d.temporalOrigin ?? now, d.temporalPrecision ?? 'day', settings, now) },
   )
-  const added = await addNodes(fitted, { label: `Imported ${fitted.length} notes from Obsidian` })
+  const added = await addNodes(fitted, { label: `Imported ${fitted.length} notes from Obsidian`, shouldWrite: active })
+  if (!active()) return { added: added.length, lossless, unresolved, skipped: fitted.length - added.length, attached: 0 }
   let attached = 0
   for (const rec of added) {
     for (const ref of files.get(rec.id) ?? []) {
-      const file = byPath.get(ref.toLowerCase()) ?? byBase.get(ref.split('/').pop()!.toLowerCase())
+      if (!active()) return { added: added.length, lossless, unresolved, skipped: fitted.length - added.length, attached }
+      const fromPath = rec.provenance?.source === 'obsidian' ? rec.provenance.ref ?? `${rec.title}.md` : `${rec.title}.md`
+      const resolution = resolveVaultLink(fromPath, ref, attachmentCandidates)
+      const file = resolution.status === 'resolved' ? byPath.get(resolution.path.toLowerCase()) : undefined
       if (!file) continue
-      await addAttachment(rec.id, file, file.name)
+      await addAttachment(rec.id, file, file.name, { shouldWrite: active })
         .then(() => attached++)
         .catch(() => {})
+      if (!active()) return { added: added.length, lossless, unresolved, skipped: fitted.length - added.length, attached }
     }
   }
   return { added: added.length, lossless, unresolved, skipped: fitted.length - added.length, attached }

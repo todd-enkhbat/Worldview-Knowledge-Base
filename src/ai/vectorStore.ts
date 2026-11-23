@@ -1,5 +1,6 @@
 import { openDB, type IDBPDatabase } from 'idb'
 import { bruteKnn, EMBED_DIM, fromBase64, toBase64 } from './embedText.ts'
+import { CLIENT_ID } from '../data/serverSync.ts'
 
 // Where embeddings live. With the SQLite engine: its vec0 table (server-side KNN). With
 // IndexedDB: a separate database in this browser ('hyperspace-embeddings'), brute-force KNN.
@@ -22,7 +23,7 @@ export interface VectorStore {
 
 export function serverVectorStore(base = '/api', f: typeof fetch = (...a) => fetch(...a)): VectorStore {
   const call = async (path: string, init?: RequestInit) => {
-    const res = await f(`${base}/embeddings${path}`, init)
+    const res = await f(`${base}/embeddings${path}`, { ...init, headers: { ...(init?.headers as Record<string, string> | undefined), 'x-wv-client': CLIENT_ID } })
     if (!res.ok) throw new Error(`embeddings ${path}: ${res.status} ${await res.text()}`)
     return res
   }

@@ -1,0 +1,157 @@
+{
+  "scope": "Inert source references, not imported by the application or installed as agent skills. TypeScript uses .ts.txt filenames.",
+  "files": [
+    {
+      "project": "gbrain",
+      "upstreamCommit": "47512aa50fa2be1ab3af55bf60c242a11be76392",
+      "upstreamPath": "LICENSE",
+      "kitPath": "gbrain/LICENSE",
+      "sha256": "e56fbb5b3d95756f3fa1cfefa24732ec79f18ece1ad08a4e79e00df57e8b198c",
+      "modified": false
+    },
+    {
+      "project": "gbrain",
+      "upstreamCommit": "47512aa50fa2be1ab3af55bf60c242a11be76392",
+      "upstreamPath": "src/core/facts/supersede-interval.ts",
+      "kitPath": "gbrain/src/core/facts/supersede-interval.ts.txt",
+      "sha256": "de55fb25728dc6f37e2b4a69b35162fd02fa2259242177b1cf9e9d53fe14a287",
+      "modified": false
+    },
+    {
+      "project": "gbrain",
+      "upstreamCommit": "47512aa50fa2be1ab3af55bf60c242a11be76392",
+      "upstreamPath": "src/core/search/rrf-page-fusion.ts",
+      "kitPath": "gbrain/src/core/search/rrf-page-fusion.ts.txt",
+      "sha256": "1edbe59dcef0c17b92e8e11d77d4ff5d6e96d3362ef99739346b9b1480a7bdef",
+      "modified": false
+    },
+    {
+      "project": "qmd",
+      "upstreamCommit": "8be0c42395c02ff73bce6d6c2e67d7905b0a771c",
+      "upstreamPath": "LICENSE",
+      "kitPath": "qmd/LICENSE",
+      "sha256": "24c446836e7e2cdea13a914de10c88c553e6297366061ba24013b8ce73c8f7fa",
+      "modified": false
+    },
+    {
+      "project": "qmd",
+      "upstreamCommit": "8be0c42395c02ff73bce6d6c2e67d7905b0a771c",
+      "upstreamPath": "src/bench/types.ts",
+      "kitPath": "qmd/src/bench/types.ts.txt",
+      "sha256": "84f905f0f43bc00b626e673399dc7d4802eac08756e0544856034e16de5b1c74",
+      "modified": false
+    },
+    {
+      "project": "claude-mem",
+      "upstreamCommit": "29bc1cdf32aca60b3bfeec3b718d4ed6614b4f97",
+      "upstreamPath": "LICENSE",
+      "kitPath": "claude-mem/LICENSE",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "modified": false
+    },
+    {
+      "project": "claude-mem",
+      "upstreamCommit": "29bc1cdf32aca60b3bfeec3b718d4ed6614b4f97",
+      "upstreamPath": "NOTICE",
+      "kitPath": "claude-mem/NOTICE",
+      "sha256": "35003c303ee484c77872fd45eb5d590ce679d1ae7ac5bb672d33069cca66685b",
+      "modified": false
+    },
+    {
+      "project": "claude-mem",
+      "upstreamCommit": "29bc1cdf32aca60b3bfeec3b718d4ed6614b4f97",
+      "upstreamPath": "src/shared/progressive-search.ts",
+      "kitPath": "claude-mem/src/shared/progressive-search.ts.txt",
+      "sha256": "62c86a2120c9a572e4df09bac975fda2593f01c294fd86f4d4fa6c9bb9f0d552",
+      "modified": false
+    },
+    {
+      "project": "claude-mem",
+      "upstreamCommit": "29bc1cdf32aca60b3bfeec3b718d4ed6614b4f97",
+      "upstreamPath": "src/services/context/ContextBudget.ts",
+      "kitPath": "claude-mem/src/services/context/ContextBudget.ts.txt",
+      "sha256": "e792395320592413d35b434e659681f2decc7a08cb95b683b15d953ae58fab8f",
+      "modified": false
+    },
+    {
+      "project": "obsidian-skills",
+      "upstreamCommit": "b110b2f8e9eb1f287892f937050dfd40af862cbb",
+      "upstreamPath": "LICENSE",
+      "kitPath": "obsidian-skills/LICENSE",
+      "sha256": "64c64d48361edfe8610016441bf593256ea9b67f133b00f47c55aa29ee878567",
+      "modified": false
+    },
+    {
+      "project": "obsidian-skills",
+      "upstreamCommit": "b110b2f8e9eb1f287892f937050dfd40af862cbb",
+      "upstreamPath": "plugins/obsidian/LICENSE",
+      "kitPath": "obsidian-skills/plugins/obsidian/LICENSE",
+      "sha256": "64c64d48361edfe8610016441bf593256ea9b67f133b00f47c55aa29ee878567",
+      "modified": false
+    },
+    {
+      "project": "obsidian-skills",
+      "upstreamCommit": "b110b2f8e9eb1f287892f937050dfd40af862cbb",
+      "upstreamPath": "plugins/obsidian/skills/obsidian-markdown/SKILL.md",
+      "kitPath": "obsidian-skills/plugins/obsidian/skills/obsidian-markdown/SKILL.md",
+      "sha256": "f1c4ff5257d3f9743af797d755cabeef129f553704d5ff67ebf1239f9569f081",
+      "modified": false
+    },
+    {
+      "project": "obsidian-skills",
+      "upstreamCommit": "b110b2f8e9eb1f287892f937050dfd40af862cbb",
+      "upstreamPath": "plugins/obsidian/skills/obsidian-markdown/references/PROPERTIES.md",
+      "kitPath": "obsidian-skills/plugins/obsidian/skills/obsidian-markdown/references/PROPERTIES.md",
+      "sha256": "f2d01b096a1c981a675e86b6a8c46bab271b278497646d465467b8120043b87c",
+      "modified": false
+    },
+    {
+      "project": "obsidian-skills",
+      "upstreamCommit": "b110b2f8e9eb1f287892f937050dfd40af862cbb",
+      "upstreamPath": "plugins/obsidian/skills/obsidian-markdown/references/EMBEDS.md",
+      "kitPath": "obsidian-skills/plugins/obsidian/skills/obsidian-markdown/references/EMBEDS.md",
+      "sha256": "63b6205507e28fb58cf200bc348a2b139e50ae739743e2e6316732148973cb7a",
+      "modified": false
+    },
+    {
+      "project": "obsidian-skills",
+      "upstreamCommit": "b110b2f8e9eb1f287892f937050dfd40af862cbb",
+      "upstreamPath": "plugins/obsidian/skills/obsidian-markdown/references/CALLOUTS.md",
+      "kitPath": "obsidian-skills/plugins/obsidian/skills/obsidian-markdown/references/CALLOUTS.md",
+      "sha256": "9912ec2e3f8711f65b8ceb82cc19cbffc5e6f8ccf2ab627e18926c522c383d8b",
+      "modified": false
+    },
+    {
+      "project": "obsidian-skills",
+      "upstreamCommit": "b110b2f8e9eb1f287892f937050dfd40af862cbb",
+      "upstreamPath": "plugins/obsidian/skills/json-canvas/SKILL.md",
+      "kitPath": "obsidian-skills/plugins/obsidian/skills/json-canvas/SKILL.md",
+      "sha256": "4db4e69eea910b598c249e41bcdda85a70856348adaf11c35371198e258d50a6",
+      "modified": false
+    },
+    {
+      "project": "obsidian-skills",
+      "upstreamCommit": "b110b2f8e9eb1f287892f937050dfd40af862cbb",
+      "upstreamPath": "plugins/obsidian/skills/json-canvas/references/EXAMPLES.md",
+      "kitPath": "obsidian-skills/plugins/obsidian/skills/json-canvas/references/EXAMPLES.md",
+      "sha256": "f5ce15a4b74643122396265e8c37c828874a4005794de2aee7030662968768eb",
+      "modified": false
+    },
+    {
+      "project": "obsidian-skills",
+      "upstreamCommit": "b110b2f8e9eb1f287892f937050dfd40af862cbb",
+      "upstreamPath": "plugins/obsidian/skills/obsidian-bases/SKILL.md",
+      "kitPath": "obsidian-skills/plugins/obsidian/skills/obsidian-bases/SKILL.md",
+      "sha256": "7a1659e2c00e7b74c8767002213dd977967ddd30dd15a7f33b693e783a4546e9",
+      "modified": false
+    },
+    {
+      "project": "obsidian-skills",
+      "upstreamCommit": "b110b2f8e9eb1f287892f937050dfd40af862cbb",
+      "upstreamPath": "plugins/obsidian/skills/obsidian-bases/references/FUNCTIONS_REFERENCE.md",
+      "kitPath": "obsidian-skills/plugins/obsidian/skills/obsidian-bases/references/FUNCTIONS_REFERENCE.md",
+      "sha256": "208fd63aead9bca1975626fea52605e6ab9434dc0529d923feb36b18b8877d3b",
+      "modified": false
+    }
+  ]
+}

@@ -119,7 +119,7 @@ export function Banners({ className = '' }: BannersProps) {
             urgent
             actions={
               <>
-                {marker?.backupName && (
+                {marker?.backupName && marker.backupKind !== 'directory' && (
                   <button
                     type="button"
                     className={BTN_ON_ALARM}
@@ -140,7 +140,7 @@ export function Banners({ className = '' }: BannersProps) {
             }
           >
             An import stopped partway{marker ? ` (started ${new Date(marker.startedAt).toLocaleString()})` : ''}, so this world may be incomplete.
-            {marker?.backupName ? ' The world from before the import was saved automatically.' : ' No pre-import backup was taken.'}
+            {marker?.backupKind === 'directory' ? ` Restore the retained ${marker.backupName ?? 'backup'} folder using Settings → Backups → Restore folder backup.` : marker?.backupName ? ' The world from before the import was saved automatically.' : ' No pre-import backup was taken.'}
           </Banner>
         )
       }
@@ -218,6 +218,8 @@ export function Banners({ className = '' }: BannersProps) {
         )
       case 'backup-nag': {
         const never = settings?.lastBackupAt === null
+        const storeKind = isRepoReady() ? getStore().info.kind : null
+        const location = storeKind === 'sqlite' ? 'on this local service' : storeKind === 'idb' ? 'in browser storage' : 'in this session’s memory'
         return (
           <Banner
             key={k}
@@ -243,8 +245,8 @@ export function Banners({ className = '' }: BannersProps) {
             }
           >
             {never
-              ? 'This world has never been exported. It lives only in this browser.'
-              : `Last backup ${backupAgeLabel(settings?.lastBackupAt ?? null, now)}. Browser storage is the only copy.`}
+              ? `This world has never been exported. Its working copy is stored ${location}.`
+              : `Last backup ${backupAgeLabel(settings?.lastBackupAt ?? null, now)}. Its working copy is stored ${location}.`}
           </Banner>
         )
       }

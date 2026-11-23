@@ -1,5 +1,5 @@
 -- The SQLite engine's schema (Phase 4). server/worldDb.ts executes this file once per new
--- database (PRAGMA user_version 0 → 1) after loading sqlite-vec. It mirrors
+-- database (PRAGMA user_version 0 → 2) after loading sqlite-vec. It mirrors
 -- src/domain/types.ts; keep it in step when fields are added (unknown NodeRecord keys
 -- survive in nodes.extra, so an older server never drops a newer client's fields).
 -- Conventions: epoch milliseconds as INTEGER; booleans as INTEGER 0/1; JSON as TEXT checked
@@ -73,7 +73,7 @@ CREATE INDEX links_target ON links (target_id);
 -- AssetMeta. Bytes live in a content directory (or the blob column below for small assets).
 CREATE TABLE assets (
   id         TEXT    PRIMARY KEY,
-  kind       TEXT    NOT NULL CHECK (kind IN ('splat-proxy', 'splat-interior', 'splat-thumb', 'image', 'image-thumb', 'text')),
+  kind       TEXT    NOT NULL CHECK (kind IN ('splat-proxy', 'splat-interior', 'splat-thumb', 'image', 'image-thumb', 'text', 'file')),
   mime       TEXT    NOT NULL,
   bytes      INTEGER NOT NULL CHECK (bytes >= 0),
   created_at INTEGER NOT NULL,
@@ -86,7 +86,7 @@ CREATE INDEX assets_node ON assets (node_id);
 CREATE TABLE attachments (
   id             TEXT    PRIMARY KEY,
   node_id        TEXT    NOT NULL REFERENCES nodes (id) ON DELETE CASCADE,
-  kind           TEXT    NOT NULL CHECK (kind IN ('image', 'text')),
+  kind           TEXT    NOT NULL CHECK (kind IN ('image', 'text', 'file')),
   name           TEXT    NOT NULL,
   mime           TEXT    NOT NULL,
   bytes          INTEGER NOT NULL CHECK (bytes >= 0),

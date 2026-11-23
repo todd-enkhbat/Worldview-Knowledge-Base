@@ -1,0 +1,18 @@
+.knowledge-capture-section{padding:24px 0;border-bottom:1px solid var(--color-bone,#d8e0e8);border-color:color-mix(in srgb,var(--color-bone,#d8e0e8) 14%,transparent)}
+.knowledge-capture-section h2{margin:0 0 8px;font-size:20px;font-weight:500}
+.knowledge-capture-section p{margin:8px 0 14px;max-width:82ch;line-height:1.6}
+.knowledge-capture-controls{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.knowledge-capture-controls label{display:flex;align-items:center;gap:7px;font-size:13px}
+.knowledge-capture-controls input:not([type=checkbox]),.knowledge-capture-controls select{background:#152333;color:inherit;border:1px solid #40505e;padding:9px;border-radius:6px;min-width:80px;max-width:100%}
+.knowledge-capture-controls button,.knowledge-evidence-player button{color:inherit;background:#1e3040;border:1px solid #4c6070;padding:9px 12px;border-radius:6px;cursor:pointer}
+.knowledge-capture-controls button:disabled{opacity:.45;cursor:default}
+.knowledge-capture-controls button:focus-visible,.knowledge-capture-controls input:focus-visible,.knowledge-capture-controls select:focus-visible{outline:2px solid #d3b374;outline-offset:3px}
+.knowledge-capture-muted{font-size:12px;color:#aebac7}
+.knowledge-capture-list{list-style:none;margin:16px 0 0;padding:0}
+.knowledge-capture-list li{display:flex;justify-content:space-between;gap:16px;padding:15px 0;border-top:1px solid #344553;flex-wrap:wrap}
+.knowledge-capture-list li strong,.knowledge-capture-list li span{display:block;overflow-wrap:anywhere}
+.knowledge-capture-list li span{font-size:12px;color:#aebac7;margin-top:5px}
+.knowledge-evidence-player{padding:12px 0}
+.knowledge-evidence-player audio,.knowledge-evidence-player video{display:block;width:min(100%,640px);margin-top:10px}
+@media(pointer:coarse){.knowledge-capture-controls button,.knowledge-capture-controls select,.knowledge-capture-controls input:not([type=checkbox]),.knowledge-evidence-player button{min-height:44px}.knowledge-capture-controls input:not([type=checkbox]){font-size:16px}}
+@media(max-width:600px){.knowledge-capture-controls{gap:10px}.knowledge-capture-controls label{flex-wrap:wrap}.knowledge-capture-controls input:not([type=checkbox]),.knowledge-capture-controls select{max-width:250px}}

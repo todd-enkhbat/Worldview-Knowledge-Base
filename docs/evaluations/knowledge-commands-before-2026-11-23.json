@@ -1,0 +1,82 @@
+{
+  "measuredAt": "2026-11-23T06:04:15.376Z",
+  "node": "v26.5.0",
+  "cpu": "Apple M5 Pro",
+  "os": "darwin 25.6.0",
+  "samples": 30,
+  "methodology": "Actual captureThought and searchKnowledge application commands through initialized repository and localhost HTTP over durable temporary SQLite. Includes original retention, version/passage creation, cached ledger read, Immer drafts, client diff, pending/published projection phases, repository world updates, and final command resolution. Background organization is drained between captures and reported separately. Three warmups excluded. Synthetic one-passage source corpus; initial sources are unprojected documents, captured thoughts become world nodes. No browser rendering, inference, embeddings or native QMD measured.",
+  "results": [
+    {
+      "sources": 1000,
+      "captureThought": {
+        "samples": 30,
+        "p50Ms": 21.557,
+        "p95Ms": 23.096,
+        "minMs": 20.456,
+        "maxMs": 26.044
+      },
+      "searchKnowledge": {
+        "samples": 30,
+        "p50Ms": 6.3,
+        "p95Ms": 6.749,
+        "minMs": 4.378,
+        "maxMs": 6.888
+      },
+      "organizationDrainAfterCapture": {
+        "samples": 30,
+        "p50Ms": 12.006,
+        "p95Ms": 12.734,
+        "minMs": 10.582,
+        "maxMs": 12.827
+      }
+    },
+    {
+      "sources": 10000,
+      "captureThought": {
+        "samples": 30,
+        "p50Ms": 133.681,
+        "p95Ms": 142.645,
+        "minMs": 128.699,
+        "maxMs": 144.785
+      },
+      "searchKnowledge": {
+        "samples": 30,
+        "p50Ms": 23.094,
+        "p95Ms": 26.667,
+        "minMs": 6.418,
+        "maxMs": 26.882
+      },
+      "organizationDrainAfterCapture": {
+        "samples": 30,
+        "p50Ms": 143.226,
+        "p95Ms": 160.517,
+        "minMs": 135.722,
+        "maxMs": 164.385
+      }
+    },
+    {
+      "sources": 50000,
+      "captureThought": {
+        "samples": 30,
+        "p50Ms": 703.817,
+        "p95Ms": 823.505,
+        "minMs": 659.001,
+        "maxMs": 883.231
+      },
+      "searchKnowledge": {
+        "samples": 30,
+        "p50Ms": 141.272,
+        "p95Ms": 179.167,
+        "minMs": 25.789,
+        "maxMs": 237.46
+      },
+      "organizationDrainAfterCapture": {
+        "samples": 30,
+        "p50Ms": 841.76,
+        "p95Ms": 928.286,
+        "minMs": 761.528,
+        "maxMs": 976.089
+      }
+    }
+  ]
+}

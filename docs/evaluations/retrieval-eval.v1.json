@@ -1,0 +1,5271 @@
+{
+  "schemaVersion": 1,
+  "fixture": "tests/fixtures/retrieval-eval.v1.json",
+  "description": "Fifty hand-authored synthetic evidence tasks. Ranking labels are source-level graded relevance, not model truth judgments. Not a real-user or semantic-model benchmark.",
+  "cutoff": 5,
+  "generatedAt": "2026-11-23T05:55:41.311Z",
+  "limitations": [
+    "Synthetic fixtures measure regression behavior on known evidence, not real-user retrieval quality.",
+    "No semantic model or answer generation is evaluated; answer faithfulness and belief correctness remain unassessed.",
+    "Source-level rankings deduplicate passages by full source identity. MRR and graded nDCG use cutoff 5. Empty relevance cases are scored as abstention, outside ranking averages.",
+    "Context delivery means the exact approved text is present in the rendered provider packet; it does not claim that a model attended to or followed it."
+  ],
+  "engines": [
+    {
+      "engine": "sqlite-fts5",
+      "questions": 50,
+      "rankedQuestions": 38,
+      "abstentionQuestions": 12,
+      "correctAbstentions": 12,
+      "recallAtK": 1,
+      "mrrAtK": 1,
+      "ndcgAtK": 0.9995484796817564,
+      "invariantChecks": 700,
+      "invariantFailures": 0,
+      "cases": [
+        {
+          "id": "01",
+          "question": "When is the approved Orchid launch?",
+          "query": "Orchid launch approved",
+          "filters": {
+            "aiOnly": true
+          },
+          "relevantSources": {
+            "orchid": 3,
+            "orchid-risk": 1
+          },
+          "retrievedPassageIds": [
+            "orchid-launch",
+            "orchid-estimate",
+            "orchid-checklist",
+            "orchid-risk-note",
+            "aurora-budget"
+          ],
+          "sourceRanking": [
+            "orchid",
+            "orchid-assistant",
+            "orchid-risk",
+            "aurora"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 0.9828422279067397
+          },
+          "packet": {
+            "evidenceIds": [
+              "orchid-launch",
+              "orchid-estimate",
+              "orchid-checklist",
+              "orchid-risk-note",
+              "aurora-budget"
+            ],
+            "contextIds": [
+              "profile",
+              "orchid-project",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 2879,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "02",
+          "question": "Who owns the Orchid launch?",
+          "query": "Orchid Mira owner",
+          "filters": {
+            "aiOnly": true
+          },
+          "relevantSources": {
+            "orchid": 3,
+            "orchid-assistant": 1
+          },
+          "retrievedPassageIds": [
+            "orchid-launch",
+            "orchid-estimate",
+            "aurora-budget",
+            "orchid-checklist",
+            "orchid-risk-note"
+          ],
+          "sourceRanking": [
+            "orchid",
+            "orchid-assistant",
+            "aurora",
+            "orchid-risk"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "orchid-launch",
+              "orchid-estimate",
+              "aurora-budget",
+              "orchid-checklist",
+              "orchid-risk-note"
+            ],
+            "contextIds": [
+              "profile",
+              "orchid-project",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 2871,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "03",
+          "question": "What must the Orchid checklist contain?",
+          "query": "Orchid checklist safety rollback",
+          "filters": {
+            "aiOnly": true
+          },
+          "relevantSources": {
+            "orchid": 3
+          },
+          "retrievedPassageIds": [
+            "orchid-checklist",
+            "orchid-launch",
+            "orchid-risk-note",
+            "orchid-estimate"
+          ],
+          "sourceRanking": [
+            "orchid",
+            "orchid-risk",
+            "orchid-assistant"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "orchid-checklist",
+              "orchid-launch",
+              "orchid-risk-note",
+              "orchid-estimate"
+            ],
+            "contextIds": [
+              "profile",
+              "orchid-project",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 2548,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "04",
+          "question": "Which source opposes the Orchid launch?",
+          "query": "Orchid supplier opposes reserve",
+          "filters": {
+            "aiOnly": true
+          },
+          "relevantSources": {
+            "orchid-risk": 3
+          },
+          "retrievedPassageIds": [
+            "orchid-risk-note",
+            "opal-quote",
+            "orchid-checklist",
+            "orchid-launch",
+            "orchid-estimate"
+          ],
+          "sourceRanking": [
+            "orchid-risk",
+            "opal",
+            "orchid",
+            "orchid-assistant"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "orchid-risk-note",
+              "opal-quote",
+              "orchid-checklist",
+              "orchid-launch",
+              "orchid-estimate"
+            ],
+            "contextIds": [
+              "profile",
+              "orchid-project",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 2877,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "05",
+          "question": "What did the assistant estimate for Orchid?",
+          "query": "Orchid assistant estimate",
+          "filters": {
+            "aiOnly": true,
+            "role": "assistant"
+          },
+          "relevantSources": {
+            "orchid-assistant": 3
+          },
+          "retrievedPassageIds": [
+            "orchid-estimate",
+            "opal-assistant"
+          ],
+          "sourceRanking": [
+            "orchid-assistant",
+            "opal"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "orchid-estimate",
+              "opal-assistant"
+            ],
+            "contextIds": [
+              "profile"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 1175,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "06",
+          "question": "What battery runtime does the Cedar manufacturer rate?",
+          "query": "Cedar manufacturer battery laboratory",
+          "filters": {
+            "aiOnly": true
+          },
+          "relevantSources": {
+            "cedar-spec": 3,
+            "cedar-field": 1
+          },
+          "retrievedPassageIds": [
+            "cedar-rating",
+            "cedar-observation",
+            "orchid-risk-note"
+          ],
+          "sourceRanking": [
+            "cedar-spec",
+            "cedar-field",
+            "orchid-risk"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "cedar-rating",
+              "cedar-observation",
+              "orchid-risk-note"
+            ],
+            "contextIds": [
+              "profile",
+              "orchid-project",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 2212,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "07",
+          "question": "What did I observe for Cedar in cold weather?",
+          "query": "Cedar cold seven measured",
+          "filters": {
+            "aiOnly": true
+          },
+          "relevantSources": {
+            "cedar-field": 3,
+            "cedar-spec": 1
+          },
+          "retrievedPassageIds": [
+            "cedar-observation",
+            "cedar-rating"
+          ],
+          "sourceRanking": [
+            "cedar-field",
+            "cedar-spec"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "cedar-observation",
+              "cedar-rating"
+            ],
+            "contextIds": [
+              "profile",
+              "orchid-project",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 1818,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "08",
+          "question": "How much was Aurora allowed to spend?",
+          "query": "Aurora budget 4200",
+          "filters": {
+            "aiOnly": true
+          },
+          "relevantSources": {
+            "aurora": 3
+          },
+          "retrievedPassageIds": [
+            "aurora-budget",
+            "long-quote"
+          ],
+          "sourceRanking": [
+            "aurora",
+            "long"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "aurora-budget",
+              "long-quote"
+            ],
+            "contextIds": [
+              "profile",
+              "orchid-project",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 14023,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "09",
+          "question": "Who owns the Aurora budget?",
+          "query": "Aurora Ren owner",
+          "filters": {
+            "aiOnly": true
+          },
+          "relevantSources": {
+            "aurora": 3
+          },
+          "retrievedPassageIds": [
+            "aurora-budget",
+            "orchid-launch"
+          ],
+          "sourceRanking": [
+            "aurora",
+            "orchid"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "aurora-budget",
+              "orchid-launch"
+            ],
+            "contextIds": [
+              "profile",
+              "orchid-project",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 1729,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "10",
+          "question": "What water and temperature did the Lyra experiment use?",
+          "query": "Lyra freshwater 18",
+          "filters": {
+            "aiOnly": true
+          },
+          "relevantSources": {
+            "lyra": 3
+          },
+          "retrievedPassageIds": [
+            "lyra-water"
+          ],
+          "sourceRanking": [
+            "lyra"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "lyra-water"
+            ],
+            "contextIds": [
+              "profile",
+              "orchid-project",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 1447,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "11",
+          "question": "Was salt used in the Lyra control?",
+          "query": "Lyra control salt",
+          "filters": {
+            "aiOnly": true
+          },
+          "relevantSources": {
+            "lyra": 3
+          },
+          "retrievedPassageIds": [
+            "lyra-water"
+          ],
+          "sourceRanking": [
+            "lyra"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "lyra-water"
+            ],
+            "contextIds": [
+              "profile",
+              "orchid-project",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 1426,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "12",
+          "question": "What soil pH was captured for Sequoia?",
+          "query": "Sequoia soil pH",
+          "filters": {
+            "aiOnly": true
+          },
+          "relevantSources": {
+            "sequoia": 3
+          },
+          "retrievedPassageIds": [
+            "sequoia-soil"
+          ],
+          "sourceRanking": [
+            "sequoia"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "sequoia-soil"
+            ],
+            "contextIds": [
+              "profile",
+              "orchid-project",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 1410,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "13",
+          "question": "What is the corrected Horizon classification?",
+          "query": "Horizon classification amber",
+          "filters": {
+            "aiOnly": true
+          },
+          "relevantSources": {
+            "horizon": 3
+          },
+          "retrievedPassageIds": [
+            "horizon-current"
+          ],
+          "sourceRanking": [
+            "horizon"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "horizon-current"
+            ],
+            "contextIds": [
+              "profile",
+              "orchid-project",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 1415,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "14",
+          "question": "What is authoritative in the Quartz search architecture?",
+          "query": "Quartz authoritative original Markdown",
+          "filters": {
+            "aiOnly": true
+          },
+          "relevantSources": {
+            "quartz": 3
+          },
+          "retrievedPassageIds": [
+            "quartz-index"
+          ],
+          "sourceRanking": [
+            "quartz"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "quartz-index"
+            ],
+            "contextIds": [
+              "profile",
+              "orchid-project",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 1472,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "15",
+          "question": "When and where does the Willow ferry depart?",
+          "query": "Willow ferry 08 eastern pier",
+          "filters": {
+            "aiOnly": true
+          },
+          "relevantSources": {
+            "willow": 3
+          },
+          "retrievedPassageIds": [
+            "willow-time"
+          ],
+          "sourceRanking": [
+            "willow"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "willow-time"
+            ],
+            "contextIds": [
+              "profile",
+              "orchid-project",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 1439,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "16",
+          "question": "When does the Willow winter timetable start?",
+          "query": "Willow winter November 20",
+          "filters": {
+            "aiOnly": true
+          },
+          "relevantSources": {
+            "willow": 3
+          },
+          "retrievedPassageIds": [
+            "willow-time",
+            "orchid-launch",
+            "orchid-risk-note"
+          ],
+          "sourceRanking": [
+            "willow",
+            "orchid",
+            "orchid-risk"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "willow-time",
+              "orchid-launch",
+              "orchid-risk-note"
+            ],
+            "contextIds": [
+              "profile",
+              "orchid-project",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 2152,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "17",
+          "question": "What did I prefer in the Opal comparison?",
+          "query": "Opal prefer smaller space",
+          "filters": {
+            "aiOnly": true,
+            "role": "human"
+          },
+          "relevantSources": {
+            "opal": 3
+          },
+          "retrievedPassageIds": [
+            "opal-human"
+          ],
+          "sourceRanking": [
+            "opal"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "opal-human"
+            ],
+            "contextIds": [
+              "profile",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 1014,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "18",
+          "question": "What did the assistant recommend for Opal?",
+          "query": "Opal recommends larger",
+          "filters": {
+            "aiOnly": true,
+            "role": "assistant"
+          },
+          "relevantSources": {
+            "opal": 3
+          },
+          "retrievedPassageIds": [
+            "opal-assistant"
+          ],
+          "sourceRanking": [
+            "opal"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "opal-assistant"
+            ],
+            "contextIds": [
+              "profile"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 770,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "19",
+          "question": "What does the Opal supplier claim?",
+          "query": "Opal supplier stronger",
+          "filters": {
+            "aiOnly": true,
+            "role": "third-party"
+          },
+          "relevantSources": {
+            "opal": 3
+          },
+          "retrievedPassageIds": [
+            "opal-quote",
+            "orchid-risk-note"
+          ],
+          "sourceRanking": [
+            "opal",
+            "orchid-risk"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "opal-quote",
+              "orchid-risk-note"
+            ],
+            "contextIds": [
+              "profile"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 1124,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "20",
+          "question": "Where are the München handwritten notes?",
+          "query": "München Café handwritten drawer",
+          "filters": {
+            "aiOnly": true
+          },
+          "relevantSources": {
+            "munich": 3
+          },
+          "retrievedPassageIds": [
+            "munich-cafe",
+            "long-quote"
+          ],
+          "sourceRanking": [
+            "munich",
+            "long"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "munich-cafe",
+              "long-quote"
+            ],
+            "contextIds": [
+              "profile",
+              "orchid-project",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 14030,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "21",
+          "question": "Retrieve exactly the Orchid signed review phrase.",
+          "query": "\"signed safety review\"",
+          "filters": {
+            "aiOnly": true
+          },
+          "relevantSources": {
+            "orchid": 3
+          },
+          "retrievedPassageIds": [
+            "orchid-checklist"
+          ],
+          "sourceRanking": [
+            "orchid"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "orchid-checklist"
+            ],
+            "contextIds": [
+              "profile",
+              "orchid-project",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 1441,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "22",
+          "question": "Retrieve the quoted cold-weather observation.",
+          "query": "\"cold weather\"",
+          "filters": {
+            "aiOnly": true
+          },
+          "relevantSources": {
+            "cedar-field": 3
+          },
+          "retrievedPassageIds": [
+            "cedar-observation"
+          ],
+          "sourceRanking": [
+            "cedar-field"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "cedar-observation"
+            ],
+            "contextIds": [
+              "profile",
+              "orchid-project",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 1449,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "23",
+          "question": "Only use the actual human Orchid source.",
+          "query": "Orchid",
+          "filters": {
+            "aiOnly": true,
+            "sourceIds": [
+              "orchid"
+            ]
+          },
+          "relevantSources": {
+            "orchid": 3
+          },
+          "retrievedPassageIds": [
+            "orchid-checklist",
+            "orchid-launch"
+          ],
+          "sourceRanking": [
+            "orchid"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "orchid-checklist",
+              "orchid-launch"
+            ],
+            "contextIds": [
+              "profile"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 1099,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "24",
+          "question": "Only use the third-party Orchid opposition.",
+          "query": "Orchid",
+          "filters": {
+            "aiOnly": true,
+            "sourceIds": [
+              "orchid-risk"
+            ],
+            "role": "third-party"
+          },
+          "relevantSources": {
+            "orchid-risk": 3
+          },
+          "retrievedPassageIds": [
+            "orchid-risk-note"
+          ],
+          "sourceRanking": [
+            "orchid-risk"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "orchid-risk-note"
+            ],
+            "contextIds": [
+              "profile"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 832,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "25",
+          "question": "Retrieve Cedar from documents only.",
+          "query": "Cedar",
+          "filters": {
+            "aiOnly": true,
+            "kinds": [
+              "document"
+            ]
+          },
+          "relevantSources": {
+            "cedar-spec": 3
+          },
+          "retrievedPassageIds": [
+            "cedar-rating"
+          ],
+          "sourceRanking": [
+            "cedar-spec"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "cedar-rating"
+            ],
+            "contextIds": [
+              "profile",
+              "orchid-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 1195,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "26",
+          "question": "Retrieve Cedar from personal thoughts only.",
+          "query": "Cedar",
+          "filters": {
+            "aiOnly": true,
+            "kinds": [
+              "thought"
+            ]
+          },
+          "relevantSources": {
+            "cedar-field": 3
+          },
+          "retrievedPassageIds": [
+            "cedar-observation"
+          ],
+          "sourceRanking": [
+            "cedar-field"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "cedar-observation"
+            ],
+            "contextIds": [
+              "profile",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 1052,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "27",
+          "question": "Retrieve Opal messages authored from November 7 onward.",
+          "query": "Opal",
+          "filters": {
+            "aiOnly": true,
+            "authoredAfter": 1794009600000
+          },
+          "relevantSources": {
+            "opal": 3
+          },
+          "retrievedPassageIds": [
+            "opal-quote",
+            "opal-assistant"
+          ],
+          "sourceRanking": [
+            "opal"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "opal-quote",
+              "opal-assistant"
+            ],
+            "contextIds": [
+              "profile",
+              "orchid-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 1538,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "28",
+          "question": "Retrieve Opal messages authored on or before November 7.",
+          "query": "Opal",
+          "filters": {
+            "aiOnly": true,
+            "authoredBefore": 1794009600000
+          },
+          "relevantSources": {
+            "opal": 3
+          },
+          "retrievedPassageIds": [
+            "opal-assistant",
+            "opal-human"
+          ],
+          "sourceRanking": [
+            "opal"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "opal-assistant",
+              "opal-human"
+            ],
+            "contextIds": [
+              "profile",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 1399,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "29",
+          "question": "Retrieve the Opal message on the inclusive boundary November 7.",
+          "query": "Opal",
+          "filters": {
+            "aiOnly": true,
+            "authoredAfter": 1794009600000,
+            "authoredBefore": 1794009600000
+          },
+          "relevantSources": {
+            "opal": 3
+          },
+          "retrievedPassageIds": [
+            "opal-assistant"
+          ],
+          "sourceRanking": [
+            "opal"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "opal-assistant"
+            ],
+            "contextIds": [
+              "profile"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 833,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "30",
+          "question": "Do not invent a date for the Sequoia capture.",
+          "query": "Sequoia",
+          "filters": {
+            "aiOnly": true,
+            "authoredAfter": 1767225600000
+          },
+          "relevantSources": {},
+          "retrievedPassageIds": [],
+          "sourceRanking": [],
+          "metrics": null,
+          "packet": {
+            "evidenceIds": [],
+            "contextIds": [
+              "profile",
+              "orchid-project",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 1115,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "31",
+          "question": "Use an intentionally empty source scope.",
+          "query": "Orchid",
+          "filters": {
+            "aiOnly": true,
+            "sourceIds": []
+          },
+          "relevantSources": {},
+          "retrievedPassageIds": [],
+          "sourceRanking": [],
+          "metrics": null,
+          "packet": {
+            "evidenceIds": [],
+            "contextIds": [
+              "profile"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 411,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "32",
+          "question": "Use an intentionally empty source kind scope.",
+          "query": "Cedar",
+          "filters": {
+            "aiOnly": true,
+            "kinds": []
+          },
+          "relevantSources": {},
+          "retrievedPassageIds": [],
+          "sourceRanking": [],
+          "metrics": null,
+          "packet": {
+            "evidenceIds": [],
+            "contextIds": [
+              "profile"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 412,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "33",
+          "question": "Retrieve the previous Horizon interpretation explicitly.",
+          "query": "\"Horizon classification was cobalt\"",
+          "filters": {
+            "aiOnly": true,
+            "includeHistory": true
+          },
+          "relevantSources": {
+            "horizon": 3
+          },
+          "retrievedPassageIds": [
+            "horizon-old"
+          ],
+          "sourceRanking": [
+            "horizon"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "horizon-old"
+            ],
+            "contextIds": [
+              "profile",
+              "orchid-project",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 1446,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "34",
+          "question": "Do not retrieve superseded Horizon wording by default.",
+          "query": "\"Horizon classification was cobalt\"",
+          "filters": {
+            "aiOnly": true
+          },
+          "relevantSources": {},
+          "retrievedPassageIds": [],
+          "sourceRanking": [],
+          "metrics": null,
+          "packet": {
+            "evidenceIds": [],
+            "contextIds": [
+              "profile",
+              "orchid-project",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 1094,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "35",
+          "question": "Retrieve the superseded Orchid date when history is explicitly requested.",
+          "query": "\"November 14\"",
+          "filters": {
+            "aiOnly": true,
+            "includeHistory": true
+          },
+          "relevantSources": {
+            "orchid": 3
+          },
+          "retrievedPassageIds": [
+            "orchid-old"
+          ],
+          "sourceRanking": [
+            "orchid"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "orchid-old"
+            ],
+            "contextIds": [
+              "profile",
+              "orchid-project",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 1474,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "36",
+          "question": "AI must not retrieve the private Juniper access phrase.",
+          "query": "Juniper",
+          "filters": {
+            "aiOnly": true
+          },
+          "relevantSources": {},
+          "retrievedPassageIds": [],
+          "sourceRanking": [],
+          "metrics": null,
+          "packet": {
+            "evidenceIds": [],
+            "contextIds": [
+              "profile",
+              "orchid-project",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 1095,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "37",
+          "question": "A local non-AI read may retrieve the private Juniper note.",
+          "query": "Juniper",
+          "filters": {
+            "aiOnly": false
+          },
+          "relevantSources": {
+            "juniper": 3
+          },
+          "retrievedPassageIds": [
+            "juniper-private"
+          ],
+          "sourceRanking": [
+            "juniper"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [],
+            "contextIds": [
+              "profile",
+              "orchid-project",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 1098,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "38",
+          "question": "History must respect current corpus exclusion.",
+          "query": "Nightjar",
+          "filters": {
+            "aiOnly": false,
+            "includeHistory": true
+          },
+          "relevantSources": {},
+          "retrievedPassageIds": [],
+          "sourceRanking": [],
+          "metrics": null,
+          "packet": {
+            "evidenceIds": [],
+            "contextIds": [
+              "profile",
+              "orchid-project",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 1108,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "39",
+          "question": "History must respect current deletion.",
+          "query": "Tern",
+          "filters": {
+            "aiOnly": false,
+            "includeHistory": true
+          },
+          "relevantSources": {},
+          "retrievedPassageIds": [],
+          "sourceRanking": [],
+          "metrics": null,
+          "packet": {
+            "evidenceIds": [],
+            "contextIds": [
+              "profile",
+              "orchid-project",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 1100,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "40",
+          "question": "Invalid source offsets must not produce a citation.",
+          "query": "Xenolith",
+          "filters": {
+            "aiOnly": true
+          },
+          "relevantSources": {},
+          "retrievedPassageIds": [],
+          "sourceRanking": [],
+          "metrics": null,
+          "packet": {
+            "evidenceIds": [],
+            "contextIds": [
+              "profile",
+              "orchid-project",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 1091,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "41",
+          "question": "A note excluded after retrieval must not reach the packet.",
+          "query": "Orchid",
+          "filters": {
+            "aiOnly": true,
+            "sourceIds": [
+              "orchid"
+            ],
+            "includeHistory": true
+          },
+          "relevantSources": {},
+          "retrievedPassageIds": [],
+          "sourceRanking": [],
+          "metrics": null,
+          "packet": {
+            "evidenceIds": [],
+            "contextIds": [
+              "profile"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 459,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "42",
+          "question": "AI denial after retrieval must suppress cached evidence and derived context.",
+          "query": "Aurora",
+          "filters": {
+            "aiOnly": true,
+            "sourceIds": [
+              "aurora"
+            ]
+          },
+          "relevantSources": {},
+          "retrievedPassageIds": [],
+          "sourceRanking": [],
+          "metrics": null,
+          "packet": {
+            "evidenceIds": [],
+            "contextIds": [
+              "profile"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 455,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "43",
+          "question": "Deletion after retrieval must suppress historical cached quotes.",
+          "query": "Horizon",
+          "filters": {
+            "aiOnly": true,
+            "sourceIds": [
+              "horizon"
+            ],
+            "includeHistory": true
+          },
+          "relevantSources": {},
+          "retrievedPassageIds": [],
+          "sourceRanking": [],
+          "metrics": null,
+          "packet": {
+            "evidenceIds": [],
+            "contextIds": [
+              "profile"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 466,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "44",
+          "question": "Deliver approved profile and relevant project context.",
+          "query": "Orchid",
+          "filters": {
+            "aiOnly": true,
+            "sourceIds": [
+              "orchid",
+              "orchid-risk"
+            ]
+          },
+          "relevantSources": {
+            "orchid": 3,
+            "orchid-risk": 2
+          },
+          "retrievedPassageIds": [
+            "orchid-checklist",
+            "orchid-launch",
+            "orchid-risk-note"
+          ],
+          "sourceRanking": [
+            "orchid",
+            "orchid-risk"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "orchid-checklist",
+              "orchid-launch",
+              "orchid-risk-note"
+            ],
+            "contextIds": [
+              "profile",
+              "orchid-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 1927,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "45",
+          "question": "Deliver only the approved Aurora context in this project scope.",
+          "query": "Aurora",
+          "filters": {
+            "aiOnly": true,
+            "sourceIds": [
+              "aurora"
+            ]
+          },
+          "relevantSources": {
+            "aurora": 3
+          },
+          "retrievedPassageIds": [
+            "aurora-budget"
+          ],
+          "sourceRanking": [
+            "aurora"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "aurora-budget"
+            ],
+            "contextIds": [
+              "profile",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 1045,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "46",
+          "question": "Do not inject proposed, stale, withdrawn, or AI-private derived wording.",
+          "query": "Lyra",
+          "filters": {
+            "aiOnly": true
+          },
+          "relevantSources": {
+            "lyra": 3
+          },
+          "retrievedPassageIds": [
+            "lyra-water"
+          ],
+          "sourceRanking": [
+            "lyra"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "lyra-water"
+            ],
+            "contextIds": [
+              "profile",
+              "orchid-project",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 1464,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "47",
+          "question": "Budget a long exact quote without truncating its citation offsets.",
+          "query": "Zephyr",
+          "filters": {
+            "aiOnly": true
+          },
+          "relevantSources": {
+            "long": 3
+          },
+          "retrievedPassageIds": [
+            "long-quote"
+          ],
+          "sourceRanking": [
+            "long"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [],
+            "contextIds": [
+              "profile",
+              "orchid-project",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 1,
+            "contextOmissions": 0,
+            "bytes": 1118,
+            "maxBytes": 1600
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "48",
+          "question": "Preserve exact Unicode evidence through rendered UTF-8 budgeting.",
+          "query": "München Café",
+          "filters": {
+            "aiOnly": true,
+            "sourceIds": [
+              "munich"
+            ]
+          },
+          "relevantSources": {
+            "munich": 3
+          },
+          "retrievedPassageIds": [
+            "munich-cafe"
+          ],
+          "sourceRanking": [
+            "munich"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "munich-cafe"
+            ],
+            "contextIds": [
+              "profile"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 781,
+            "maxBytes": 1600
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "49",
+          "question": "Record omitted context when the combined packet budget is tight.",
+          "query": "Orchid",
+          "filters": {
+            "aiOnly": true,
+            "sourceIds": [
+              "orchid",
+              "orchid-risk"
+            ]
+          },
+          "relevantSources": {
+            "orchid": 3,
+            "orchid-risk": 2
+          },
+          "retrievedPassageIds": [
+            "orchid-checklist",
+            "orchid-launch",
+            "orchid-risk-note"
+          ],
+          "sourceRanking": [
+            "orchid",
+            "orchid-risk"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "orchid-checklist",
+              "orchid-launch"
+            ],
+            "contextIds": [
+              "profile"
+            ],
+            "evidenceOmissions": 1,
+            "contextOmissions": 1,
+            "bytes": 1171,
+            "maxBytes": 1300
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "50",
+          "question": "Abstain from claiming absent synthetic evidence.",
+          "query": "galactometer zymurgy unfindable",
+          "filters": {
+            "aiOnly": true
+          },
+          "relevantSources": {},
+          "retrievedPassageIds": [],
+          "sourceRanking": [],
+          "metrics": null,
+          "packet": {
+            "evidenceIds": [],
+            "contextIds": [
+              "profile",
+              "orchid-project",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 1088,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        }
+      ]
+    },
+    {
+      "engine": "portable-lexical",
+      "questions": 50,
+      "rankedQuestions": 38,
+      "abstentionQuestions": 12,
+      "correctAbstentions": 12,
+      "recallAtK": 1,
+      "mrrAtK": 1,
+      "ndcgAtK": 0.9912626964420078,
+      "invariantChecks": 700,
+      "invariantFailures": 0,
+      "cases": [
+        {
+          "id": "01",
+          "question": "When is the approved Orchid launch?",
+          "query": "Orchid launch approved",
+          "filters": {
+            "aiOnly": true
+          },
+          "relevantSources": {
+            "orchid": 3,
+            "orchid-risk": 1
+          },
+          "retrievedPassageIds": [
+            "orchid-launch",
+            "orchid-checklist",
+            "orchid-risk-note",
+            "orchid-estimate",
+            "aurora-budget"
+          ],
+          "sourceRanking": [
+            "orchid",
+            "orchid-risk",
+            "orchid-assistant",
+            "aurora"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "orchid-launch",
+              "orchid-checklist",
+              "orchid-risk-note",
+              "orchid-estimate",
+              "aurora-budget"
+            ],
+            "contextIds": [
+              "profile",
+              "orchid-project",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 2879,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "02",
+          "question": "Who owns the Orchid launch?",
+          "query": "Orchid Mira owner",
+          "filters": {
+            "aiOnly": true
+          },
+          "relevantSources": {
+            "orchid": 3,
+            "orchid-assistant": 1
+          },
+          "retrievedPassageIds": [
+            "orchid-launch",
+            "orchid-estimate",
+            "orchid-risk-note",
+            "orchid-checklist",
+            "aurora-budget"
+          ],
+          "sourceRanking": [
+            "orchid",
+            "orchid-assistant",
+            "orchid-risk",
+            "aurora"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "orchid-launch",
+              "orchid-estimate",
+              "orchid-risk-note",
+              "orchid-checklist",
+              "aurora-budget"
+            ],
+            "contextIds": [
+              "profile",
+              "orchid-project",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 2871,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "03",
+          "question": "What must the Orchid checklist contain?",
+          "query": "Orchid checklist safety rollback",
+          "filters": {
+            "aiOnly": true
+          },
+          "relevantSources": {
+            "orchid": 3
+          },
+          "retrievedPassageIds": [
+            "orchid-checklist",
+            "orchid-risk-note",
+            "orchid-estimate",
+            "orchid-launch"
+          ],
+          "sourceRanking": [
+            "orchid",
+            "orchid-risk",
+            "orchid-assistant"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "orchid-checklist",
+              "orchid-risk-note",
+              "orchid-estimate",
+              "orchid-launch"
+            ],
+            "contextIds": [
+              "profile",
+              "orchid-project",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 2548,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "04",
+          "question": "Which source opposes the Orchid launch?",
+          "query": "Orchid supplier opposes reserve",
+          "filters": {
+            "aiOnly": true
+          },
+          "relevantSources": {
+            "orchid-risk": 3
+          },
+          "retrievedPassageIds": [
+            "orchid-risk-note",
+            "orchid-estimate",
+            "orchid-checklist",
+            "orchid-launch",
+            "opal-quote"
+          ],
+          "sourceRanking": [
+            "orchid-risk",
+            "orchid-assistant",
+            "orchid",
+            "opal"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "orchid-risk-note",
+              "orchid-estimate",
+              "orchid-checklist",
+              "orchid-launch",
+              "opal-quote"
+            ],
+            "contextIds": [
+              "profile",
+              "orchid-project",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 2877,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "05",
+          "question": "What did the assistant estimate for Orchid?",
+          "query": "Orchid assistant estimate",
+          "filters": {
+            "aiOnly": true,
+            "role": "assistant"
+          },
+          "relevantSources": {
+            "orchid-assistant": 3
+          },
+          "retrievedPassageIds": [
+            "orchid-estimate",
+            "opal-assistant"
+          ],
+          "sourceRanking": [
+            "orchid-assistant",
+            "opal"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "orchid-estimate",
+              "opal-assistant"
+            ],
+            "contextIds": [
+              "profile"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 1175,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "06",
+          "question": "What battery runtime does the Cedar manufacturer rate?",
+          "query": "Cedar manufacturer battery laboratory",
+          "filters": {
+            "aiOnly": true
+          },
+          "relevantSources": {
+            "cedar-spec": 3,
+            "cedar-field": 1
+          },
+          "retrievedPassageIds": [
+            "cedar-rating",
+            "cedar-observation",
+            "orchid-risk-note"
+          ],
+          "sourceRanking": [
+            "cedar-spec",
+            "cedar-field",
+            "orchid-risk"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "cedar-rating",
+              "cedar-observation",
+              "orchid-risk-note"
+            ],
+            "contextIds": [
+              "profile",
+              "orchid-project",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 2212,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "07",
+          "question": "What did I observe for Cedar in cold weather?",
+          "query": "Cedar cold seven measured",
+          "filters": {
+            "aiOnly": true
+          },
+          "relevantSources": {
+            "cedar-field": 3,
+            "cedar-spec": 1
+          },
+          "retrievedPassageIds": [
+            "cedar-observation",
+            "cedar-rating"
+          ],
+          "sourceRanking": [
+            "cedar-field",
+            "cedar-spec"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "cedar-observation",
+              "cedar-rating"
+            ],
+            "contextIds": [
+              "profile",
+              "orchid-project",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 1818,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "08",
+          "question": "How much was Aurora allowed to spend?",
+          "query": "Aurora budget 4200",
+          "filters": {
+            "aiOnly": true
+          },
+          "relevantSources": {
+            "aurora": 3
+          },
+          "retrievedPassageIds": [
+            "aurora-budget",
+            "long-quote"
+          ],
+          "sourceRanking": [
+            "aurora",
+            "long"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "aurora-budget",
+              "long-quote"
+            ],
+            "contextIds": [
+              "profile",
+              "orchid-project",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 14023,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "09",
+          "question": "Who owns the Aurora budget?",
+          "query": "Aurora Ren owner",
+          "filters": {
+            "aiOnly": true
+          },
+          "relevantSources": {
+            "aurora": 3
+          },
+          "retrievedPassageIds": [
+            "aurora-budget",
+            "orchid-launch"
+          ],
+          "sourceRanking": [
+            "aurora",
+            "orchid"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "aurora-budget",
+              "orchid-launch"
+            ],
+            "contextIds": [
+              "profile",
+              "orchid-project",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 1729,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "10",
+          "question": "What water and temperature did the Lyra experiment use?",
+          "query": "Lyra freshwater 18",
+          "filters": {
+            "aiOnly": true
+          },
+          "relevantSources": {
+            "lyra": 3
+          },
+          "retrievedPassageIds": [
+            "lyra-water"
+          ],
+          "sourceRanking": [
+            "lyra"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "lyra-water"
+            ],
+            "contextIds": [
+              "profile",
+              "orchid-project",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 1447,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "11",
+          "question": "Was salt used in the Lyra control?",
+          "query": "Lyra control salt",
+          "filters": {
+            "aiOnly": true
+          },
+          "relevantSources": {
+            "lyra": 3
+          },
+          "retrievedPassageIds": [
+            "lyra-water"
+          ],
+          "sourceRanking": [
+            "lyra"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "lyra-water"
+            ],
+            "contextIds": [
+              "profile",
+              "orchid-project",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 1426,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "12",
+          "question": "What soil pH was captured for Sequoia?",
+          "query": "Sequoia soil pH",
+          "filters": {
+            "aiOnly": true
+          },
+          "relevantSources": {
+            "sequoia": 3
+          },
+          "retrievedPassageIds": [
+            "sequoia-soil"
+          ],
+          "sourceRanking": [
+            "sequoia"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "sequoia-soil"
+            ],
+            "contextIds": [
+              "profile",
+              "orchid-project",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 1410,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "13",
+          "question": "What is the corrected Horizon classification?",
+          "query": "Horizon classification amber",
+          "filters": {
+            "aiOnly": true
+          },
+          "relevantSources": {
+            "horizon": 3
+          },
+          "retrievedPassageIds": [
+            "horizon-current"
+          ],
+          "sourceRanking": [
+            "horizon"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "horizon-current"
+            ],
+            "contextIds": [
+              "profile",
+              "orchid-project",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 1415,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "14",
+          "question": "What is authoritative in the Quartz search architecture?",
+          "query": "Quartz authoritative original Markdown",
+          "filters": {
+            "aiOnly": true
+          },
+          "relevantSources": {
+            "quartz": 3
+          },
+          "retrievedPassageIds": [
+            "quartz-index"
+          ],
+          "sourceRanking": [
+            "quartz"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "quartz-index"
+            ],
+            "contextIds": [
+              "profile",
+              "orchid-project",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 1472,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "15",
+          "question": "When and where does the Willow ferry depart?",
+          "query": "Willow ferry 08 eastern pier",
+          "filters": {
+            "aiOnly": true
+          },
+          "relevantSources": {
+            "willow": 3
+          },
+          "retrievedPassageIds": [
+            "willow-time"
+          ],
+          "sourceRanking": [
+            "willow"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "willow-time"
+            ],
+            "contextIds": [
+              "profile",
+              "orchid-project",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 1439,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "16",
+          "question": "When does the Willow winter timetable start?",
+          "query": "Willow winter November 20",
+          "filters": {
+            "aiOnly": true
+          },
+          "relevantSources": {
+            "willow": 3
+          },
+          "retrievedPassageIds": [
+            "willow-time",
+            "orchid-risk-note",
+            "orchid-launch"
+          ],
+          "sourceRanking": [
+            "willow",
+            "orchid-risk",
+            "orchid"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "willow-time",
+              "orchid-risk-note",
+              "orchid-launch"
+            ],
+            "contextIds": [
+              "profile",
+              "orchid-project",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 2152,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "17",
+          "question": "What did I prefer in the Opal comparison?",
+          "query": "Opal prefer smaller space",
+          "filters": {
+            "aiOnly": true,
+            "role": "human"
+          },
+          "relevantSources": {
+            "opal": 3
+          },
+          "retrievedPassageIds": [
+            "opal-human"
+          ],
+          "sourceRanking": [
+            "opal"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "opal-human"
+            ],
+            "contextIds": [
+              "profile",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 1014,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "18",
+          "question": "What did the assistant recommend for Opal?",
+          "query": "Opal recommends larger",
+          "filters": {
+            "aiOnly": true,
+            "role": "assistant"
+          },
+          "relevantSources": {
+            "opal": 3
+          },
+          "retrievedPassageIds": [
+            "opal-assistant"
+          ],
+          "sourceRanking": [
+            "opal"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "opal-assistant"
+            ],
+            "contextIds": [
+              "profile"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 770,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "19",
+          "question": "What does the Opal supplier claim?",
+          "query": "Opal supplier stronger",
+          "filters": {
+            "aiOnly": true,
+            "role": "third-party"
+          },
+          "relevantSources": {
+            "opal": 3
+          },
+          "retrievedPassageIds": [
+            "opal-quote",
+            "orchid-risk-note"
+          ],
+          "sourceRanking": [
+            "opal",
+            "orchid-risk"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "opal-quote",
+              "orchid-risk-note"
+            ],
+            "contextIds": [
+              "profile"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 1124,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "20",
+          "question": "Where are the München handwritten notes?",
+          "query": "München Café handwritten drawer",
+          "filters": {
+            "aiOnly": true
+          },
+          "relevantSources": {
+            "munich": 3
+          },
+          "retrievedPassageIds": [
+            "munich-cafe",
+            "long-quote"
+          ],
+          "sourceRanking": [
+            "munich",
+            "long"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "munich-cafe",
+              "long-quote"
+            ],
+            "contextIds": [
+              "profile",
+              "orchid-project",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 14030,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "21",
+          "question": "Retrieve exactly the Orchid signed review phrase.",
+          "query": "\"signed safety review\"",
+          "filters": {
+            "aiOnly": true
+          },
+          "relevantSources": {
+            "orchid": 3
+          },
+          "retrievedPassageIds": [
+            "orchid-checklist"
+          ],
+          "sourceRanking": [
+            "orchid"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "orchid-checklist"
+            ],
+            "contextIds": [
+              "profile",
+              "orchid-project",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 1441,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "22",
+          "question": "Retrieve the quoted cold-weather observation.",
+          "query": "\"cold weather\"",
+          "filters": {
+            "aiOnly": true
+          },
+          "relevantSources": {
+            "cedar-field": 3
+          },
+          "retrievedPassageIds": [
+            "cedar-observation"
+          ],
+          "sourceRanking": [
+            "cedar-field"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "cedar-observation"
+            ],
+            "contextIds": [
+              "profile",
+              "orchid-project",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 1449,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "23",
+          "question": "Only use the actual human Orchid source.",
+          "query": "Orchid",
+          "filters": {
+            "aiOnly": true,
+            "sourceIds": [
+              "orchid"
+            ]
+          },
+          "relevantSources": {
+            "orchid": 3
+          },
+          "retrievedPassageIds": [
+            "orchid-checklist",
+            "orchid-launch"
+          ],
+          "sourceRanking": [
+            "orchid"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "orchid-checklist",
+              "orchid-launch"
+            ],
+            "contextIds": [
+              "profile"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 1099,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "24",
+          "question": "Only use the third-party Orchid opposition.",
+          "query": "Orchid",
+          "filters": {
+            "aiOnly": true,
+            "sourceIds": [
+              "orchid-risk"
+            ],
+            "role": "third-party"
+          },
+          "relevantSources": {
+            "orchid-risk": 3
+          },
+          "retrievedPassageIds": [
+            "orchid-risk-note"
+          ],
+          "sourceRanking": [
+            "orchid-risk"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "orchid-risk-note"
+            ],
+            "contextIds": [
+              "profile"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 832,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "25",
+          "question": "Retrieve Cedar from documents only.",
+          "query": "Cedar",
+          "filters": {
+            "aiOnly": true,
+            "kinds": [
+              "document"
+            ]
+          },
+          "relevantSources": {
+            "cedar-spec": 3
+          },
+          "retrievedPassageIds": [
+            "cedar-rating"
+          ],
+          "sourceRanking": [
+            "cedar-spec"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "cedar-rating"
+            ],
+            "contextIds": [
+              "profile",
+              "orchid-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 1195,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "26",
+          "question": "Retrieve Cedar from personal thoughts only.",
+          "query": "Cedar",
+          "filters": {
+            "aiOnly": true,
+            "kinds": [
+              "thought"
+            ]
+          },
+          "relevantSources": {
+            "cedar-field": 3
+          },
+          "retrievedPassageIds": [
+            "cedar-observation"
+          ],
+          "sourceRanking": [
+            "cedar-field"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "cedar-observation"
+            ],
+            "contextIds": [
+              "profile",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 1052,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "27",
+          "question": "Retrieve Opal messages authored from November 7 onward.",
+          "query": "Opal",
+          "filters": {
+            "aiOnly": true,
+            "authoredAfter": 1794009600000
+          },
+          "relevantSources": {
+            "opal": 3
+          },
+          "retrievedPassageIds": [
+            "opal-quote",
+            "opal-assistant"
+          ],
+          "sourceRanking": [
+            "opal"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "opal-quote",
+              "opal-assistant"
+            ],
+            "contextIds": [
+              "profile",
+              "orchid-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 1538,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "28",
+          "question": "Retrieve Opal messages authored on or before November 7.",
+          "query": "Opal",
+          "filters": {
+            "aiOnly": true,
+            "authoredBefore": 1794009600000
+          },
+          "relevantSources": {
+            "opal": 3
+          },
+          "retrievedPassageIds": [
+            "opal-assistant",
+            "opal-human"
+          ],
+          "sourceRanking": [
+            "opal"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "opal-assistant",
+              "opal-human"
+            ],
+            "contextIds": [
+              "profile",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 1399,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "29",
+          "question": "Retrieve the Opal message on the inclusive boundary November 7.",
+          "query": "Opal",
+          "filters": {
+            "aiOnly": true,
+            "authoredAfter": 1794009600000,
+            "authoredBefore": 1794009600000
+          },
+          "relevantSources": {
+            "opal": 3
+          },
+          "retrievedPassageIds": [
+            "opal-assistant"
+          ],
+          "sourceRanking": [
+            "opal"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "opal-assistant"
+            ],
+            "contextIds": [
+              "profile"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 833,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "30",
+          "question": "Do not invent a date for the Sequoia capture.",
+          "query": "Sequoia",
+          "filters": {
+            "aiOnly": true,
+            "authoredAfter": 1767225600000
+          },
+          "relevantSources": {},
+          "retrievedPassageIds": [],
+          "sourceRanking": [],
+          "metrics": null,
+          "packet": {
+            "evidenceIds": [],
+            "contextIds": [
+              "profile",
+              "orchid-project",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 1115,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "31",
+          "question": "Use an intentionally empty source scope.",
+          "query": "Orchid",
+          "filters": {
+            "aiOnly": true,
+            "sourceIds": []
+          },
+          "relevantSources": {},
+          "retrievedPassageIds": [],
+          "sourceRanking": [],
+          "metrics": null,
+          "packet": {
+            "evidenceIds": [],
+            "contextIds": [
+              "profile"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 411,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "32",
+          "question": "Use an intentionally empty source kind scope.",
+          "query": "Cedar",
+          "filters": {
+            "aiOnly": true,
+            "kinds": []
+          },
+          "relevantSources": {},
+          "retrievedPassageIds": [],
+          "sourceRanking": [],
+          "metrics": null,
+          "packet": {
+            "evidenceIds": [],
+            "contextIds": [
+              "profile"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 412,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "33",
+          "question": "Retrieve the previous Horizon interpretation explicitly.",
+          "query": "\"Horizon classification was cobalt\"",
+          "filters": {
+            "aiOnly": true,
+            "includeHistory": true
+          },
+          "relevantSources": {
+            "horizon": 3
+          },
+          "retrievedPassageIds": [
+            "horizon-old"
+          ],
+          "sourceRanking": [
+            "horizon"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "horizon-old"
+            ],
+            "contextIds": [
+              "profile",
+              "orchid-project",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 1446,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "34",
+          "question": "Do not retrieve superseded Horizon wording by default.",
+          "query": "\"Horizon classification was cobalt\"",
+          "filters": {
+            "aiOnly": true
+          },
+          "relevantSources": {},
+          "retrievedPassageIds": [],
+          "sourceRanking": [],
+          "metrics": null,
+          "packet": {
+            "evidenceIds": [],
+            "contextIds": [
+              "profile",
+              "orchid-project",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 1094,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "35",
+          "question": "Retrieve the superseded Orchid date when history is explicitly requested.",
+          "query": "\"November 14\"",
+          "filters": {
+            "aiOnly": true,
+            "includeHistory": true
+          },
+          "relevantSources": {
+            "orchid": 3
+          },
+          "retrievedPassageIds": [
+            "orchid-old"
+          ],
+          "sourceRanking": [
+            "orchid"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "orchid-old"
+            ],
+            "contextIds": [
+              "profile",
+              "orchid-project",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 1474,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "36",
+          "question": "AI must not retrieve the private Juniper access phrase.",
+          "query": "Juniper",
+          "filters": {
+            "aiOnly": true
+          },
+          "relevantSources": {},
+          "retrievedPassageIds": [],
+          "sourceRanking": [],
+          "metrics": null,
+          "packet": {
+            "evidenceIds": [],
+            "contextIds": [
+              "profile",
+              "orchid-project",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 1095,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "37",
+          "question": "A local non-AI read may retrieve the private Juniper note.",
+          "query": "Juniper",
+          "filters": {
+            "aiOnly": false
+          },
+          "relevantSources": {
+            "juniper": 3
+          },
+          "retrievedPassageIds": [
+            "juniper-private"
+          ],
+          "sourceRanking": [
+            "juniper"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [],
+            "contextIds": [
+              "profile",
+              "orchid-project",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 1098,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "38",
+          "question": "History must respect current corpus exclusion.",
+          "query": "Nightjar",
+          "filters": {
+            "aiOnly": false,
+            "includeHistory": true
+          },
+          "relevantSources": {},
+          "retrievedPassageIds": [],
+          "sourceRanking": [],
+          "metrics": null,
+          "packet": {
+            "evidenceIds": [],
+            "contextIds": [
+              "profile",
+              "orchid-project",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 1108,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "39",
+          "question": "History must respect current deletion.",
+          "query": "Tern",
+          "filters": {
+            "aiOnly": false,
+            "includeHistory": true
+          },
+          "relevantSources": {},
+          "retrievedPassageIds": [],
+          "sourceRanking": [],
+          "metrics": null,
+          "packet": {
+            "evidenceIds": [],
+            "contextIds": [
+              "profile",
+              "orchid-project",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 1100,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "40",
+          "question": "Invalid source offsets must not produce a citation.",
+          "query": "Xenolith",
+          "filters": {
+            "aiOnly": true
+          },
+          "relevantSources": {},
+          "retrievedPassageIds": [],
+          "sourceRanking": [],
+          "metrics": null,
+          "packet": {
+            "evidenceIds": [],
+            "contextIds": [
+              "profile",
+              "orchid-project",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 1091,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "41",
+          "question": "A note excluded after retrieval must not reach the packet.",
+          "query": "Orchid",
+          "filters": {
+            "aiOnly": true,
+            "sourceIds": [
+              "orchid"
+            ],
+            "includeHistory": true
+          },
+          "relevantSources": {},
+          "retrievedPassageIds": [],
+          "sourceRanking": [],
+          "metrics": null,
+          "packet": {
+            "evidenceIds": [],
+            "contextIds": [
+              "profile"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 459,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "42",
+          "question": "AI denial after retrieval must suppress cached evidence and derived context.",
+          "query": "Aurora",
+          "filters": {
+            "aiOnly": true,
+            "sourceIds": [
+              "aurora"
+            ]
+          },
+          "relevantSources": {},
+          "retrievedPassageIds": [],
+          "sourceRanking": [],
+          "metrics": null,
+          "packet": {
+            "evidenceIds": [],
+            "contextIds": [
+              "profile"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 455,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "43",
+          "question": "Deletion after retrieval must suppress historical cached quotes.",
+          "query": "Horizon",
+          "filters": {
+            "aiOnly": true,
+            "sourceIds": [
+              "horizon"
+            ],
+            "includeHistory": true
+          },
+          "relevantSources": {},
+          "retrievedPassageIds": [],
+          "sourceRanking": [],
+          "metrics": null,
+          "packet": {
+            "evidenceIds": [],
+            "contextIds": [
+              "profile"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 466,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "44",
+          "question": "Deliver approved profile and relevant project context.",
+          "query": "Orchid",
+          "filters": {
+            "aiOnly": true,
+            "sourceIds": [
+              "orchid",
+              "orchid-risk"
+            ]
+          },
+          "relevantSources": {
+            "orchid": 3,
+            "orchid-risk": 2
+          },
+          "retrievedPassageIds": [
+            "orchid-risk-note",
+            "orchid-checklist",
+            "orchid-launch"
+          ],
+          "sourceRanking": [
+            "orchid-risk",
+            "orchid"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 0.8339912323981488
+          },
+          "packet": {
+            "evidenceIds": [
+              "orchid-risk-note",
+              "orchid-checklist",
+              "orchid-launch"
+            ],
+            "contextIds": [
+              "profile",
+              "orchid-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 1927,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "45",
+          "question": "Deliver only the approved Aurora context in this project scope.",
+          "query": "Aurora",
+          "filters": {
+            "aiOnly": true,
+            "sourceIds": [
+              "aurora"
+            ]
+          },
+          "relevantSources": {
+            "aurora": 3
+          },
+          "retrievedPassageIds": [
+            "aurora-budget"
+          ],
+          "sourceRanking": [
+            "aurora"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "aurora-budget"
+            ],
+            "contextIds": [
+              "profile",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 1045,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "46",
+          "question": "Do not inject proposed, stale, withdrawn, or AI-private derived wording.",
+          "query": "Lyra",
+          "filters": {
+            "aiOnly": true
+          },
+          "relevantSources": {
+            "lyra": 3
+          },
+          "retrievedPassageIds": [
+            "lyra-water"
+          ],
+          "sourceRanking": [
+            "lyra"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "lyra-water"
+            ],
+            "contextIds": [
+              "profile",
+              "orchid-project",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 1464,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "47",
+          "question": "Budget a long exact quote without truncating its citation offsets.",
+          "query": "Zephyr",
+          "filters": {
+            "aiOnly": true
+          },
+          "relevantSources": {
+            "long": 3
+          },
+          "retrievedPassageIds": [
+            "long-quote"
+          ],
+          "sourceRanking": [
+            "long"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [],
+            "contextIds": [
+              "profile",
+              "orchid-project",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 1,
+            "contextOmissions": 0,
+            "bytes": 1118,
+            "maxBytes": 1600
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "48",
+          "question": "Preserve exact Unicode evidence through rendered UTF-8 budgeting.",
+          "query": "München Café",
+          "filters": {
+            "aiOnly": true,
+            "sourceIds": [
+              "munich"
+            ]
+          },
+          "relevantSources": {
+            "munich": 3
+          },
+          "retrievedPassageIds": [
+            "munich-cafe"
+          ],
+          "sourceRanking": [
+            "munich"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 1
+          },
+          "packet": {
+            "evidenceIds": [
+              "munich-cafe"
+            ],
+            "contextIds": [
+              "profile"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 781,
+            "maxBytes": 1600
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "49",
+          "question": "Record omitted context when the combined packet budget is tight.",
+          "query": "Orchid",
+          "filters": {
+            "aiOnly": true,
+            "sourceIds": [
+              "orchid",
+              "orchid-risk"
+            ]
+          },
+          "relevantSources": {
+            "orchid": 3,
+            "orchid-risk": 2
+          },
+          "retrievedPassageIds": [
+            "orchid-risk-note",
+            "orchid-checklist",
+            "orchid-launch"
+          ],
+          "sourceRanking": [
+            "orchid-risk",
+            "orchid"
+          ],
+          "metrics": {
+            "recall": 1,
+            "reciprocalRank": 1,
+            "ndcg": 0.8339912323981488
+          },
+          "packet": {
+            "evidenceIds": [
+              "orchid-risk-note",
+              "orchid-checklist"
+            ],
+            "contextIds": [
+              "profile"
+            ],
+            "evidenceOmissions": 1,
+            "contextOmissions": 1,
+            "bytes": 1225,
+            "maxBytes": 1300
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        },
+        {
+          "id": "50",
+          "question": "Abstain from claiming absent synthetic evidence.",
+          "query": "galactometer zymurgy unfindable",
+          "filters": {
+            "aiOnly": true
+          },
+          "relevantSources": {},
+          "retrievedPassageIds": [],
+          "sourceRanking": [],
+          "metrics": null,
+          "packet": {
+            "evidenceIds": [],
+            "contextIds": [
+              "profile",
+              "orchid-project",
+              "aurora-project"
+            ],
+            "evidenceOmissions": 0,
+            "contextOmissions": 0,
+            "bytes": 1088,
+            "maxBytes": 16384
+          },
+          "checks": {
+            "exactSourceVersionOffsetsAndAttribution": true,
+            "currentPolicyAndRoleDateSourceScope": true,
+            "requiredEvidenceRetrieved": true,
+            "forbiddenEvidenceOmitted": true,
+            "absentEvidenceAbstention": true,
+            "deliveryRechecksCurrentPolicy": true,
+            "deliveredExactCitations": true,
+            "renderedEvidenceEqualsDelivery": true,
+            "renderedContextEqualsDelivery": true,
+            "requiredApprovedContextDelivered": true,
+            "unapprovedOrRestrictedContextOmitted": true,
+            "byteBudgetMeasured": true,
+            "evidenceOmissionsAccounted": true,
+            "contextOmissionsReported": true
+          },
+          "failures": []
+        }
+      ]
+    }
+  ]
+}

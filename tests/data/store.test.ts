@@ -1,7 +1,7 @@
 import 'fake-indexeddb/auto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SCHEMA_VERSION, type AssetMeta, type InteractionEvent, type NodeRecord, type WorldSettings } from '../../src/domain/types.ts'
-import { openIdbStore, openWorldStore, StoreClosedError } from '../../src/data/idbStore.ts'
+import { DB_VERSION, openIdbStore, openWorldStore, StoreClosedError } from '../../src/data/idbStore.ts'
 import { createMemoryStore } from '../../src/data/memoryStore.ts'
 import {
   BACKUPS_DIR,
@@ -409,7 +409,7 @@ describe('idbStore', () => {
     const onVersionChange = vi.fn()
     const store = await openIdbStore({ name, opfsRoot: null, onVersionChange })
     await store.putNode(node('a'))
-    const newer = await openRaw(name, 2) // succeeds only because the store let go
+    const newer = await openRaw(name, DB_VERSION + 1) // succeeds only because the store let go
     expect(onVersionChange).toHaveBeenCalledOnce()
     expect(store.closed).toBe(true)
     await expect(store.listNodes()).rejects.toBeInstanceOf(StoreClosedError)

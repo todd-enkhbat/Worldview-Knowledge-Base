@@ -184,6 +184,7 @@ export function validateNode(record: NodeRecord, ctx: ValidateNodeContext): Vali
   const err = (field: string, message: string, code?: string) => errors.push({ field, message, code })
   const warn = (field: string, message: string, code?: string) => warnings.push({ field, message, code })
   const r = record as Partial<NodeRecord> & Record<string, unknown>
+  if (r.corpusExcluded !== undefined && typeof r.corpusExcluded !== 'boolean') err('corpusExcluded', 'must be a boolean')
   let spacing: SpacingOutcome = { status: 'skipped' }
 
   if (r.schemaVersion !== SCHEMA_VERSION)

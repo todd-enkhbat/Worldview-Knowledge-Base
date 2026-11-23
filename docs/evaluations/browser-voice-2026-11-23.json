@@ -1,0 +1,85 @@
+{
+  "measuredAt": "2026-11-23T10:47:44.024Z",
+  "path": "Browser UI: Sources → upload WAV → Transcribe locally → Library → Search → timed passage",
+  "fixtureSha256": "d15bc680852d9fb70630aed6fa205769536d4516b4024504330c8713732ce4fe",
+  "originalSha256": "d15bc680852d9fb70630aed6fa205769536d4516b4024504330c8713732ce4fe",
+  "originalMatches": true,
+  "voiceStatus": "ready",
+  "sourceId": "5fe53bbc-3304-4ad8-9156-eeb3d16d5933",
+  "metadata": {
+    "mediaKind": "audio",
+    "voiceEntryId": "c8956476-45ef-4fd6-b8b4-781cfe08a8cb",
+    "voiceHash": "d15bc680852d9fb70630aed6fa205769536d4516b4024504330c8713732ce4fe",
+    "capturedAt": 1795424488042,
+    "language": "auto",
+    "attribution": "unknown",
+    "transcriber": {
+      "engine": "whisper-local",
+      "model": "onnx-community/whisper-base",
+      "revision": "27a07b4b52b3a4c5886134bb4320e93e1a4bbc7c",
+      "config": "wasm/q8"
+    },
+    "audioChunks": [
+      {
+        "start": 0,
+        "end": 7.2
+      },
+      {
+        "start": 7.2,
+        "end": 9.96
+      }
+    ],
+    "rawTranscript": "The project Aurora decided to launch on December 12, the copper-orchored budget is $312. This is synthetic speech for an integration test."
+  },
+  "actualTranscript": "The project Aurora decided to launch on December 12, the copper-orchored budget is $312.\nThis is synthetic speech for an integration test.",
+  "passages": [
+    {
+      "id": "bb1d1269-9514-4fe5-86f9-7e80d6e57a31",
+      "versionId": "a9cb8128-d2a9-4e75-a861-d0dcac442f77",
+      "start": 0,
+      "end": 88,
+      "locator": "Audio 0:00–0:07",
+      "exact": true
+    },
+    {
+      "id": "8d055772-b048-44ca-86a3-408ecde210fb",
+      "versionId": "a9cb8128-d2a9-4e75-a861-d0dcac442f77",
+      "start": 89,
+      "end": 138,
+      "locator": "Audio 0:07–0:09",
+      "exact": true
+    }
+  ],
+  "personalDataUsed": false,
+  "cloudGeneration": false,
+  "playbackVerifiedInBrowser": {
+    "citedPassageId": "8d055772-b048-44ca-86a3-408ecde210fb",
+    "locator": "Audio 0:07–0:09",
+    "currentTime": 7.2,
+    "duration": 10.014688,
+    "readyState": 4
+  },
+  "screenshot": "../design/live-voice-citation-2026-11-23.png",
+  "qmdHttpVerified": {
+    "engine": "@tobilu/qmd@2.9.0",
+    "mode": "hybrid",
+    "candidates": 20,
+    "query": "What was the Aurora budget and launch date?",
+    "http": 200,
+    "elapsedMs": 2613.601917,
+    "returnedPassageIds": [
+      "bb1d1269-9514-4fe5-86f9-7e80d6e57a31",
+      "8d055772-b048-44ca-86a3-408ecde210fb"
+    ],
+    "returnedVersionId": "a9cb8128-d2a9-4e75-a861-d0dcac442f77",
+    "relevanceIsNotEvidenceSupport": true
+  },
+  "qmdBrowserVerified": {
+    "selectedEngine": "qmd-hybrid",
+    "query": "What was the Aurora budget and launch date?",
+    "visiblePassages": 2,
+    "displayedElapsedMs": 1207,
+    "screenshot": "../design/live-qmd-search-2026-11-23.png"
+  },
+  "followupMcp": "browser-memory-2026-11-23.json"
+}

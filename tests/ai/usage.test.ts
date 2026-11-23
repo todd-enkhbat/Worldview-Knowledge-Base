@@ -9,6 +9,10 @@ describe('AI usage estimate', () => {
     expect(estimateCost('some-unknown-model', { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 })).toBeNull()
   })
 
+  it('counts OpenAI cached input separately from uncached input and includes reasoning in total output', () => {
+    expect(estimateCost('gpt-6.2-sol', { input: 9000, output: 1000, cacheRead: 1000, cacheWrite: 0 })).toBeCloseTo(0.0281)
+  })
+
   it('adds per model and reports unpriced models', () => {
     let l: UsageLedger = { byModel: {}, since: 0 }
     l = addUsage(l, 'claude-opus-5-5', { input: 500_000, output: 10_000 })

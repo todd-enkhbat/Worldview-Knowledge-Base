@@ -29,8 +29,15 @@ import { ReadOnlyError, createSync, initWriterLock, withSync } from './locks.ts'
 import type { Sync, WriterLock } from './locks.ts'
 import { buildDemoWorld } from './seed/demo.ts'
 import { initStorageStatus } from './storage.ts'
-import type { StoreChange, WorldStore } from './WorldStore.ts'
+import type { BlobInput, StoreChange, WorldStore } from './WorldStore.ts'
 import { combineSyncs, createServerSync } from './serverSync.ts'
+import { assertRevisionMutation, WorldStateConflictError } from './worldState.ts'
+import { KNOWLEDGE_KEY, type KnowledgeCommitOptions, type KnowledgeDelta } from '../knowledge/storage.ts'
+import type { KnowledgeSnapshot } from '../knowledge/types.ts'
+import { DirectoryBundleError, exportDirectoryBundle, restoreDirectoryBundle } from './directoryBundle.ts'
+import type { BundleReader, BundleWriter, DirectoryBundleManifest, DirectoryBundleOptions, DirectoryRestoreOptions, DirectoryRestoreResult } from './directoryBundle.ts'
+
+export { WorldStateConflictError } from './worldState.ts'
 
 // Application data façade. Every mutation goes: validate → update useWorld optimistically →
 // persist → (on failure) roll useWorld back and rethrow. Actions run one at a time through a
@@ -91,6 +98,9 @@ interface RepoState {
 }
 
 let state: RepoState | null = null
+// Replacing a world retains its adapter; queued snapshots still belong to the old data.
+let replacementGeneration = 0
+export const getWorldGeneration = (): number => replacementGeneration
 /** In-flight initRepo, so concurrent calls (React StrictMode effects, HMR) share one open. */
 let initializing: Promise<RepoStatus> | null = null
 const listeners = new Set<(change: StoreChange, origin: 'local' | 'remote') => void>()
@@ -252,7 +262,7 @@ async function openRepo(opts: InitRepoOptions): Promise<RepoStatus> {
   if (opts.storageStatus ?? !injected) {
     initStorageStatus().catch((e) => console.warn('[repo] storage status failed', e))
   }
-  if (canWrite()) await purgeExpiredTrash().catch((e) => console.warn('[repo] trash purge failed', e))
+  if (canWrite() && !interruptedImport) await purgeExpiredTrash().catch((e) => console.warn('[repo] trash purge failed', e))
   return useRepoStatus.getState()
 }
 
@@ -264,6 +274,7 @@ export async function closeRepo(): Promise<void> {
   s.autoBackup?.cancel()
   // Let running actions finish against the open store before it goes away.
   await s.queue.catch(() => {})
+  replacementGeneration++
   state = null
   for (const u of s.unsubscribe) u()
   s.sync?.close()
@@ -312,10 +323,13 @@ async function applyRemoteChange(change: StoreChange): Promise<void> {
       }
       case 'wipe':
       case 'import':
+        replacementGeneration++
         await rehydrate()
+        useRepoStatus.setState({ interruptedImport: await readImportMarker(raw).catch(() => null) })
         break
       case 'events':
       case 'assets':
+      case 'kv':
         break
     }
   } catch (e) {
@@ -332,6 +346,63 @@ function run<T>(fn: () => Promise<T>): Promise<T> {
   return next
 }
 
+/** Commit versioned knowledge state on the same queue as exports and record mutations. */
+export function compareAndSwapWorldState(key: string, value: unknown, expectedRevision: number): Promise<void> {
+  assertRevisionMutation(value, expectedRevision)
+  const expectedStore = repo().store
+  const expectedGeneration = replacementGeneration
+  return run(async () => {
+    if (replacementGeneration !== expectedGeneration) throw new WorldStateConflictError()
+    if (repo().store !== expectedStore) throw new RepoNotReadyError('The active workspace changed before this state could be saved.')
+    requireWriter()
+    if (!(await repo().store.compareAndSwapKv(key, value, expectedRevision))) throw new WorldStateConflictError()
+    emit({ type: 'kv', keys: [key] }, 'local')
+  })
+}
+
+/** Small normalized commands share the same writer, backup and restore boundary. */
+export function commitKnowledgeState(delta: KnowledgeDelta, opts: KnowledgeCommitOptions, fallback: KnowledgeSnapshot): Promise<void> {
+  const expectedStore = repo().store
+  const expectedGeneration = replacementGeneration
+  return run(async () => {
+    if (replacementGeneration !== expectedGeneration || repo().store !== expectedStore) throw new WorldStateConflictError()
+    requireWriter()
+    if (!expectedStore.commitKnowledge && opts.state?.length) throw new Error('This storage adapter cannot atomically update capture state. Reload with a current adapter.')
+    const committed = expectedStore.commitKnowledge
+      ? await expectedStore.commitKnowledge(delta, opts)
+      : await expectedStore.compareAndSwapKv(KNOWLEDGE_KEY, fallback, opts.expectedRevision)
+    if (!committed) throw new WorldStateConflictError()
+    for (const node of opts.nodes ?? []) useWorld.getState().upsertLocal(node)
+    emit({ type: 'kv', keys: [KNOWLEDGE_KEY, ...(opts.state ?? []).map((entry) => entry.key)] }, 'local')
+    if (opts.nodes?.length) emit({ type: 'nodes', ids: opts.nodes.map((node) => node.id) }, 'local')
+  })
+}
+
+/** Serialize retained bytes with restore so late hashing cannot repopulate a new world. */
+export function retainWorldBlob(input: BlobInput, opts: { store: WorldStore; generation: number; shouldWrite?: () => boolean }): Promise<void> {
+  return run(async () => {
+    if (repo().store !== opts.store || replacementGeneration !== opts.generation || opts.shouldWrite && !opts.shouldWrite()) throw new WorldStateConflictError()
+    requireWriter()
+    if (!await opts.store.getAssetMeta(input.meta.id)) await opts.store.putBlob(input)
+  })
+}
+
+/** Persist world-owned UI state without racing a backup; device state uses getStore directly. */
+export function putWorldState(key: string, value: unknown, opts: { store?: WorldStore; shouldWrite?: () => boolean } = {}): Promise<void> {
+  const expectedStore = opts.store ?? repo().store
+  const expectedGeneration = replacementGeneration
+  return run(async () => {
+    // A same-store archive replacement may invalidate a queued UI snapshot while this
+    // command waits. Evaluate its generation guard at the actual write boundary.
+    if (replacementGeneration !== expectedGeneration || opts.shouldWrite && !opts.shouldWrite()) return
+    if (repo().store !== expectedStore) throw new RepoNotReadyError('The active workspace changed before this state could be saved.')
+    requireWriter()
+    await repo().store.putKv(key, value)
+    repo().sync?.post({ type: 'kv', keys: [key] })
+    emit({ type: 'kv', keys: [key] }, 'local')
+  })
+}
+
 function requireWriter(): void {
   const { lock } = repo()
   if (lock && !lock.isWriter) throw new ReadOnlyError()
@@ -345,11 +416,12 @@ function requireSettings(): WorldSettings {
 
 function allRecords(): NodeRecord[] {
   const w = useWorld.getState()
-  return [...w.nodes.values(), ...w.trash.values()]
+  return [...w.nodes.values(), ...w.trash.values(), ...w.excluded.values()]
 }
 
 function findLive(id: string): NodeRecord {
-  const n = useWorld.getState().nodes.get(id)
+  const world = useWorld.getState()
+  const n = world.nodes.get(id) ?? world.excluded.get(id)
   if (!n) throw new Error(`No live node ${id}`)
   return n
 }
@@ -398,7 +470,7 @@ function settle(record: NodeRecord, settings: WorldSettings, now: number, policy
 /** Optimistically apply `next` to useWorld, persist, and roll back on failure. */
 async function commit(next: NodeRecord[], persist: () => Promise<void>): Promise<void> {
   const w = useWorld.getState()
-  const prev = next.map((n) => w.nodes.get(n.id) ?? w.trash.get(n.id))
+  const prev = next.map((n) => w.nodes.get(n.id) ?? w.trash.get(n.id) ?? w.excluded.get(n.id))
   for (const n of next) w.upsertLocal(n)
   try {
     await persist()
@@ -558,8 +630,12 @@ export function createNode(draft: NodeDraftInput, opts: CreateNodeOptions = {}):
  * createNode would. Ids already in the world are skipped, so re-importing merges. Links are
  * kept as given; a link to a node that is neither live nor in this batch is dropped.
  */
-export function addNodes(drafts: readonly NodeDraftInput[], opts: { label?: string; announce?: boolean } = {}): Promise<NodeRecord[]> {
+export function addNodes(drafts: readonly NodeDraftInput[], opts: { label?: string; announce?: boolean; shouldWrite?: () => boolean } = {}): Promise<NodeRecord[]> {
+  const expectedStore = repo().store
+  const expectedGeneration = replacementGeneration
   return run(async () => {
+    if (replacementGeneration !== expectedGeneration || opts.shouldWrite && !opts.shouldWrite()) return []
+    if (repo().store !== expectedStore) throw new RepoNotReadyError('The active workspace changed before these records could be saved.')
     requireWriter()
     const settings = requireSettings()
     const { store, now: clock } = repo()
@@ -893,8 +969,11 @@ export function unlink(a: string, b: string, kind?: LinkKind): Promise<NodeRecor
  * text files are stored as-is. Blobs are written first and removed again if the record
  * update fails, so no orphan survives a failed attach.
  */
-export function addAttachment(nodeId: string, file: Blob, name?: string): Promise<Attachment> {
+export function addAttachment(nodeId: string, file: Blob, name?: string, opts: { shouldWrite?: () => boolean } = {}): Promise<Attachment> {
+  const expectedStore = repo().store
+  const expectedGeneration = replacementGeneration
   return run(async () => {
+    if (repo().store !== expectedStore || replacementGeneration !== expectedGeneration || opts.shouldWrite && !opts.shouldWrite()) throw new RepoNotReadyError('The active workspace changed before this attachment could be saved.')
     requireWriter()
     const { store, now: clock } = repo()
     const now = clock()
@@ -1074,6 +1153,30 @@ export function exportWorld(sink: ArchiveSink, opts: ExportOptions & { markBacku
   })
 }
 
+/** Directory bundles retain complete corpus history without ZIP32's total-size ceiling. */
+export function exportWorldDirectory(writer: BundleWriter, opts: DirectoryBundleOptions = {}): Promise<DirectoryBundleManifest> {
+  return run(async () => {
+    const result = await exportDirectoryBundle(repo().raw, writer, { now: repo().now(), ...opts })
+    const settings = useWorld.getState().settings
+    if (settings && useRepoStatus.getState().writer) await commitSettings(settings, { ...settings, lastBackupAt: result.exportedAt })
+    return result
+  })
+}
+
+export function importWorldDirectory(reader: BundleReader, opts: DirectoryRestoreOptions = {}): Promise<DirectoryRestoreResult> {
+  return run(async () => {
+    requireWriter()
+    try {
+      const result = await restoreDirectoryBundle(repo().raw, reader, { now: repo().now(), ...opts })
+      await afterReplace()
+      return result
+    } catch (error) {
+      if (error instanceof DirectoryBundleError && error.code === 'restore') await afterReplace()
+      throw error
+    }
+  })
+}
+
 /**
  * Import = replace (archive.ts takes the pre-import backup first). Writes bypass the per-call
  * broadcast; other tabs get one 'import' notice and reload everything.
@@ -1099,6 +1202,7 @@ export function importWorld(file: Blob, opts: ImportOptions = {}): Promise<Impor
 
 /** The store was replaced wholesale: reload, tell other tabs, clear the selection. */
 async function afterReplace(): Promise<void> {
+  replacementGeneration++
   const { raw, sync } = repo()
   await rehydrate().catch((e) => console.warn('[repo] rehydrate after import failed', e))
   useRepoStatus.setState({ interruptedImport: await readImportMarker(raw).catch(() => null) })
@@ -1115,6 +1219,7 @@ async function afterReplace(): Promise<void> {
 export async function recoverInterruptedImport(opts: Omit<ImportOptions, 'now'> = {}): Promise<boolean> {
   const marker = useRepoStatus.getState().interruptedImport
   if (!marker?.backupName) return false
+  if (marker.backupKind === 'directory') throw new Error('Use Settings → Backups → Restore folder backup and choose the retained Before-restore folder.')
   const blob = await readAnyBackup(marker.backupName)
   if (!blob) return false
   await importWorld(blob, opts)
@@ -1137,6 +1242,7 @@ export function wipeWorld(opts: { confirm: boolean }): Promise<void> {
     if (opts?.confirm !== true) throw new Error('wipeWorld is irreversible: pass { confirm: true }')
     requireWriter()
     await repo().store.wipe()
+    replacementGeneration++
     useWorld.getState().hydrate(null, [])
     useRepoStatus.setState({ interruptedImport: null })
     useApp.getState().select(null)

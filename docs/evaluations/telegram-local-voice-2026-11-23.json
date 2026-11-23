@@ -1,0 +1,41 @@
+{
+  "recordedAt": "2026-11-23T08:31:36.366Z",
+  "telegramTransport": "simulated fixture (real Bot API credentials not available)",
+  "speechInference": "real local ffmpeg and pinned q8 Whisper",
+  "model": "onnx-community/whisper-base",
+  "revision": "27a07b4b52b3a4c5886134bb4320e93e1a4bbc7c",
+  "node": "v26.5.0",
+  "elapsedMs": 6655,
+  "originalBytes": 38957,
+  "originalSha256": "32c0d93da7f7e96b9a306c129493122dc706f16119212e2795e714ff7eb8d7df",
+  "originalMatchesInput": true,
+  "transcript": "The project Aurora decided to launch on December 12, the copper orchard budget is $312.\nThis is synthetic speech for an integration test.",
+  "timedPassages": [
+    {
+      "id": "3b87d0df-8657-4263-82d2-e393e50fa944",
+      "sourceId": "85e67a90-5b27-48df-8321-4d7852f5006f",
+      "versionId": "69272fb8-27f8-48c3-9886-2ea09d319de3",
+      "role": "human",
+      "locator": "Audio 0:00–0:07",
+      "text": "The project Aurora decided to launch on December 12, the copper orchard budget is $312."
+    },
+    {
+      "id": "1b1f8873-cd86-420d-a62f-79d6bea82ecb",
+      "sourceId": "85e67a90-5b27-48df-8321-4d7852f5006f",
+      "versionId": "69272fb8-27f8-48c3-9886-2ea09d319de3",
+      "role": "human",
+      "locator": "Audio 0:07–0:09",
+      "text": "This is synthetic speech for an integration test."
+    }
+  ],
+  "exactCitations": true,
+  "voiceReady": true,
+  "receiptComplete": true,
+  "worldRecordsUnchanged": true,
+  "checks": {
+    "aurora": true,
+    "december12": true,
+    "amount312": true,
+    "lexicalSearch": true
+  }
+}

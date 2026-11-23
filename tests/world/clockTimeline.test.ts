@@ -6,7 +6,7 @@ import { useApp, useWorld } from '../../src/app/store.ts'
 import { MS_PER_YEAR, STEPS_PER_YEAR, Y_PER_YEAR } from '../../src/domain/constants.ts'
 import type { WorldSettings } from '../../src/domain/types.ts'
 import { makeNodeDraft } from '../../src/domain/validate.ts'
-import { epochAtStep, stepAtEpoch } from '../../src/domain/time.ts'
+import { birthStep, epochAtStep } from '../../src/domain/time.ts'
 import { Timeline } from '../../src/hud/Timeline.tsx'
 import { getPlayhead, seekPlayhead, stepOfEpoch } from '../../src/world/time/clock.ts'
 import { useSimStats } from '../../src/world/time/physicsClient.ts'
@@ -151,18 +151,19 @@ describe('Timeline', () => {
     expect(button(/^Jump to first thought$/)).toBeTruthy()
   })
 
-  it('jumps beyond a fractional birth so the exact dated record is visible', () => {
+  it('counts and jumps to the same quantized births as the shared pose writer', () => {
     const birth = epochAtStep(1200.2, settings.T0, settings.stepsPerYear)
+    const futureBirth = epochAtStep(1200.75, settings.T0, settings.stepsPerYear)
     act(() => {
-      useWorld.getState().hydrate(settings, [makeNodeDraft('memory', { id: 'fractional', temporalOrigin: birth })])
-      seekPlayhead(1200)
+      useWorld.getState().hydrate(settings, [makeNodeDraft('memory', { id: 'fractional', temporalOrigin: birth }), makeNodeDraft('idea', { id: 'later', temporalOrigin: futureBirth })])
+      seekPlayhead(1199)
     })
     expect(host.querySelector('.timeline-context')?.textContent).toContain('0 thoughts at this date')
     act(() => button(/^Jump to first thought$/).click())
-    const firstVisibleStep = Math.ceil(stepAtEpoch(birth, settings.T0, settings.stepsPerYear))
+    const firstVisibleStep = birthStep(birth, settings.T0, settings.stepsPerYear)
     expect(getPlayhead().step).toBe(firstVisibleStep)
-    expect(getPlayhead().step).toBe(1201)
-    expect(epochAtStep(getPlayhead().step, settings.T0, settings.stepsPerYear)).toBeGreaterThanOrEqual(birth)
+    expect(getPlayhead().step).toBe(1200)
+    expect(birthStep(futureBirth, settings.T0, settings.stepsPerYear)).toBeGreaterThan(getPlayhead().step)
     expect(host.querySelector('.timeline-context')?.textContent).toContain('1 thought at this date')
   })
 

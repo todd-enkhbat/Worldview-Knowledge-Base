@@ -1,0 +1,53 @@
+{
+  "verifiedAtUtc": "2026-11-23T05:16:45.255003+00:00",
+  "scope": "Source integrity and reference targets, not upstream runtime tests or model-quality evaluation.",
+  "projects": [
+    {
+      "name": "agent-second-brain",
+      "files": 148,
+      "bytes": 1085034
+    },
+    {
+      "name": "basic-memory",
+      "files": 1932,
+      "bytes": 21400934
+    },
+    {
+      "name": "claude-mem",
+      "files": 3990,
+      "bytes": 75334027
+    },
+    {
+      "name": "gbrain",
+      "files": 16678,
+      "bytes": 270803265
+    },
+    {
+      "name": "llm-wiki",
+      "files": 1,
+      "bytes": 11985
+    },
+    {
+      "name": "obsidian-skills",
+      "files": 28,
+      "bytes": 157258
+    },
+    {
+      "name": "qmd",
+      "files": 329,
+      "bytes": 6250860
+    },
+    {
+      "name": "supermemory",
+      "files": 941,
+      "bytes": 72809563
+    }
+  ],
+  "projectCount": 8,
+  "sourceFiles": 24047,
+  "sourceBytes": 447852926,
+  "reuseFiles": 19,
+  "pinnedCodeLinks": 131,
+  "errors": [],
+  "passed": true
+}

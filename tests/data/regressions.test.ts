@@ -148,7 +148,7 @@ describe('auto-backup', () => {
       },
     } as unknown as FileSystemDirectoryHandle
     const store = createMemoryStore()
-    vi.spyOn(store, 'listNodes').mockRejectedValue(new Error('disk error'))
+    vi.spyOn(store, 'readWorldSnapshot').mockRejectedValue(new Error('disk error'))
     await expect(writeAutoBackup(store, dir, NOW)).rejects.toThrow('disk error')
     expect([...files.keys()]).toEqual([])
   })

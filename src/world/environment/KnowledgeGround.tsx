@@ -62,7 +62,6 @@ function contourGeometry(plan: SpatialGroundPlan, district: GroundDistrict, fact
 }
 
 function District({ district, index, plan, showLabel }: { district: GroundDistrict; index: number; plan: SpatialGroundPlan; showLabel: boolean }) {
-  const nodes = useWorld((s) => s.nodes)
   const settings = useWorld((s) => s.settings)
   const [born, setBorn] = useState(0)
   const sampled = useRef(-Infinity)
@@ -78,9 +77,12 @@ function District({ district, index, plan, showLabel }: { district: GroundDistri
   useFrame(({ clock }) => {
     if (!showLabel || !settings || clock.elapsedTime - sampled.current < .25) return
     sampled.current = clock.elapsedTime
-    const epoch = playheadEpoch(settings)
+    const poses = getPoseTable()
     let count = 0
-    for (const id of district.memberIds) if ((nodes.get(id)?.temporalOrigin ?? Infinity) <= epoch) count++
+    for (const id of district.memberIds) {
+      const row = poses.index.get(id)
+      if (row !== undefined && poses.born[row]) count++
+    }
     if (count !== last.current) { last.current = count; setBorn(count) }
   })
   const open = () => exploreDistrict(plan, district)

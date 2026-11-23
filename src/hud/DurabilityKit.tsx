@@ -116,7 +116,7 @@ export function HudDialog({ title, onClose, children, initialFocus, width = 'max
   useFocusOnMount(ref, initialFocus)
   return createPortal(
     <div
-      className={`fixed inset-0 ${nested ? 'z-[70]' : 'z-50'} flex items-start justify-center overflow-y-auto bg-void/75 p-4 sm:p-10`}
+      className={`hud-dialog-scrim fixed inset-0 ${nested ? 'z-[70]' : 'z-50'} flex items-start justify-center overflow-y-auto bg-void/75 p-4 sm:p-10`}
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose()
       }}
@@ -128,13 +128,13 @@ export function HudDialog({ title, onClose, children, initialFocus, width = 'max
         aria-labelledby={titleId}
         tabIndex={-1}
         onKeyDown={(e) => trapKeys(e, ref.current, onClose)}
-        className={`hud-panel relative w-full ${width} outline-none`}
+        className={`hud-dialog-frame hud-panel relative w-full ${width} outline-none`}
       >
-        <header className="flex items-center justify-between gap-4 border-b border-bone/15 px-5 py-3">
-          <h2 id={titleId} className="font-mono text-[11px] font-bold uppercase tracking-[0.2em] text-bone">
+        <header className="hud-dialog-header flex items-center justify-between gap-4 border-b border-bone/15 px-5 py-3">
+          <h2 id={titleId} className="hud-dialog-title font-mono text-[11px] font-bold uppercase tracking-[0.2em] text-bone">
             {title}
           </h2>
-          <button type="button" className={BTN} onClick={onClose} aria-label={`Close ${title.toLowerCase()}`}>
+          <button type="button" className={`hud-dialog-close ${BTN}`} onClick={onClose} aria-label={`Close ${title.toLowerCase()}`}>
             Esc ✕
           </button>
         </header>

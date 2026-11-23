@@ -6,6 +6,7 @@ import type { NodeRecord } from '../domain/types.ts'
 import { nodeText, queryText, textHash } from './embedText.ts'
 import type { EmbedReply, EmbedRequest } from './embed.worker.ts'
 import { localVectorStore, serverVectorStore, type VectorStore } from './vectorStore.ts'
+import { semanticAllowedNodeIds, type SemanticSourcePolicy } from './semanticPolicy.ts'
 
 // The semantic index: one 512-d EmbeddingGemma 2 vector per live node, kept in step with
 // the world. Opt-in per browser (the first run downloads ~175 MB), so it starts only after
@@ -141,12 +142,16 @@ export function disableSemantic(): void {
  */
 export function stopSemantic(): void {
   generation++
+  again = false
   unsubscribe?.()
   unsubscribe = null
   if (timer) clearTimeout(timer)
   timer = null
   worker?.terminate()
   worker = null
+  for (const request of pending.values()) request.reject(new Error('Semantic indexing stopped'))
+  pending.clear()
+  configWaiters.splice(0)
   modelConfig = null
   vectors = null
   cache.clear()
@@ -167,7 +172,8 @@ export async function startSemantic(): Promise<void> {
   }
   if (!unsubscribe) {
     unsubscribe = subscribeRepo((change) => {
-      if (change.type === 'nodes' || change.type === 'import' || change.type === 'wipe') schedule()
+      if (change.type === 'nodes' || change.type === 'import' || change.type === 'wipe') { generation++; schedule() }
+      if (change.type === 'kv' && change.keys.includes('knowledge.v1')) { generation++; schedule() }
     })
   }
   useSemantic.setState({ phase: cache.size ? 'indexing' : 'loading-model', error: null })
@@ -187,14 +193,16 @@ function sync(): Promise<void> {
     again = true
     return syncing
   }
+  const startedGeneration = generation
   syncing = runSync()
     .catch((e: unknown) => {
+      if (generation !== startedGeneration) return
       console.warn('[semantic] indexing failed', e)
       useSemantic.setState({ phase: 'error', error: e instanceof Error ? e.message : String(e) })
     })
     .finally(() => {
       syncing = null
-      if (again) {
+      if (again && vectors) {
         again = false
         schedule()
       }
@@ -204,10 +212,11 @@ function sync(): Promise<void> {
 
 async function runSync(): Promise<void> {
   const store = vectors
-  if (!store) return
+  if (!store || !isRepoReady()) return
+  const worldStore = getStore()
   const gen = generation
   // A stop (or a swap of the world store) after any await ends this pass before it writes.
-  const stale = () => gen !== generation || vectors !== store
+  const stale = () => gen !== generation || vectors !== store || !isRepoReady() || getStore() !== worldStore
   if (hashes.size === 0) {
     const [meta, all] = await Promise.all([store.meta(), store.all()])
     if (stale()) return
@@ -216,8 +225,11 @@ async function runSync(): Promise<void> {
   }
   const config = await ensureModel()
   if (stale()) return
-  const live = [...useWorld.getState().nodes.values()]
-  const liveIds = new Set(live.map((n) => n.id))
+  const policy = await getStore().getKv<{ sources?: SemanticSourcePolicy[] }>('knowledge.v1')
+  if (stale()) return
+  const records = [...useWorld.getState().nodes.values()]
+  const liveIds = semanticAllowedNodeIds(records, Array.isArray(policy?.sources) ? policy.sources : [])
+  const live = records.filter((record) => liveIds.has(record.id))
   // Drop embeddings of nodes that are gone (trash included: they leave the layout).
   for (const id of [...hashes.keys()]) {
     if (!liveIds.has(id)) {
@@ -266,9 +278,11 @@ export interface Neighbour {
 export async function nearest(vector: Float32Array, k = 8, exclude?: ReadonlySet<string>): Promise<Neighbour[]> {
   if (!vectors) return []
   const nodes = useWorld.getState().nodes
+  const policy = await getStore().getKv<{ sources?: SemanticSourcePolicy[] }>('knowledge.v1')
+  const permitted = semanticAllowedNodeIds([...nodes.values()], Array.isArray(policy?.sources) ? policy.sources : [])
   const hits = await vectors.knn(vector, k + (exclude?.size ?? 0) + 4)
   return hits
-    .filter((h) => nodes.has(h.id) && !exclude?.has(h.id))
+    .filter((h) => permitted.has(h.id) && !exclude?.has(h.id))
     .slice(0, k)
     .map((h) => ({ id: h.id, similarity: 1 - h.distance }))
 }

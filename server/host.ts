@@ -4,6 +4,14 @@ import { Accounts, AccountError, RateLimit, type User } from './accounts.ts'
 import { createApiHandler } from './api.ts'
 import { ChangeBus } from './changes.ts'
 import { openWorldDb, EMBEDDING_DIM, type WorldDb } from './worldDb.ts'
+import { FolderCapture, handleFolderRequest } from './folderCapture.ts'
+import { authenticateMemoryClient, memoryTokenWorld } from './memoryAccess.ts'
+import { createMemoryHttp, memoryOriginAllowed, sendMemoryJson } from './memoryHttp.ts'
+import { createQmdHttp } from './qmdHttp.ts'
+import { TelegramCapture, handleTelegramRequest, type TelegramOptions } from './telegramCapture.ts'
+import { transcribeLocalMedia, closeLocalTranscription } from './localTranscription.ts'
+import { handleWhisperModelRequest } from './whisperModels.ts'
+import type { AiRuntime } from './ai.ts'
 
 // The /api surface for either way of running the app:
 //
@@ -30,13 +38,18 @@ export interface HostOptions {
   signup?: 'open' | 'first'
   refine?: (body: unknown) => Promise<unknown>
   chat?: (body: unknown, res: ServerResponse) => Promise<void>
+  ai?: Pick<AiRuntime, 'status' | 'probe'>
   now?: () => number
+  telegram?: Pick<TelegramOptions, 'token' | 'allowedUserIds' | 'allowedChatIds' | 'autoPoll' | 'fetch'>
 }
 
 interface World {
   db: WorldDb
   bus: ChangeBus
   handler: ReturnType<typeof createApiHandler>
+  memory: ReturnType<typeof createMemoryHttp>
+  qmd: ReturnType<typeof createQmdHttp>
+  telegram: TelegramCapture
 }
 
 type Handler = (req: IncomingMessage, res: ServerResponse, next?: () => void) => void
@@ -95,12 +108,21 @@ export function createHost(opts: HostOptions): Host {
     if (!w) {
       const db = openWorldDb(join(dir, 'world.sqlite'))
       const bus = new ChangeBus()
-      w = { db, bus, handler: createApiHandler({ db, blobDir: join(dir, 'blobs'), refine: opts.refine, chat: opts.chat, bus, now: opts.now }) }
+      w = { db, bus, handler: createApiHandler({ db, blobDir: join(dir, 'blobs'), refine: opts.refine, chat: opts.chat, bus, now: opts.now }), memory: createMemoryHttp(db, key, opts.now), qmd: createQmdHttp({ db, directory: join(dir, 'qmd') }), telegram: new TelegramCapture({ db, blobDir: join(dir, 'blobs'), bus, now: opts.now, ...(key === 'local' ? opts.telegram : {}), transcribe: transcribeLocalMedia }) }
       worlds.set(key, w)
     }
     return w
   }
   const worldFor = (user: User | null): World => (user ? world(user.id, join(dataDir, 'users', user.id)) : world('local', dataDir))
+
+  // Persisted, explicitly registered folders resume with the local service even before
+  // a browser opens. Hosted accounts never construct a filesystem capture service.
+  let capture: FolderCapture | null = null
+  let captureError: string | null = null
+  if (!accounts) {
+    try { const local = worldFor(null); capture = new FolderCapture({ dataDir, db: local.db, bus: local.bus }) }
+    catch (error) { captureError = error instanceof Error ? error.message : String(error) }
+  }
 
   async function auth(req: IncomingMessage, res: ServerResponse, action: string): Promise<void> {
     if (!accounts) return sendJson(res, 404, { error: 'accounts are off on this server' })
@@ -137,8 +159,31 @@ export function createHost(opts: HostOptions): Host {
     const seg = path.split('/').filter(Boolean)
     const method = req.method ?? 'GET'
     const run = async () => {
+      if (seg[0] === 'models' && await handleWhisperModelRequest(req, res)) return
+      if (seg[0] === 'capture' && seg[1] !== 'telegram') {
+        if (accounts) return sendJson(res, 403, { available: false, error: 'Local folder capture is disabled on account-hosted servers.' })
+        if (seg[1] !== 'folders') return sendJson(res, 404, { available: false, error: 'Unknown capture route.' })
+        if (!capture) return sendJson(res, 503, { available: false, error: captureError ?? 'Local folder capture is unavailable.' })
+        return handleFolderRequest(capture, req, res)
+      }
       if (seg[0] === 'auth') return auth(req, res, seg[1] ?? '')
       const user = accounts ? accounts.userForToken(cookieValue(req.headers.cookie, SESSION_COOKIE)) : null
+      if (!accounts && (seg[0] === 'memory' || seg[0] === 'mcp' || seg[0] === 'qmd' || seg[0] === 'ai' || seg[0] === 'capture' && seg[1] === 'telegram')) {
+        let hostname = ''
+        try { hostname = new URL(`http://${req.headers.host ?? ''}`).hostname } catch { /* invalid host is refused */ }
+        if (!['localhost', '127.0.0.1', '[::1]'].includes(hostname)) return sendMemoryJson(res, 403, { error: 'Local memory requires a loopback host.' })
+      }
+      if (seg[0] === 'mcp' || seg[0] === 'memory' && seg[1] !== 'clients' && seg[1] !== 'mirror') {
+        if (!memoryOriginAllowed(req)) return sendMemoryJson(res, 403, { error: 'Origin is not permitted.' })
+        const token = /^Bearer (\S+)$/.exec(String(req.headers.authorization ?? ''))?.[1] ?? ''
+        const key = memoryTokenWorld(token)
+        const tokenUser = key && key !== 'local' && accounts ? accounts.userById(key) : null
+        if (!key || accounts && !tokenUser || !accounts && key !== 'local') return sendMemoryJson(res, 401, { error: 'A memory client token is required.' })
+        const selected = worldFor(tokenUser)
+        const client = authenticateMemoryClient(selected.db, token, key, opts.now?.() ?? Date.now())
+        if (!client) return sendMemoryJson(res, 401, { error: 'This memory client is expired, revoked or unavailable.' })
+        return seg[0] === 'mcp' ? selected.memory.mcp(req, res, client) : selected.memory.operation(req, res, client, seg[1] ?? '')
+      }
       if (seg[0] === 'health' && method === 'GET') {
         return sendJson(res, 200, {
           ok: true,
@@ -150,6 +195,16 @@ export function createHost(opts: HostOptions): Host {
         })
       }
       if (accounts && !user) return sendJson(res, 401, { error: 'Sign in first.' })
+      if (seg[0] === 'ai' && seg[1] === 'status') {
+        if (!memoryOriginAllowed(req) || !req.headers['x-wv-client']) return sendJson(res, 403, { error: 'Open the authorized workspace to check AI.' })
+        if (method === 'GET') return sendJson(res, 200, opts.ai?.status() ?? { provider: null, model: null, configured: false })
+        if (method === 'POST') return sendJson(res, 200, await opts.ai?.probe() ?? { provider: null, model: null, configured: false, ok: false, message: 'No AI provider is configured.' })
+        return sendJson(res, 405, { error: 'Method not allowed.' })
+      }
+      if (seg[0] === 'qmd') return worldFor(user).qmd.handle(req, res)
+      if (seg[0] === 'capture' && seg[1] === 'telegram') return handleTelegramRequest(worldFor(user).telegram, req, res)
+      if (seg[0] === 'memory' && seg[1] === 'mirror') return worldFor(user).memory.mirror(req, res)
+      if (seg[0] === 'memory' && seg[1] === 'clients') return worldFor(user).memory.management(req, res)
       if (accounts && !SAFE.has(method) && !req.headers['x-wv-client']) return sendJson(res, 403, { error: 'missing x-wv-client header' })
       worldFor(user).handler(req, res)
     }
@@ -165,12 +220,16 @@ export function createHost(opts: HostOptions): Host {
     handler,
     accounts,
     close() {
+      capture?.close()
       for (const w of worlds.values()) {
+        w.qmd.close()
+        w.telegram.close()
         w.bus.close()
         w.db.close()
       }
       worlds.clear()
       accounts?.close()
+      closeLocalTranscription()
     },
   }
 }

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useApp, useWorld } from '../../src/app/store.ts'
 import { createMemoryStore } from '../../src/data/memoryStore.ts'
 import { closeRepo, completeFirstRun, createNode, initRepo } from '../../src/data/repo.ts'
-import { _rememberOriginalForTests, keepAll, keepCard, keepStaged, loadChat, resetChat, saveThought, send, skipCard, stage, useChat } from '../../src/ai/chat/session.ts'
+import { _rememberOriginalForTests, keepAll, keepCard, keepStaged, loadChat, resetChat, saveThought, send, setCloudAiStatus, skipCard, stage, startInterview, useChat } from '../../src/ai/chat/session.ts'
 import { importVault, stagedProposal } from '../../src/ai/chat/apply.ts'
 import type { ChatStreamEvent } from '../../src/ai/chat/protocol.ts'
 
@@ -42,6 +42,7 @@ beforeEach(async () => {
   resetChat()
   useChat.setState({ loaded: false })
   await loadChat()
+  useChat.setState({ cloudAi: 'enabled' }) // These tests explicitly exercise an opted-in cloud session.
 })
 
 afterEach(async () => {
@@ -52,6 +53,23 @@ afterEach(async () => {
 const titles = () => [...useWorld.getState().nodes.values()].map((n) => n.title).sort()
 
 describe('chat session', () => {
+  it('makes no network request or transcript change when cloud AI is off, including onboarding', async () => {
+    const fetcher = vi.fn(); vi.stubGlobal('fetch', fetcher)
+    const file = new File(['Local original'], 'local.txt', { type: 'text/plain' })
+    stage([{ name: file.name, kind: 'text', bytes: file.size, blocks: [], file }])
+    setCloudAiStatus({ provider: null, configured: false })
+    startInterview()
+    await send('Keep this local https://example.com/private-note')
+    expect(fetcher).not.toHaveBeenCalled()
+    expect(useChat.getState().history).toEqual([])
+    expect(useChat.getState().staged[0].file).toBe(file)
+    expect(useChat.getState().busy).toBe(false)
+    expect(useChat.getState().error).toContain('Cloud AI is off')
+    expect(await saveThought('A local thought')).toBeTruthy()
+    expect(fetcher).not.toHaveBeenCalled()
+    expect([...useWorld.getState().nodes.values()][0].attachments[0].name).toBe('local.txt')
+  })
+
   it('answers search_world itself, waits on proposals, and writes nothing until kept (I5)', async () => {
     const existing = await createNode({ archetype: 'entity', title: 'Ludwig Boltzmann' })
     const { bodies } = script([

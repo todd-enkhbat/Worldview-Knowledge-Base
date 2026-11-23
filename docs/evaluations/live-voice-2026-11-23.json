@@ -1,0 +1,68 @@
+{
+  "measuredAt": "2026-11-23T06:46:30.125Z",
+  "node": "v26.5.0",
+  "model": "onnx-community/whisper-base",
+  "revision": "27a07b4b52b3a4c5886134bb4320e93e1a4bbc7c",
+  "dtype": "q8",
+  "runtime": "native CPU worker + FFmpeg decode",
+  "fixture": {
+    "generator": "macOS Samantha, synthetic speech, 150 words/min",
+    "bytes": 320548,
+    "sha256": "d15bc680852d9fb70630aed6fa205769536d4516b4024504330c8713732ce4fe",
+    "expected": "Project Aurora decided to launch on December twelve. The copper orchard budget is three hundred twelve dollars. This is synthetic speech for an integration test."
+  },
+  "actualTranscript": "The project Aurora decided to launch on December 12, the copper-orchored budget is $312.\nThis is synthetic speech for an integration test.",
+  "audioChunks": [
+    {
+      "start": 0,
+      "end": 7.16
+    },
+    {
+      "start": 7.16,
+      "end": 9.96
+    }
+  ],
+  "stages": [
+    "decode",
+    "loading-model",
+    "transcribing"
+  ],
+  "elapsedMs": 1394.158542,
+  "originalVerifiedBeforeInference": true,
+  "originalVerifiedAfterInference": true,
+  "exactCitations": [
+    {
+      "id": "c4258650-9afe-4f3b-93a5-6d1aba7035b4",
+      "versionId": "e86aa744-fe6f-4ea2-9c4b-71165f22c408",
+      "start": 0,
+      "end": 88,
+      "locator": "Audio 0:00–0:07",
+      "role": "unknown",
+      "authoredAt": null
+    },
+    {
+      "id": "a43936ce-b441-4a87-89ef-6f46b8d18ede",
+      "versionId": "e86aa744-fe6f-4ea2-9c4b-71165f22c408",
+      "start": 89,
+      "end": 138,
+      "locator": "Audio 0:07–0:09",
+      "role": "unknown",
+      "authoredAt": null
+    }
+  ],
+  "duplicateInferenceCalls": 1,
+  "restartPreservedIdentity": true,
+  "dateNumberPhraseChecks": [
+    "Aurora",
+    "December 12",
+    "312",
+    "synthetic speech",
+    "integration test"
+  ],
+  "limitations": [
+    "Synthetic speech from one speaker; not general transcription accuracy.",
+    "The recognizer wrote copper-orchored for copper orchard; source text retains the actual model output.",
+    "Browser WASM path is verified separately by UI testing."
+  ],
+  "personalDataUsed": false
+}

@@ -1,4 +1,5 @@
 import type { AssetMeta, InteractionEvent, NodeRecord, WorldSettings } from '../domain/types.ts'
+import type { KnowledgeCommitOptions, KnowledgeDelta } from '../knowledge/storage.ts'
 
 // Storage adapter. Browser storage is the only copy of the user's world, so every
 // implementation must be durable, atomic per call, and exportable (see archive.ts).
@@ -17,8 +18,21 @@ export interface StoreInfo {
   blobBackend: 'memory' | 'opfs' | 'idb' | 'server'
 }
 
+export interface WorldSnapshot {
+  settings: WorldSettings | null
+  nodes: NodeRecord[]
+  events: InteractionEvent[]
+  assets: AssetMeta[]
+  kv: Record<string, unknown>
+}
+
 export interface WorldStore {
   readonly info: StoreInfo
+  /** One point-in-time metadata read, including portable KV; bytes remain immutable reads. */
+  readWorldSnapshot?(keys: readonly string[]): Promise<WorldSnapshot>
+  /** Incremental corpus command; exact replay is successful without a second mutation. */
+  commitKnowledge?(delta: KnowledgeDelta, opts: KnowledgeCommitOptions): Promise<boolean>
+  getKnowledgeRevision?(): Promise<number>
 
   // settings
   getSettings(): Promise<WorldSettings | null>
@@ -48,10 +62,14 @@ export interface WorldStore {
   // key/value for small app state (auto-backup directory handle, checkpoint cache index, …)
   getKv<T = unknown>(key: string): Promise<T | undefined>
   putKv(key: string, value: unknown): Promise<void>
+  /** Atomically update versioned world state, refusing a stale revision. Missing state is revision zero. */
+  compareAndSwapKv(key: string, value: unknown, expectedRevision: number): Promise<boolean>
   deleteKv(key: string): Promise<void>
 
   /** Remove everything (records, events, settings, assets, kv). */
   wipe(): Promise<void>
+  /** Clear world metadata atomically with a recovery marker, preserving selected device keys. */
+  resetWithKv(key: string, value: unknown, preserveKeys?: readonly string[], expectedKnowledgeRevision?: number): Promise<void>
   close(): void
 }
 
@@ -60,5 +78,6 @@ export type StoreChange =
   | { type: 'settings' }
   | { type: 'events' }
   | { type: 'assets'; ids: string[] }
+  | { type: 'kv'; keys: string[] }
   | { type: 'wipe' }
   | { type: 'import' }

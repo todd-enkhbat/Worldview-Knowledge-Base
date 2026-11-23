@@ -231,6 +231,8 @@ interface WorldState {
   nodes: Map<string, NodeRecord>
   /** Soft-deleted records by id (trash). */
   trash: Map<string, NodeRecord>
+  /** Retained records excluded from the active corpus/world, independently of deletion. */
+  excluded: Map<string, NodeRecord>
   /** Bumped on every mutation; cheap dependency for memoised derived data. */
   revision: number
   storage: { persisted: boolean | null; origin: string; privateMode: boolean | null; usage: number | null; quota: number | null }
@@ -247,6 +249,7 @@ export const useWorld = create<WorldState>()((set) => ({
   settings: null,
   nodes: new Map(),
   trash: new Map(),
+  excluded: new Map(),
   revision: 0,
   storage: {
     persisted: null,
@@ -259,29 +262,32 @@ export const useWorld = create<WorldState>()((set) => ({
   hydrate: (settings, records) => {
     const nodes = new Map<string, NodeRecord>()
     const trash = new Map<string, NodeRecord>()
-    for (const r of records) (r.deletedAt === null ? nodes : trash).set(r.id, r)
-    set((s) => ({ loaded: true, settings, nodes, trash, revision: s.revision + 1 }))
+    const excluded = new Map<string, NodeRecord>()
+    for (const r of records) (r.deletedAt !== null ? trash : r.corpusExcluded ? excluded : nodes).set(r.id, r)
+    set((s) => ({ loaded: true, settings, nodes, trash, excluded, revision: s.revision + 1 }))
   },
   upsertLocal: (n) =>
     set((s) => {
       const nodes = new Map(s.nodes)
       const trash = new Map(s.trash)
-      if (n.deletedAt === null) {
+      const excluded = new Map(s.excluded)
+      nodes.delete(n.id); trash.delete(n.id); excluded.delete(n.id)
+      if (n.deletedAt !== null) trash.set(n.id, n)
+      else if (n.corpusExcluded) excluded.set(n.id, n)
+      else {
         nodes.set(n.id, n)
-        trash.delete(n.id)
-      } else {
-        nodes.delete(n.id)
-        trash.set(n.id, n)
       }
-      return { nodes, trash, revision: s.revision + 1 }
+      return { nodes, trash, excluded, revision: s.revision + 1 }
     }),
   removeLocal: (id) =>
     set((s) => {
       const nodes = new Map(s.nodes)
       const trash = new Map(s.trash)
+      const excluded = new Map(s.excluded)
       nodes.delete(id)
       trash.delete(id)
-      return { nodes, trash, revision: s.revision + 1 }
+      excluded.delete(id)
+      return { nodes, trash, excluded, revision: s.revision + 1 }
     }),
   setSettingsLocal: (settings) => set((s) => ({ settings, revision: s.revision + 1 })),
   setStorage: (patch) => set((s) => ({ storage: { ...s.storage, ...patch } })),

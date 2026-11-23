@@ -1,21 +1,21 @@
 import { lazy, Suspense, useEffect, useState, type ComponentType, type LazyExoticComponent } from 'react'
 import { useAuth } from './data/auth.ts'
 import { SignIn } from './hud/SignIn.tsx'
+import { parseAppRoute, type AppRoute } from './workspace/routes.ts'
+import { ExploreBoundary } from './workspace/ExploreBoundary.tsx'
+import { WorkspaceBoundary } from './workspace/WorkspaceBoundary.tsx'
+import { useRepoStatus } from './data/repo.ts'
+import { initializeWorkspacePersistence } from './workspace/persistence.ts'
+import { workspaceScopeForAccount } from './workspace/state.ts'
+import { initialWorkspaceTheme } from './workspace/appearance.ts'
 
-// Hash routes: #/ world · #/lab · #/lab/perf · #/lab/s1 · #/sandbox/<name> (dev only).
+// Daily routes open without WebGL; #/explore retains the full world, alongside the lab routes.
 // Static hosting needs no server rewrites.
-type Route = 'world' | 'lab' | 'perf' | 's1' | 'sandbox'
-
-function parseHash(hash: string): Route {
-  const path = hash.replace(/^#/, '') || '/'
-  if (import.meta.env.DEV && path.startsWith('/sandbox/')) return 'sandbox'
-  if (path.startsWith('/lab/perf')) return 'perf'
-  if (path.startsWith('/lab/s1')) return 's1'
-  if (path.startsWith('/lab')) return 'lab'
-  return 'world'
-}
+const parseHash = (hash: string): AppRoute => parseAppRoute(hash, import.meta.env.DEV)
 
 const WorldPage = lazy(() => import('./world/WorldPage.tsx'))
+const ExploreBridge = lazy(() => import('./workspace/ExploreBridge.tsx'))
+const Workbench = lazy(() => import('./workspace/Workbench.tsx'))
 const LabPage = lazy(() => import('./lab/LabPage.tsx'))
 const PerfBench = lazy(() => import('./lab/PerfBench.tsx'))
 const S1Spike = lazy(() => import('./lab/S1Spike.tsx'))
@@ -32,7 +32,7 @@ function sandboxFor(hash: string): LazyExoticComponent<ComponentType> | null {
 }
 
 export default function App() {
-  const [route, setRoute] = useState<Route>(() => parseHash(location.hash))
+  const [route, setRoute] = useState<AppRoute>(() => parseHash(location.hash))
   const [hash, setHash] = useState(() => location.hash)
 
   useEffect(() => {
@@ -45,11 +45,17 @@ export default function App() {
   }, [])
 
   const auth = useAuth((s) => s.state)
+  const userId = useAuth((s) => s.user?.id)
+  const ready = useRepoStatus((s) => s.ready)
+  useEffect(() => {
+    if (ready && auth !== 'signed-out') void initializeWorkspacePersistence(workspaceScopeForAccount(userId, location.search, import.meta.env.DEV))
+  }, [ready, auth, userId])
   if (auth === 'signed-out' && route !== 'sandbox') return <SignIn />
 
   return (
     <Suspense fallback={<Boot />}>
-      {route === 'world' && <WorldPage />}
+      {route === 'world' && <ExploreBoundary key={hash}><WorldPage /><ExploreBridge hash={hash} /></ExploreBoundary>}
+      {(route === 'today' || route === 'search' || route === 'library' || route === 'topics' || route === 'knowledge' || route === 'review' || route === 'sources') && <WorkspaceBoundary key={userId ?? 'local'}><Workbench section={route} hash={hash} /></WorkspaceBoundary>}
       {route === 'lab' && <LabPage />}
       {route === 'perf' && <PerfBench />}
       {route === 's1' && <S1Spike />}
@@ -59,9 +65,12 @@ export default function App() {
 }
 
 function Boot() {
+  const [theme] = useState(initialWorkspaceTheme)
   return (
-    <div className="flex h-full items-center justify-center font-mono text-[11px] uppercase tracking-[0.2em] text-concrete">
-      Opening your world…
+    <div className="workspace-boot" data-theme={theme} role="status">
+      <span className="workspace-boot-spinner" aria-hidden="true" />
+      <strong>Worldview</strong>
+      <p>Opening your saved workspace…</p>
     </div>
   )
 }

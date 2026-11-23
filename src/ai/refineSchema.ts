@@ -90,7 +90,7 @@ export const REFINE_JSON_SCHEMA = {
   },
 } as const
 
-export const REFINE_SYSTEM = `You turn one line a person typed into a record in their personal "worldview" knowledge base: a 3D world where height is time.
+export const REFINE_SYSTEM = `You turn one line a person typed into a record in their personal "worldview" knowledge base: a 3D world where XYZ is spatial and the timeline represents history. Dates affect history, not spatial height. A date edit must never move an anchor or pin.
 
 Pick the archetype:
 - idea: a concept, belief, claim or question

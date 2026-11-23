@@ -2,11 +2,13 @@ import type Anthropic from '@anthropic-ai/sdk'
 import { create } from 'zustand'
 import { useWorld } from '../../app/store.ts'
 import { registerDevApi } from '../../app/devApi.ts'
-import { addAttachment, addNodes, getStore, isRepoReady, link, updateNode } from '../../data/repo.ts'
+import { addAttachment, addNodes, getStore, isRepoReady, link, putWorldState, subscribeRepo, updateNode, useRepoStatus } from '../../data/repo.ts'
+import type { WorldStore } from '../../data/WorldStore.ts'
 import { recordUsage } from '../usage.ts'
 import { findOriginal, rememberOriginal } from './originals.ts'
-import { proposalToDraft, searchWorld, stagedProposal, URL_RE, urlToIntake, type IntakeItem } from './apply.ts'
-import { TOOL_INPUTS, type AskUserInput, type ChatStreamEvent, type ProposedNote, type ToolName } from './protocol.ts'
+import { citationAllowed, evidenceFilters, evidenceScope, proposalToDraft, readPassageForModel, readMemoryContextForModel, readRecord, searchPassagesForModel, searchWorld, stagedProposal, URL_RE, urlToIntake, type EvidenceCitation, type IntakeItem } from './apply.ts'
+import { TOOL_INPUTS, type AskUserInput, type ChatStreamEvent, type ProposedNote, type ReadRecordInput, type ToolName } from './protocol.ts'
+import { initializeKnowledge, useKnowledge } from '../../knowledge/index.ts'
 
 // The chat intake session (milestone 1). The browser owns the conversation: it is
 // append-only (thinking blocks stay valid), saved in the world's kv store, and every tool
@@ -49,9 +51,15 @@ interface Persisted {
   laterKept: string[]
   contextDay: string | null
   model: string | null
+  /** Only citations issued by an actual evidence tool may become clickable sources. */
+  citations: Record<string, EvidenceCitation>
+  /** Old local transcript stays visible when permissions or source scope changes. */
+  modelHistoryStart: number
+  evidenceBoundary: string
 }
 
 export interface ChatState extends Persisted {
+  cloudAi: 'unknown' | 'disabled' | 'enabled'
   loaded: boolean
   busy: boolean
   /** Text of the assistant turn being streamed. */
@@ -69,10 +77,11 @@ export interface ChatState extends Persisted {
 const KV = 'chat.v1'
 const AUTO_TURNS = 6
 
-const empty: Persisted = { history: [], cards: {}, asks: {}, laterKept: [], contextDay: null, model: null }
+const empty: Persisted = { history: [], cards: {}, asks: {}, laterKept: [], contextDay: null, model: null, citations: {}, modelHistoryStart: 0, evidenceBoundary: '' }
 
 export const useChat = create<ChatState>()(() => ({
   ...empty,
+  cloudAi: 'unknown',
   loaded: false,
   busy: false,
   live: '',
@@ -106,34 +115,124 @@ export const _rememberOriginalForTests = rememberOriginal
 
 // ─── persistence ─────────────────────────────────────────────────────────────────────
 
-let saveTimer: ReturnType<typeof setTimeout> | null = null
-function save(): void {
-  if (saveTimer) clearTimeout(saveTimer)
-  saveTimer = setTimeout(() => {
-    const s = useChat.getState()
-    const data: Persisted & { pending: PendingTool[] } = {
-      history: s.history,
-      cards: s.cards,
-      asks: s.asks,
-      laterKept: s.laterKept,
-      contextDay: s.contextDay,
-      model: s.model,
-      pending: s.pending,
-    }
-    if (isRepoReady()) void getStore().putKv(KV, data).catch(() => {})
-  }, 300)
+let loadedStore: WorldStore | null = null
+let pendingSave: Promise<void> = Promise.resolve()
+let sessionGeneration = 0
+let streamController: AbortController | null = null
+let streamReader: ReadableStreamDefaultReader<string> | null = null
+let statusRequest: Promise<boolean> | null = null
+interface ChatScope { generation: number; store: WorldStore }
+
+export function setCloudAiStatus(status: { provider: unknown; configured: unknown }): void {
+  const enabled = (status.provider === 'openai' || status.provider === 'anthropic') && status.configured === true
+  useChat.setState({ cloudAi: enabled ? 'enabled' : 'disabled' })
+  if (!enabled) {
+    streamController?.abort()
+    void streamReader?.cancel().catch(() => {})
+  }
+}
+
+/** Read only the local configuration. Never probes a provider or sends source text. */
+export async function refreshCloudAiStatus(): Promise<boolean> {
+  if (!isRepoReady()) return false
+  if (statusRequest) return statusRequest
+  const scope = currentScope()
+  statusRequest = (async () => {
+    const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 5000)
+    try {
+      const response = await fetch('/api/ai/status', { headers: { 'x-wv-client': 'worldview-ai-status' }, signal: controller.signal })
+      if (!response.ok) throw new Error('Local AI status is unavailable.')
+      const value: unknown = await response.json()
+      if (!scope || !scopeCurrent(scope)) return false
+      setCloudAiStatus(value && typeof value === 'object' ? value as { provider: unknown; configured: unknown } : { provider: null, configured: false })
+      return useChat.getState().cloudAi === 'enabled'
+    } catch {
+      if (scope && scopeCurrent(scope)) setCloudAiStatus({ provider: null, configured: false })
+      return false
+    } finally { clearTimeout(timeout) }
+  })()
+  try { return await statusRequest } finally { statusRequest = null }
+}
+
+export function chatSessionToken(): number { return sessionGeneration }
+export function isChatSessionTokenCurrent(token: number): boolean { return token === sessionGeneration && isRepoReady() }
+
+function currentScope(): ChatScope | null {
+  if (!isRepoReady()) return null
+  const store = getStore()
+  if (loadedStore && loadedStore !== store) invalidateChat()
+  return { generation: sessionGeneration, store }
+}
+
+function scopeCurrent(scope: ChatScope): boolean {
+  return scope.generation === sessionGeneration && isRepoReady() && getStore() === scope.store
+}
+
+/** Clearing in-memory state must never write over a newly restored transcript. */
+function invalidateChat(preserveStaged = false): void {
+  sessionGeneration++
+  streamController?.abort()
+  streamController = null
+  void streamReader?.cancel().catch(() => {})
+  streamReader = null
+  loadedStore = null
+  statusRequest = null
+  const staged = preserveStaged ? useChat.getState().staged : []
+  useChat.setState({ ...empty, cloudAi: 'unknown', loaded: false, pending: [], staged, intakeBusy: false, live: '', toolHint: null, error: null, busy: false, usage: { input: 0, output: 0, cacheRead: 0 } })
+}
+
+const unsubscribeTranscript = subscribeRepo((change, origin) => {
+  if (change.type !== 'wipe' && change.type !== 'import' && !(origin === 'remote' && change.type === 'kv' && change.keys.includes(KV))) return
+  invalidateChat(origin === 'remote' && change.type === 'kv')
+  const scope = currentScope()
+  if (scope) void loadChat().catch((error: unknown) => { if (scopeCurrent(scope)) useChat.setState({ error: `Could not reload the restored conversation: ${error instanceof Error ? error.message : String(error)}` }) })
+})
+const unsubscribeTranscriptStatus = useRepoStatus.subscribe((next, previous) => { if (previous.ready && !next.ready) invalidateChat() })
+import.meta.hot?.dispose(() => { unsubscribeTranscript(); unsubscribeTranscriptStatus(); invalidateChat() })
+
+function save(scope = currentScope()): void {
+  if (!scope || !scopeCurrent(scope)) return
+  if (!isRepoReady()) return
+  const target = scope.store
+  const s = useChat.getState()
+  const data: Persisted & { pending: PendingTool[] } = {
+    history: s.history,
+    cards: s.cards,
+    asks: s.asks,
+    laterKept: s.laterKept,
+    contextDay: s.contextDay,
+    model: s.model,
+    citations: s.citations,
+    modelHistoryStart: s.modelHistoryStart,
+    evidenceBoundary: s.evidenceBoundary,
+    pending: s.pending,
+  }
+  // The repository queue also owns backups and closeRepo, so neither can overtake a
+  // transcript save. No timer may later write one account's chat into another store.
+  pendingSave = putWorldState(KV, data, { store: target, shouldWrite: () => scopeCurrent(scope) }).catch((e: unknown) => {
+    if (scopeCurrent(scope)) useChat.setState({ error: `The chat could not be saved. ${e instanceof Error ? e.message : String(e)}` })
+  })
 }
 
 export async function loadChat(): Promise<void> {
-  if (useChat.getState().loaded || !isRepoReady()) return
-  const data = await getStore()
+  const scope = currentScope()
+  if (!scope) return
+  const target = scope.store
+  if (useChat.getState().loaded && loadedStore === target) return
+  await pendingSave
+  const data = await target
     .getKv<Persisted & { pending?: PendingTool[] }>(KV)
     .catch(() => undefined)
-  useChat.setState({ ...empty, ...(data ?? {}), pending: data?.pending ?? [], loaded: true })
+  if (!scopeCurrent(scope)) return
+  const history = data?.history ?? []
+  const citations = data?.citations && typeof data.citations === 'object' && !Array.isArray(data.citations) ? Object.fromEntries(Object.entries(data.citations).filter(([url, citation]) => citation && typeof citation === 'object' && citation.citationUrl === url && url.startsWith('#/library?') && typeof citation.title === 'string').slice(-1000)) : {}
+  const modelHistoryStart = Number.isInteger(data?.modelHistoryStart) ? Math.max(0, Math.min(history.length, data!.modelHistoryStart)) : 0
+  useChat.setState({ ...empty, ...(data ?? {}), history, citations, modelHistoryStart, evidenceBoundary: typeof data?.evidenceBoundary === 'string' ? data.evidenceBoundary : '', pending: data?.pending ?? [], loaded: true })
+  loadedStore = target
 }
 
 export function resetChat(): void {
-  useChat.setState({ ...empty, pending: [], staged: [], intakeBusy: false, live: '', error: null, busy: false })
+  invalidateChat()
   save()
 }
 
@@ -147,7 +246,56 @@ const isoDay = (ms: number) => new Date(ms).toISOString().slice(0, 10)
 function worldContext(): string {
   const w = useWorld.getState()
   const s = w.settings
-  return `[world] today: ${isoDay(Date.now())} · the world starts ${s ? isoDay(s.T0) : 'unknown'} · notes in the world: ${w.nodes.size}`
+  const scope = evidenceScope()
+  return `[world] today: ${isoDay(Date.now())} · the world starts ${s ? isoDay(s.T0) : 'unknown'} · notes in the world: ${w.nodes.size} · source scope: ${scope.length ? scope.join(', ') : 'all permitted sources'} · investigation filters: ${JSON.stringify(evidenceFilters())}`
+}
+
+function evidenceBoundary(): string {
+  const denied = useKnowledge.getState().sources.filter((s) => s.excluded || s.deleted || !s.aiAllowed).map((s) => s.id).sort()
+  const stale = Object.values(useChat.getState().citations).filter((c) => !citationAllowed(c)).map((c) => c.citationUrl).sort()
+  return JSON.stringify([evidenceFilters(), denied, stale])
+}
+
+function retainEvidence(result: unknown): void {
+  const values = Array.isArray(result) ? result : result && typeof result === 'object' && 'evidence' in result && Array.isArray(result.evidence) ? result.evidence : [result]
+  const citations: Record<string, EvidenceCitation> = {}
+  for (const value of values) {
+    if (!value || typeof value !== 'object') continue
+    const r = value as Record<string, unknown>
+    if (r.ok === false || typeof r.citationUrl !== 'string' || typeof r.title !== 'string' || typeof r.id !== 'string') continue
+    const passage = typeof r.sourceId === 'string' && typeof r.versionId === 'string'
+    const citation: EvidenceCitation = {
+      citationUrl: r.citationUrl,
+      title: r.title,
+      ...(passage ? { sourceId: String(r.sourceId), passageId: r.id, versionId: String(r.versionId) } : {}),
+      ...(typeof r.nodeId === 'string' ? { nodeId: r.nodeId } : !passage ? { nodeId: r.id } : {}),
+      ...(typeof r.digest === 'string' ? { digest: r.digest } : {}),
+      ...(typeof r.updatedAt === 'number' ? { updatedAt: r.updatedAt } : {}),
+    }
+    if (citationAllowed(citation)) citations[citation.citationUrl] = citation
+  }
+  if (Object.keys(citations).length) useChat.setState((s) => ({ citations: { ...s.citations, ...citations } }))
+}
+
+/** Keep the durable transcript while bounding provider context at a valid user-turn boundary. */
+function modelMessages(): MessageParam[] {
+  const state = useChat.getState()
+  let start = state.modelHistoryStart
+  if (state.history.length - start > 360) {
+    const candidate = state.history.findIndex((message, index) => index >= state.history.length - 300 && message.role === 'user' && (typeof message.content === 'string' || message.content.some((block) => block.type !== 'tool_result' && (block.type !== 'text' || !isHiddenText(block.text)))))
+    if (candidate >= 0) {
+      start = candidate
+      useChat.setState({ modelHistoryStart: start })
+    }
+  }
+  const messages = state.history.slice(start)
+  if (start > 0 && messages[0]?.role === 'user') {
+    // A resumed user turn may also carry results for an earlier assistant call; that
+    // earlier call is no longer in context, so only its visible new input is retained.
+    const content = typeof messages[0].content === 'string' ? [{ type: 'text' as const, text: messages[0].content }] : messages[0].content.filter((block) => block.type !== 'tool_result')
+    messages[0] = { role: 'user', content: [{ type: 'text', text: worldContext() }, ...content] }
+  }
+  return messages
 }
 
 // ─── the loop ────────────────────────────────────────────────────────────────────────
@@ -181,8 +329,34 @@ function toolResults(): Anthropic.ToolResultBlockParam[] {
  * text, notes kept since the last turn, and the text itself. Then run Claude's turn.
  */
 export async function send(text = '', opts: { hidden?: boolean } = {}): Promise<void> {
-  const s = useChat.getState()
+  const scope = currentScope()
+  if (!scope) return
+  let s = useChat.getState()
   if (s.busy) return
+  if (s.cloudAi === 'unknown') await refreshCloudAiStatus()
+  if (!scopeCurrent(scope)) return
+  if (useChat.getState().cloudAi !== 'enabled') {
+    useChat.setState({ error: 'Cloud AI is off. Save your words and files to your world, or enable a provider later in Settings.' })
+    return
+  }
+  useChat.setState({ busy: true, error: null })
+  // A previous tool result or answer may quote newly excluded content. Keep the visible
+  // local transcript, but never resend it across a changed permission/scope boundary.
+  try {
+    await initializeKnowledge()
+    if (!scopeCurrent(scope)) return
+    await loadChat()
+    if (!scopeCurrent(scope)) return
+    s = useChat.getState()
+  } catch (e) {
+    if (scopeCurrent(scope)) useChat.setState({ busy: false, error: `The source record could not be opened. ${e instanceof Error ? e.message : String(e)}` })
+    return
+  }
+  const boundary = evidenceBoundary()
+  if (s.evidenceBoundary !== boundary) {
+    useChat.setState({ modelHistoryStart: s.history.length, evidenceBoundary: boundary, pending: [], contextDay: null })
+    s = useChat.getState()
+  }
   const trimmed = text.trim()
   useChat.setState({ busy: true, error: null })
 
@@ -196,6 +370,7 @@ export async function send(text = '', opts: { hidden?: boolean } = {}): Promise<
   const urls = [...new Set(trimmed.match(URL_RE) ?? [])].slice(0, 3)
   for (const url of urls) {
     const page = await urlToIntake(url)
+    if (!scopeCurrent(scope)) return
     if ('error' in page) useChat.setState({ error: page.error })
     else content.push(...page.blocks)
   }
@@ -213,78 +388,103 @@ export async function send(text = '', opts: { hidden?: boolean } = {}): Promise<
     laterKept: [],
     contextDay: today,
   }))
-  save()
-  await runTurns()
+  if (!scopeCurrent(scope)) return
+  save(scope)
+  await runTurns(scope)
   // A missing key or broken connection must not consume the only visible copy of a
   // dropped file. Keep it available for the local save path and for another attempt.
-  if (useChat.getState().error && s.staged.length) {
+  if (scopeCurrent(scope) && useChat.getState().error && s.staged.length) {
     useChat.setState((st) => ({ staged: [...s.staged.filter((item) => !st.staged.includes(item)), ...st.staged] }))
   }
 }
 
-async function runTurns(): Promise<void> {
+async function runTurns(scope: ChatScope): Promise<void> {
   try {
     for (let turn = 0; turn < AUTO_TURNS; turn++) {
-      const done = await streamTurn()
+      if (!scopeCurrent(scope)) return
+      const done = await streamTurn(scope)
+      if (!scopeCurrent(scope)) return
       if (!done) return
       const { pending } = useChat.getState()
       if (!pending.length || pending.some(needsUser)) return
       // Only searches (or invalid calls): answer them and let Claude continue.
       useChat.setState((st) => ({ history: [...st.history, { role: 'user', content: toolResults() }], pending: [] }))
-      save()
+      save(scope)
     }
   } catch (e) {
-    useChat.setState({ error: `The reply was interrupted. Your message is still here. ${e instanceof Error ? e.message : String(e)}` })
+    if (scopeCurrent(scope)) useChat.setState({ error: `The reply was interrupted. Your message is still here. ${e instanceof Error ? e.message : String(e)}` })
   } finally {
-    useChat.setState({ busy: false, live: '', toolHint: null })
-    save()
+    if (scopeCurrent(scope)) {
+      useChat.setState({ busy: false, live: '', toolHint: null })
+      save(scope)
+    }
   }
 }
 
 /** One assistant turn. Returns false when it ended in an error. */
-async function streamTurn(): Promise<boolean> {
+async function streamTurn(scope: ChatScope): Promise<boolean> {
+  if (!scopeCurrent(scope)) return false
+  if (useChat.getState().cloudAi !== 'enabled') return false
   useChat.setState({ live: '', toolHint: null })
   let res: Response
+  const boundary = evidenceBoundary()
+  if (boundary !== useChat.getState().evidenceBoundary) {
+    useChat.setState({ error: 'Source permissions or the selected investigation changed. Ask again to start a fresh AI context; your local transcript is preserved.' })
+    return false
+  }
   try {
+    const controller = new AbortController()
+    streamController = controller
     res = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ messages: useChat.getState().history }),
+      body: JSON.stringify({ messages: modelMessages() }),
+      signal: controller.signal,
     })
   } catch (e) {
-    useChat.setState({ error: `Could not reach the app server: ${e instanceof Error ? e.message : String(e)}` })
+    if (scopeCurrent(scope)) useChat.setState({ error: `Could not reach the app server: ${e instanceof Error ? e.message : String(e)}` })
     return false
   }
+  if (!scopeCurrent(scope)) { await res.body?.cancel().catch(() => {}); return false }
   if (res.status === 404) return useChat.setState({ error: 'The chat needs the dev server (npm run dev). Obsidian import and export still work.' }), false
-  if (res.status === 503) return useChat.setState({ error: 'AI is not configured for this world yet. Your draft and files are safe. Use Save to keep them locally; imports and exports work without AI.' }), false
+  if (res.status === 503) return useChat.setState({ cloudAi: 'disabled', error: 'Cloud AI is not configured for this world. Your draft and files are safe. Save them to your world; imports and exports work without AI.' }), false
   if (!res.ok || !res.body) return useChat.setState({ error: `The chat failed (${res.status}).` }), false
 
   let done: Extract<ChatStreamEvent, { t: 'done' }> | null = null
   const reader = res.body.pipeThrough(new TextDecoderStream()).getReader()
+  streamReader = reader
   let buf = ''
-  for (;;) {
-    const { value, done: eof } = await reader.read()
-    if (value) buf += value
-    if (eof && buf.trim()) buf += '\n'
-    let nl: number
-    while ((nl = buf.indexOf('\n')) >= 0) {
-      const line = buf.slice(0, nl).trim()
-      buf = buf.slice(nl + 1)
-      if (!line) continue
-      const e = JSON.parse(line) as ChatStreamEvent
-      if (e.t === 'text') useChat.setState((st) => ({ live: st.live + e.d }))
-      else if (e.t === 'tool') useChat.setState({ toolHint: e.name })
-      else if (e.t === 'error') useChat.setState({ error: e.message })
-      else if (e.t === 'done') done = e
+  try {
+    for (;;) {
+      const { value, done: eof } = await reader.read()
+      if (!scopeCurrent(scope)) return false
+      if (value) buf += value
+      if (eof && buf.trim()) buf += '\n'
+      let nl: number
+      while ((nl = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, nl).trim()
+        buf = buf.slice(nl + 1)
+        if (!line) continue
+        const e = JSON.parse(line) as ChatStreamEvent
+        if (e.t === 'text') useChat.setState((st) => ({ live: st.live + e.d }))
+        else if (e.t === 'tool') useChat.setState({ toolHint: e.name })
+        else if (e.t === 'error') useChat.setState({ error: e.message })
+        else if (e.t === 'done') done = e
+      }
+      if (eof) break
     }
-    if (eof) break
-  }
+  } finally { if (streamReader === reader) streamReader = null; reader.releaseLock() }
+  if (!scopeCurrent(scope)) return false
   if (!done) {
     if (!useChat.getState().error) useChat.setState({ error: 'The reply was interrupted. Your message and original files are still here; try again or save them directly.' })
     return false
   }
 
   const content = done.content as Anthropic.ContentBlock[]
+  if (evidenceBoundary() !== boundary) {
+    useChat.setState({ error: 'Source permissions or the selected investigation changed during the reply. Ask again; your local transcript is preserved.' })
+    return false
+  }
   void recordUsage(done.model, done.usage)
   useChat.setState((st) => ({
     model: done!.model,
@@ -298,6 +498,14 @@ async function streamTurn(): Promise<boolean> {
   // next one is appended after it (consecutive user turns are allowed).
   if (!content.length) return false
   useChat.setState((st) => ({ history: [...st.history, { role: 'assistant', content: content as unknown as ContentBlock[] }], live: '' }))
+
+  // A provider can refuse a response that also contains partial tool calls. Keep the
+  // transcript, execute none of those calls, and start fresh provider context next turn
+  // so an unanswered refused call cannot invalidate the following request.
+  if (done.stopReason === 'refusal') {
+    useChat.setState((st) => ({ pending: [], modelHistoryStart: st.history.length, error: st.error ?? 'The AI provider declined to continue this request.' }))
+    return false
+  }
 
   const truncated = done.stopReason === 'max_tokens'
   const pending: PendingTool[] = []
@@ -316,9 +524,34 @@ async function streamTurn(): Promise<boolean> {
       pending.push({ id: block.id, name, result: `Invalid input: ${parsed?.error?.issues[0]?.message ?? `unknown tool ${name}`}`, isError: true })
       continue
     }
-    if (name === 'search_world') {
+    if (name === 'read_memory_context') {
+      const q = parsed.data as { query: string; maxBytes?: number }
+      const result = await readMemoryContextForModel(q.query, q.maxBytes)
+      if (!scopeCurrent(scope)) return false
+      retainEvidence(result)
+      pending.push({ id: block.id, name, result: result.rendered })
+    } else if (name === 'search_world') {
       const q = parsed.data as { query: string; limit?: number }
-      pending.push({ id: block.id, name, result: JSON.stringify(await searchWorld(q.query, q.limit)) })
+      const result = await searchWorld(q.query, q.limit)
+      if (!scopeCurrent(scope)) return false
+      retainEvidence(result)
+      pending.push({ id: block.id, name, result: JSON.stringify(result) })
+    } else if (name === 'read_record') {
+      const result = await readRecord(parsed.data as ReadRecordInput)
+      if (!scopeCurrent(scope)) return false
+      retainEvidence(result)
+      pending.push({ id: block.id, name, result: JSON.stringify(result), ...(!result.ok ? { isError: true } : {}) })
+    } else if (name === 'search_passages') {
+      const q = parsed.data as { query: string; limit?: number }
+      const result = await searchPassagesForModel(q.query, q.limit)
+      if (!scopeCurrent(scope)) return false
+      retainEvidence(result)
+      pending.push({ id: block.id, name, result: JSON.stringify(result) })
+    } else if (name === 'read_passage') {
+      const result = await readPassageForModel((parsed.data as { id: string }).id)
+      if (!scopeCurrent(scope)) return false
+      retainEvidence(result)
+      pending.push({ id: block.id, name, result: JSON.stringify(result), ...(!result.ok ? { isError: true } : {}) })
     } else if (name === 'propose_notes') {
       cards[block.id] = (parsed.data as { notes: ProposedNote[] }).notes.map((note) => ({ key: note.key, note, status: 'open' }))
       pending.push({ id: block.id, name })
@@ -334,7 +567,7 @@ async function streamTurn(): Promise<boolean> {
 /** When every pending call has the user's decision, continue without waiting for text. */
 function continueIfDecided(): void {
   const s = useChat.getState()
-  if (s.busy || !s.pending.length) return
+  if (s.busy || s.cloudAi !== 'enabled' || !s.pending.length) return
   const decided = s.pending.every((p) => {
     if (p.result !== undefined) return true
     if (p.name === 'ask_user') return !!s.asks[p.id]?.answer
@@ -350,12 +583,15 @@ function isPending(toolId: string): boolean {
 }
 
 function setCard(toolId: string, key: string, patch: Partial<Card>): void {
+  if (!useChat.getState().cards[toolId]?.some((card) => card.key === key)) return
   useChat.setState((st) => ({ cards: { ...st.cards, [toolId]: (st.cards[toolId] ?? []).map((c) => (c.key === key ? { ...c, ...patch } : c)) } }))
   save()
 }
 
 /** Keep some of a call's open cards as one undoable step; links between them resolve. */
 async function keepCards(toolId: string, keys: readonly string[]): Promise<void> {
+  const scope = currentScope()
+  if (!scope) return
   const settings = useWorld.getState().settings
   if (!settings) return
   const cs = useChat.getState().cards[toolId] ?? []
@@ -369,16 +605,23 @@ async function keepCards(toolId: string, keys: readonly string[]): Promise<void>
       const target = useWorld.getState().nodes.get(id)!
       const extra = proposalToDraft(c.note, id, new Map([...useWorld.getState().nodes.keys()].map((k) => [k, k])), settings, now, useChat.getState().model ?? 'claude')
       if (extra.embeds?.length) await updateNode(id, { embeds: [...(target.embeds ?? []), ...extra.embeds] }, { keepAnchor: true })
-      for (const l of extra.links ?? []) if (!target.links.some((x) => x.targetId === l.targetId)) await link(id, l.targetId, l.kind).catch(() => {})
+      if (!scopeCurrent(scope)) return
+      for (const l of extra.links ?? []) {
+        if (!scopeCurrent(scope)) return
+        if (!target.links.some((x) => x.targetId === l.targetId)) await link(id, l.targetId, l.kind).catch(() => {})
+      }
       const { found, missing } = await originalsFor(c.note)
+      if (!scopeCurrent(scope)) return
       const failed = [...missing]
-      for (const f of found) await addAttachment(id, f, f.name).catch(() => failed.push(f.name))
+      for (const f of found) { if (!scopeCurrent(scope)) return; await addAttachment(id, f, f.name).catch(() => failed.push(f.name)) }
+      if (!scopeCurrent(scope)) return
       setCard(toolId, c.key, { status: 'kept', id, error: failed.length ? `Not attached (add ${failed.length === 1 ? 'it' : 'them'} again): ${failed.join(', ')}` : undefined })
     } catch (e) {
-      setCard(toolId, c.key, { error: e instanceof Error ? e.message : String(e) })
+      if (scopeCurrent(scope)) setCard(toolId, c.key, { error: e instanceof Error ? e.message : String(e) })
     }
   }
   const chosen = open.filter((x) => !(x.note.addTo && useWorld.getState().nodes.has(x.note.addTo)))
+  if (!scopeCurrent(scope)) return
   if (!chosen.length) return continueIfDecided()
   const ids = new Map<string, string>()
   for (const id of useWorld.getState().nodes.keys()) ids.set(id, id)
@@ -389,15 +632,18 @@ async function keepCards(toolId: string, keys: readonly string[]): Promise<void>
   try {
     const drafts = chosen.map((c) => proposalToDraft(c.note, fresh.get(c.key)!, ids, settings, now, model))
     await addNodes(drafts, { label: drafts.length === 1 ? `Kept ${drafts[0].title}` : `Kept ${drafts.length} notes` })
+    if (!scopeCurrent(scope)) return
   } catch (e) {
-    for (const c of chosen) setCard(toolId, c.key, { error: e instanceof Error ? e.message : String(e) })
+    if (scopeCurrent(scope)) for (const c of chosen) setCard(toolId, c.key, { error: e instanceof Error ? e.message : String(e) })
     return
   }
   for (const c of chosen) {
     const id = fresh.get(c.key)!
     const { found, missing } = await originalsFor(c.note)
+    if (!scopeCurrent(scope)) return
     const failed: string[] = [...missing]
-    for (const f of found) await addAttachment(id, f, f.name).catch(() => failed.push(f.name))
+    for (const f of found) { if (!scopeCurrent(scope)) return; await addAttachment(id, f, f.name).catch(() => failed.push(f.name)) }
+    if (!scopeCurrent(scope)) return
     setCard(toolId, c.key, {
       status: 'kept',
       id,
@@ -410,11 +656,12 @@ async function keepCards(toolId: string, keys: readonly string[]): Promise<void>
     for (const l of c.note.links) {
       const target = fresh.get(l.to)
       if (target) await link(c.id, target, l.kind).catch(() => {})
+      if (!scopeCurrent(scope)) return
     }
   }
   if (!isPending(toolId)) {
     useChat.setState((st) => ({ laterKept: [...st.laterKept, ...chosen.map((c) => `${c.note.title} (${fresh.get(c.key)})`)] }))
-    save()
+    save(scope)
   }
   continueIfDecided()
 }
@@ -460,6 +707,8 @@ export function unstage(index: number): void {
  * sent anywhere). One undoable step; the originals are attached. Returns how many were kept.
  */
 export async function keepStaged(): Promise<number> {
+  const scope = currentScope()
+  if (!scope) return 0
   const settings = useWorld.getState().settings
   const staged = useChat.getState().staged
   const now = Date.now()
@@ -472,12 +721,17 @@ export async function keepStaged(): Promise<number> {
   try {
     const drafts = kept.map((k) => proposalToDraft(k.note, k.id, new Map(), settings, now, 'none'))
     await addNodes(drafts, { label: drafts.length === 1 ? `Kept ${drafts[0].title}` : `Kept ${drafts.length} files` })
+    if (!scopeCurrent(scope)) return 0
   } catch (e) {
-    useChat.setState({ error: e instanceof Error ? e.message : String(e) })
+    if (scopeCurrent(scope)) useChat.setState({ error: e instanceof Error ? e.message : String(e) })
     return 0
   }
   const failed: string[] = []
-  for (const k of kept) if (k.item.file) await addAttachment(k.id, k.item.file, k.item.file.name).catch(() => failed.push(k.item.name))
+  for (const k of kept) {
+    if (!scopeCurrent(scope)) return 0
+    if (k.item.file) await addAttachment(k.id, k.item.file, k.item.file.name).catch(() => failed.push(k.item.name))
+  }
+  if (!scopeCurrent(scope)) return 0
   const done = new Set(kept.map((k) => k.item))
   useChat.setState((st) => ({
     staged: st.staged.filter((i) => !done.has(i)),
@@ -488,6 +742,8 @@ export async function keepStaged(): Promise<number> {
 
 /** A deliberate local capture: preserve the user's words and originals without an AI request. */
 export async function saveThought(text: string, opts: { reflection?: boolean } = {}): Promise<string | null> {
+  const scope = currentScope()
+  if (!scope) return null
   const body = text.trim()
   if (!body) {
     await keepStaged()
@@ -515,31 +771,34 @@ export async function saveThought(text: string, opts: { reflection?: boolean } =
   try {
     const draft = proposalToDraft(proposal, id, new Map(), settings, now, 'none')
     await addNodes([draft], { label: opts.reflection ? 'Saved daily reflection' : 'Saved thought' })
+    if (!scopeCurrent(scope)) return null
     const failed = new Set<IntakeItem>()
     for (const item of staged) {
+      if (!scopeCurrent(scope)) return null
       if (item.file) {
         try { await addAttachment(id, item.file, item.file.name) } catch { failed.add(item) }
       }
     }
+    if (!scopeCurrent(scope)) return null
     useChat.setState((st) => ({
       staged: st.staged.filter((item) => !staged.includes(item) || failed.has(item)),
       error: failed.size ? 'Your thought was saved. Some files could not be attached; they are still staged so you can try again.' : null,
       laterKept: [...st.laterKept, `${title} (${id})`],
     }))
-    save()
+    save(scope)
     return id
   } catch (e) {
-    useChat.setState({ error: `Could not save: ${e instanceof Error ? e.message : String(e)}` })
+    if (scopeCurrent(scope)) useChat.setState({ error: `Could not save: ${e instanceof Error ? e.message : String(e)}` })
     return null
   } finally {
-    useChat.setState({ busy: false })
+    if (scopeCurrent(scope)) useChat.setState({ busy: false })
   }
 }
 
 /** Start the interview when there is no conversation yet. */
 export function startInterview(): void {
   const s = useChat.getState()
-  if (s.history.length || s.busy) return
+  if (s.history.length || s.busy || s.cloudAi !== 'enabled') return
   void send('I just opened Worldview for the first time.', { hidden: true })
 }
 

@@ -1,0 +1,146 @@
+{
+  "schemaVersion": 1,
+  "verifiedAt": "2026-11-23T17:42:04.228Z",
+  "scope": "Local workspace UX polish; application-data and spatial-source integrity",
+  "result": "passed",
+  "automatedChecks": {
+    "verificationSource": "Final command results reported by the root agent; not rerun during this independent read-only integrity audit.",
+    "typecheck": {
+      "command": "npm run typecheck",
+      "passed": true
+    },
+    "lint": {
+      "command": "npm run lint",
+      "passed": true
+    },
+    "build": {
+      "command": "npm run build",
+      "passed": true
+    },
+    "tests": {
+      "command": "npx vitest run --maxWorkers=2",
+      "passed": 1117,
+      "skipped": 4,
+      "filesPassed": 173,
+      "filesSkipped": 2,
+      "totalTests": 1121,
+      "totalFiles": 175
+    }
+  },
+  "originalWorkspace": {
+    "database": "data/world.sqlite",
+    "baseline": "data/backups/before-local-ui-2026-11-23/manifest.json",
+    "baselineCreatedAt": "2026-11-23T16:59:27.818Z",
+    "readOnly": true,
+    "tables": {
+      "nodes": {
+        "count": 14,
+        "expectedCount": 14,
+        "sha256": "70b73a2651cd2bf01df5e2430f8f9dbb1897db784db19df69e7500dab585fc18",
+        "expectedSha256": "70b73a2651cd2bf01df5e2430f8f9dbb1897db784db19df69e7500dab585fc18",
+        "matches": true,
+        "canonicalization": "SHA256(UTF8(JSON.stringify(SELECT * FROM nodes ORDER BY id)))"
+      },
+      "links": {
+        "count": 4,
+        "expectedCount": 4,
+        "sha256": "46f38c2f8b9eb521f711bcd78e1a42574c74f8702e218d4a2ebda81cb08275f3",
+        "expectedSha256": "46f38c2f8b9eb521f711bcd78e1a42574c74f8702e218d4a2ebda81cb08275f3",
+        "matches": true,
+        "canonicalization": "SHA256(UTF8(JSON.stringify(SELECT * FROM links ORDER BY source_id)))"
+      },
+      "attachments": {
+        "count": 0,
+        "expectedCount": 0,
+        "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "expectedSha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "matches": true,
+        "canonicalization": "SHA256(UTF8(JSON.stringify(SELECT * FROM attachments ORDER BY id)))"
+      }
+    },
+    "supplementaryTableComparisons": {
+      "settings": {
+        "count": 1,
+        "matchesBackup": true
+      },
+      "events": {
+        "count": 94,
+        "matchesBackup": true
+      },
+      "assets": {
+        "count": 23,
+        "matchesBackup": true
+      }
+    },
+    "keyValueState": {
+      "changedKeys": [
+        "workspace.v1"
+      ],
+      "removedKeys": [],
+      "interpretation": "workspace.v1 is presentation, draft and navigation context. The existing records, spatial settings, events, assets and QMD runtime configuration remain unchanged."
+    }
+  },
+  "spatialCode": {
+    "roots": [
+      "src/world",
+      "src/physics",
+      "src/gpu"
+    ],
+    "baseline": "data/backups/before-local-ui-2026-11-23/manifest.json",
+    "expectedFiles": 152,
+    "currentFiles": 152,
+    "matchedFiles": 151,
+    "mismatchedFiles": [
+      "src/world/worldline/ribbon.ts"
+    ],
+    "addedFiles": [],
+    "missingFiles": [],
+    "formattingOnlyFiles": [
+      {
+        "path": "src/world/worldline/ribbon.ts",
+        "baselineSha256": "59c6e37724f5b3626ab7a642e2af607e400e08b609c8386beb5543ca7bbd96d7",
+        "currentSha256": "e68e5944f86a9634c0e31816fbb4e9dcfacf176909be498a21160b6ec08ba35d",
+        "difference": "Removed one trailing blank line; code otherwise byte-identical."
+      }
+    ],
+    "matchedIncludingFormattingOnly": 152,
+    "preFormattingInventorySha256": "8bb141c72dd8299cd8b9a8348f48a1e135c05b7e619e7d1718e9d5360cad7449",
+    "commitPreparationVerification": "All spatial files rechecked against baseline; the sole byte difference is the documented EOF blank-line removal."
+  },
+  "retainedOriginals": {
+    "baseline": "data/backups/before-live-services-d28b44e8-4aae-4cb4-a968-431cb15c14e9/manifest.json",
+    "expected": 23,
+    "matched": 23,
+    "mismatchedIds": [],
+    "verification": "Each data/blobs/{id} file compared by byte length and SHA256 with the recorded original manifest."
+  },
+  "browserAcceptance": {
+    "report": "docs/evaluations/local-ui-acceptance-2026-11-23.json",
+    "database": "data/live-tests/local-ui-acceptance-2026-11-23/world.sqlite",
+    "noteCount": 3,
+    "exactNotes": true,
+    "originalAttachmentMatches": true,
+    "persistedAfterServerRestart": true,
+    "thirdReceiptOpenedExactLibraryRecord": true,
+    "browserObservationSource": "root agent browser acceptance; durable data independently rechecked read-only"
+  },
+  "cloudAi": {
+    "provider": null,
+    "externalRequests": 0,
+    "verificationSource": "Root agent verified the local service has no selected provider and no cloud AI calls were made."
+  },
+  "auditRestrictions": {
+    "applicationDataModified": false,
+    "implementationModified": false,
+    "testsRerun": false,
+    "serversStopped": false,
+    "gitTouched": false
+  },
+  "commitPreparation": {
+    "formattingOnly": [
+      "docs/research/second-brains/2026-11-23/capture-and-skills.md",
+      "src/world/worldline/ribbon.ts"
+    ],
+    "change": "Removed one extra blank line at EOF in each file. Spatial sources rechecked: 151 exact matches and one verified whitespace-only difference. Existing data and spatial behavior are unchanged."
+  }
+}

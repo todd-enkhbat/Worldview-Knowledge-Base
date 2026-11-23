@@ -3,7 +3,7 @@ import { getStore, isRepoReady } from '../data/repo.ts'
 
 // What the AI features have cost, kept with the world (kv 'ai.usage', exported in kv.json) so
 // the estimate survives reloads. Tokens are counted from each response's usage; dollars are an
-// estimate from the list prices below (first-party API, standard speed, 5-minute cache writes).
+// estimate from the list prices below (first-party API, standard speed, short context; Anthropic 5-minute cache writes).
 
 export interface TokenUsage {
   input: number
@@ -20,8 +20,10 @@ export interface UsageLedger {
 
 export const USAGE_KV = 'ai.usage'
 
-/** USD per million tokens. Source: the Claude API reference (models table, cached 2026-10-06). */
+/** USD per million tokens. Official provider model pages; GPT-6.2 Sol verified 2026-11-23.
+ * Estimates exclude long-context tiers, regional/priority multipliers and tool fees. */
 export const PRICES: Record<string, { input: number; output: number; cacheRead: number }> = {
+  'gpt-6.2-sol': { input: 2, output: 10, cacheRead: 0.1 },
   'claude-opus-5-5': { input: 4, output: 20, cacheRead: 0.2 },
   'claude-sonnet-5-5': { input: 2, output: 10, cacheRead: 0.2 },
   'claude-haiku-5-5': { input: 0.1, output: 0.5, cacheRead: 0.01 },

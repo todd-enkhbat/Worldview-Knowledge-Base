@@ -14,6 +14,7 @@ import { Reflection } from './Reflection.tsx'
 import { Agents } from './Agents.tsx'
 import { OPEN_AGENTS_EVENT, openAgentsPanel } from '../world/agents/model.ts'
 import { ProductDialog } from './ProductDialog.tsx'
+import { returnToWorkspace } from '../workspace/state.ts'
 
 function revealWorld() {
   if (window.matchMedia('(max-width: 660px)').matches) useApp.getState().togglePanel('chat', false)
@@ -35,6 +36,7 @@ export function WorkspaceNav() {
       <button className="workspace-search" onClick={() => openPalette()} title={`Search your world (${MOD_KEY}K)`}><MagnifyingGlass size={17} /><span>Search your world</span><kbd>{MOD_KEY}K</kbd></button>
       <button aria-label="Add to your world" className="workspace-add" onClick={() => useApp.getState().togglePanel('chat', true)} disabled={!writer}><Plus size={18} /><span>Add to your world</span></button>
       <nav className="workspace-links">
+        <button aria-label="Return to knowledge workspace" onClick={() => returnToWorkspace()}><BookOpen size={20} /><span>Back to workspace</span></button>
         <button aria-label="My world" className={!library ? 'is-active' : ''} onClick={() => { revealWorld(); useApp.getState().togglePanel('library', false); useApp.getState().setMode('orbit'); recenterWorld() }}><Compass size={20} /><span>My world</span></button>
         <button aria-label="Library" className={library ? 'is-active' : ''} onClick={() => { revealWorld(); useApp.getState().togglePanel('library') }}><BookOpen size={20} /><span>Library</span><small>{nodes.size}</small></button>
         <button aria-label="Agents" className={modal === 'agents' ? 'is-active' : ''} onClick={() => setModal('agents')}><Robot size={20} /><span>Agents</span><small>{agentCount || 'Guide'}</small></button>

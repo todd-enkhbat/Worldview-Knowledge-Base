@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
 import { ArrowCounterClockwise, Pause, Play } from '@phosphor-icons/react'
 import { useApp, useWorld } from '../app/store.ts'
-import { epochAtStep, formatByPrecision, stepAtEpoch } from '../domain/time.ts'
+import { birthStep, epochAtStep, formatByPrecision } from '../domain/time.ts'
 import { isEditableTarget } from '../world/camera/keyboard.ts'
 import { getPlayhead, seekPlayhead, stepOfEpoch } from '../world/time/clock.ts'
 import { axisAt, fractionOfStep, stepAtFraction, yearTicks } from '../world/time/timeScale.ts'
@@ -24,12 +24,12 @@ function countBorn(births: readonly number[], step: number): number {
 function TimelineContext({ births }: { births: readonly number[] }) {
   const [count, setCount] = useState(() => {
     const ph = getPlayhead()
-    return countBorn(births, ph.step + ph.acc)
+    return countBorn(births, ph.step)
   })
   useEffect(() => {
     const update = () => {
       const ph = getPlayhead()
-      const next = countBorn(births, ph.step + ph.acc)
+      const next = countBorn(births, ph.step)
       setCount((previous) => previous === next ? previous : next)
     }
     update()
@@ -40,8 +40,9 @@ function TimelineContext({ births }: { births: readonly number[] }) {
     })
     return () => { clearInterval(timer); unsubscribe() }
   }, [births])
-  // The field uses exact record dates; rounding down can stop just before a birth.
-  return <div className="timeline-context"><span aria-live="polite">{count} {count === 1 ? 'thought' : 'thoughts'} at this date</span>{count === 0 && births.length > 0 && <button type="button" onClick={() => seekPlayhead(Math.ceil(births[0]))}>Jump to first thought</button>}</div>
+  // Counts and jumps share the pose writer's integer births; fractional interpolation
+  // does not independently create or remove a record.
+  return <div className="timeline-context"><span aria-live="polite">{count} {count === 1 ? 'thought' : 'thoughts'} at this date</span>{count === 0 && births.length > 0 && <button type="button" onClick={() => seekPlayhead(births[0])}>Jump to first thought</button>}</div>
 }
 
 export function Timeline() {
@@ -58,7 +59,7 @@ export function Timeline() {
   const dragging = useRef(false)
   const axis = useMemo(() => settings ? axisAt(settings, now) : null, [settings, now])
   const ticks = useMemo(() => settings ? yearTicks(settings, now, Math.max(2, Math.floor(trackWidth / 56))).filter((t) => t.label) : [], [settings, now, trackWidth])
-  const births = useMemo(() => settings ? [...nodes.values()].map((n) => stepAtEpoch(n.temporalOrigin, settings.T0, settings.stepsPerYear)).sort((a, b) => a - b) : [], [nodes, settings])
+  const births = useMemo(() => settings ? [...nodes.values()].map((n) => birthStep(n.temporalOrigin, settings.T0, settings.stepsPerYear)).sort((a, b) => a - b) : [], [nodes, settings])
   useEffect(() => {
     const element = track.current
     if (!element) return
@@ -116,7 +117,7 @@ export function Timeline() {
       <div className="timeline-track" ref={track} role="slider" aria-label="Playhead" aria-valuemin={0} aria-valuemax={axis.maxStep} tabIndex={0} onPointerDown={down} onPointerMove={(e) => { if (dragging.current) seekAt(e.clientX) }} onPointerUp={() => { dragging.current = false }} onPointerCancel={() => { dragging.current = false }} onLostPointerCapture={() => { dragging.current = false }} onKeyDown={key}>
         <div className="timeline-line" />
         {ticks.map((t) => <span className="timeline-year" key={t.year} style={{ left: `${fractionOfStep(t.step, axis.maxStep) * 100}%` }}><i />{t.year}</span>)}
-        {[...nodes.values()].map((n) => <span key={n.id} className="timeline-birth" title={n.title} style={{ left: `${fractionOfStep(stepAtEpoch(n.temporalOrigin, settings.T0, settings.stepsPerYear), axis.maxStep) * 100}%` }} />)}
+        {[...nodes.values()].map((n) => <span key={n.id} className="timeline-birth" title={n.title} style={{ left: `${fractionOfStep(birthStep(n.temporalOrigin, settings.T0, settings.stepsPerYear), axis.maxStep) * 100}%` }} />)}
         <span className="timeline-now" style={{ left: `${fractionOfStep(axis.presentStep, axis.maxStep) * 100}%` }} />
         <div className="timeline-head" ref={head}><span /></div>
       </div>

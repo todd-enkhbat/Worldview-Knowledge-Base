@@ -1,0 +1,173 @@
+{
+  "schemaVersion": 1,
+  "recordedAtUtc": "2026-11-23T05:14:49.222240+00:00",
+  "execution": "Downloaded/read only; no dependency installation, application start, skills installation, or model download.",
+  "scope": "Shallow source checkouts at explicit pinned commits; Git LFS payloads and submodules are not fetched.",
+  "sources": [
+    {
+      "name": "agent-second-brain",
+      "repository": "smixs/agent-second-brain",
+      "url": "https://github.com/smixs/agent-second-brain",
+      "commit": "7828ed62cf76aae87bee7f2660468ab88495cf3d",
+      "path": "data/research/second-brains/2026-11-23/sources/agent-second-brain",
+      "files": 148,
+      "bytes": 1085034,
+      "inventory": "data/research/second-brains/2026-11-23/inventories/agent-second-brain.json",
+      "inventorySha256": "dcbc2894a3af72d60d7a6afcedd2469c193c8acc81f72ce09f8343245e4f37de",
+      "rootNotices": [
+        {
+          "path": "LICENSE",
+          "kind": "file",
+          "bytes": 1068,
+          "sha256": "27cd410525efac04b5fc0706333cbf92fcc7cefc246d5be33a3e1c77ace71205"
+        }
+      ],
+      "status": "downloaded",
+      "gitConnectivityVerified": true
+    },
+    {
+      "name": "basic-memory",
+      "repository": "basicmachines-co/basic-memory",
+      "url": "https://github.com/basicmachines-co/basic-memory",
+      "commit": "506305b856967da1799f530502b6d9b7e6bd9610",
+      "path": "data/research/second-brains/2026-11-23/sources/basic-memory",
+      "files": 1932,
+      "bytes": 21400934,
+      "inventory": "data/research/second-brains/2026-11-23/inventories/basic-memory.json",
+      "inventorySha256": "a2c0d5be0b59234f843ff35e4c335d2cfc74b243ad6c823d47778876765048ff",
+      "rootNotices": [
+        {
+          "path": "LICENSE",
+          "kind": "file",
+          "bytes": 34523,
+          "sha256": "8486a10c4393cee1c25392769ddd3b2d6c242d6ec7928e1414efff7dfb2f07ef"
+        }
+      ],
+      "status": "downloaded",
+      "gitConnectivityVerified": true
+    },
+    {
+      "name": "claude-mem",
+      "repository": "thedotmack/claude-mem",
+      "url": "https://github.com/thedotmack/claude-mem",
+      "commit": "29bc1cdf32aca60b3bfeec3b718d4ed6614b4f97",
+      "path": "data/research/second-brains/2026-11-23/sources/claude-mem",
+      "files": 3990,
+      "bytes": 75334027,
+      "inventory": "data/research/second-brains/2026-11-23/inventories/claude-mem.json",
+      "inventorySha256": "0f17c603c978237afd959ba92e92296c36a64c6ef5f308bb434aaf8deab03cf5",
+      "rootNotices": [
+        {
+          "path": "LICENSE",
+          "kind": "file",
+          "bytes": 11358,
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+        },
+        {
+          "path": "NOTICE",
+          "kind": "file",
+          "bytes": 242,
+          "sha256": "35003c303ee484c77872fd45eb5d590ce679d1ae7ac5bb672d33069cca66685b"
+        }
+      ],
+      "status": "downloaded",
+      "gitConnectivityVerified": true
+    },
+    {
+      "name": "gbrain",
+      "repository": "garrytan/gbrain",
+      "url": "https://github.com/garrytan/gbrain",
+      "commit": "47512aa50fa2be1ab3af55bf60c242a11be76392",
+      "path": "data/research/second-brains/2026-11-23/sources/gbrain",
+      "files": 16678,
+      "bytes": 270803265,
+      "inventory": "data/research/second-brains/2026-11-23/inventories/gbrain.json",
+      "inventorySha256": "ad6967ef01c70dfa4484e49e86a2812fbd8e49bc52a411d86212e0e536ec42e3",
+      "rootNotices": [
+        {
+          "path": "LICENSE",
+          "kind": "file",
+          "bytes": 1066,
+          "sha256": "e56fbb5b3d95756f3fa1cfefa24732ec79f18ece1ad08a4e79e00df57e8b198c"
+        }
+      ],
+      "status": "downloaded",
+      "gitConnectivityVerified": true
+    },
+    {
+      "name": "llm-wiki",
+      "url": "https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f",
+      "rawUrl": "https://gist.githubusercontent.com/karpathy/442a6bf555914893e9891c11519de94f/raw/ac46de1ad27f92b28ac95459c782c07f6b8c964a/llm-wiki.md",
+      "revision": "ac46de1ad27f92b28ac95459c782c07f6b8c964a",
+      "path": "data/research/second-brains/2026-11-23/sources/llm-wiki",
+      "files": 1,
+      "bytes": 11985,
+      "sha256": "dc3efe98ae62f23dd08acad13aba2e95287beb20b6bec2f4af0423557fe37401",
+      "status": "downloaded",
+      "license": "No license grant found in the gist; do not treat public visibility as permission to copy."
+    },
+    {
+      "name": "obsidian-skills",
+      "repository": "obsidianmd/obsidian-skills",
+      "url": "https://github.com/obsidianmd/obsidian-skills",
+      "commit": "b110b2f8e9eb1f287892f937050dfd40af862cbb",
+      "path": "data/research/second-brains/2026-11-23/sources/obsidian-skills",
+      "files": 28,
+      "bytes": 157258,
+      "inventory": "data/research/second-brains/2026-11-23/inventories/obsidian-skills.json",
+      "inventorySha256": "391e0fb2bcd9a5e040995b4c72ffc8c487d8e2c26209173621711c73f22eaf9e",
+      "rootNotices": [
+        {
+          "path": "LICENSE",
+          "kind": "file",
+          "bytes": 1077,
+          "sha256": "64c64d48361edfe8610016441bf593256ea9b67f133b00f47c55aa29ee878567"
+        }
+      ],
+      "status": "downloaded",
+      "gitConnectivityVerified": true
+    },
+    {
+      "name": "qmd",
+      "repository": "tobi/qmd",
+      "url": "https://github.com/tobi/qmd",
+      "commit": "8be0c42395c02ff73bce6d6c2e67d7905b0a771c",
+      "path": "data/research/second-brains/2026-11-23/sources/qmd",
+      "files": 329,
+      "bytes": 6250860,
+      "inventory": "data/research/second-brains/2026-11-23/inventories/qmd.json",
+      "inventorySha256": "4c9b86f11ec7e19de7969a862e6a9181251ccc3dc4a7f0c8c4c7c5db4308b344",
+      "rootNotices": [
+        {
+          "path": "LICENSE",
+          "kind": "file",
+          "bytes": 1072,
+          "sha256": "24c446836e7e2cdea13a914de10c88c553e6297366061ba24013b8ce73c8f7fa"
+        }
+      ],
+      "status": "downloaded",
+      "gitConnectivityVerified": true
+    },
+    {
+      "name": "supermemory",
+      "repository": "supermemoryai/supermemory",
+      "url": "https://github.com/supermemoryai/supermemory",
+      "commit": "fa2af930dd78ba5504d7f35875d57f62084fdb5a",
+      "path": "data/research/second-brains/2026-11-23/sources/supermemory",
+      "files": 941,
+      "bytes": 72809563,
+      "inventory": "data/research/second-brains/2026-11-23/inventories/supermemory.json",
+      "inventorySha256": "a7a8f9f8392ad6f398589ddc20e756f081140f1bfc7a1326a8c133192a66418b",
+      "rootNotices": [
+        {
+          "path": "LICENSE",
+          "kind": "file",
+          "bytes": 1068,
+          "sha256": "9ce388a89cce6a2dc109579d044f7f16e1397d8ee6fdb1f3bd3b980d365a07ae"
+        }
+      ],
+      "status": "downloaded",
+      "gitConnectivityVerified": true
+    }
+  ]
+}

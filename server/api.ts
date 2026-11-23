@@ -7,6 +7,11 @@ import type { AssetMeta, InteractionEvent, NodeRecord, WorldSettings } from '../
 import { ChangeBus, parseEnvelope } from './changes.ts'
 import { fetchReadable } from './fetchUrl.ts'
 import { bytesF32, EMBEDDING_DIM, StoreInputError, type WorldDb } from './worldDb.ts'
+import { extractPdfText, ExtractionError, MAX_EXTRACT_BYTES } from './extractText.ts'
+import type { Authorship, SearchFilters } from '../src/knowledge/types.ts'
+import { PORTABLE_WORLD_KEYS } from '../src/data/worldSnapshot.ts'
+import { WorldStateConflictError } from '../src/data/worldState.ts'
+import type { KnowledgeCommitOptions, KnowledgeDelta } from '../src/knowledge/storage.ts'
 
 // HTTP surface of the SQLite engine, mounted by the Vite plugin under /api on the app's own
 // origin (no CORS, no second port). JSON in and out, except blob bytes, which stream raw.
@@ -87,6 +92,33 @@ export function createApiHandler(opts: ApiOptions): Handler {
 
     if (seg[0] === 'world') {
       const [, what, id] = seg
+      const writes = ['settings', 'nodes', 'events', 'blobs', 'kv', 'wipe', 'reset'].includes(what) && method !== 'GET'
+      if (writes && db.corpus.head() && req.headers['x-wv-knowledge-format'] !== '2') throw new HttpError(409, 'This world uses incremental knowledge storage. Reload the app before writing; existing data was preserved.')
+      if (what === 'knowledge-revision' && method === 'GET') return send(res, 200, { revision: db.getKnowledgeRevision(), format: 2 }), true
+      if (what === 'knowledge-commit' && method === 'POST') {
+        if (!req.headers['x-wv-client'] || req.headers['x-wv-knowledge-format'] !== '2') throw new HttpError(409, 'Reload the updated app before committing knowledge.')
+        const body = await readJson<{ delta: KnowledgeDelta; options: KnowledgeCommitOptions }>(req, 64 * 1024 * 1024)
+        if (!body?.delta || !body.options) throw new HttpError(400, 'A knowledge delta and commit options are required')
+        return send(res, 200, { applied: db.commitKnowledge(body.delta, body.options) }), true
+      }
+      if (what === 'snapshot' && (method === 'GET' || method === 'POST')) {
+        const body = method === 'POST' ? await readJson<{ keys?: unknown }>(req, 8192) : {}
+        const keys = body?.keys ?? PORTABLE_WORLD_KEYS
+        if (!Array.isArray(keys) || keys.length > PORTABLE_WORLD_KEYS.length || !keys.every((key) => typeof key === 'string' && PORTABLE_WORLD_KEYS.includes(key))) throw new HttpError(400, 'Snapshot keys must be portable world keys')
+        return send(res, 200, db.readWorldSnapshot(keys)), true
+      }
+      if (what === 'knowledge-search' && method === 'POST') {
+        const body = await readJson<{ query?: unknown; filters?: SearchFilters }>(req, 128 * 1024)
+        if (!body || typeof body.query !== 'string' || body.query.length > 2000) throw new HttpError(400, 'query must be at most 2000 characters')
+        const filters = body.filters ?? {}
+        if (typeof filters !== 'object' || Array.isArray(filters)) throw new HttpError(400, 'filters must be an object')
+        if (filters.sourceIds && (!Array.isArray(filters.sourceIds) || filters.sourceIds.length > 1000 || !filters.sourceIds.every((x) => typeof x === 'string'))) throw new HttpError(400, 'sourceIds must be a list of source ids')
+        if (filters.limit !== undefined && (!Number.isSafeInteger(filters.limit) || filters.limit < 1 || filters.limit > 200)) throw new HttpError(400, 'limit must be between 1 and 200')
+        if (filters.role && !(['human', 'assistant', 'third-party', 'unknown'] as Authorship[]).includes(filters.role)) throw new HttpError(400, 'unknown authorship role')
+        if (filters.kinds && (!Array.isArray(filters.kinds) || filters.kinds.length > 20 || !filters.kinds.every((kind) => ['thought', 'document', 'chatgpt', 'claude', 'obsidian', 'legacy', 'conversation'].includes(kind)))) throw new HttpError(400, 'unknown source kind')
+        if ([filters.authoredAfter, filters.authoredBefore].some((date) => date !== undefined && !Number.isFinite(date))) throw new HttpError(400, 'date bounds must be finite timestamps')
+        return send(res, 200, db.searchKnowledge(body.query, filters)), true
+      }
       if (what === 'changes') {
         const bus = opts.bus
         if (!bus) return send(res, 404, { error: 'live changes are off' }), true
@@ -158,6 +190,10 @@ export function createApiHandler(opts: ApiOptions): Handler {
         }
       }
       if (what === 'kv' && id) {
+        if (method === 'POST' && seg[3] === 'compare') {
+          const body = await readJson<{ value: unknown; expectedRevision: number }>(req)
+          return send(res, 200, { applied: db.compareAndSwapKv(id, body.value, body.expectedRevision) }), true
+        }
         if (method === 'GET') {
           const v = db.getKv(id)
           return send(res, 200, v === undefined ? { found: false } : { found: true, value: v }), true
@@ -169,6 +205,15 @@ export function createApiHandler(opts: ApiOptions): Handler {
         db.wipe()
         await ensureDir()
         for (const f of await readdir(blobDir)) await rm(join(blobDir, f), { force: true })
+        return send(res, 204, undefined), true
+      }
+      if (what === 'reset' && method === 'POST') {
+        const body = await readJson<{ key: string; value: unknown; preserveKeys?: string[]; expectedKnowledgeRevision?: number }>(req, 4 * 1024 * 1024)
+        if (!body || typeof body.key !== 'string' || body.key.length > 200 || body.value === undefined || body.preserveKeys && (!Array.isArray(body.preserveKeys) || !body.preserveKeys.every((key) => typeof key === 'string'))) throw new HttpError(400, 'Invalid recovery marker')
+        if (body.expectedKnowledgeRevision !== undefined && (!Number.isSafeInteger(body.expectedKnowledgeRevision) || body.expectedKnowledgeRevision < 0)) throw new HttpError(400, 'Invalid expected knowledge revision')
+        db.resetWithKv(body.key, body.value, body.preserveKeys, body.expectedKnowledgeRevision)
+        await ensureDir()
+        for (const file of await readdir(blobDir)) await rm(join(blobDir, file), { force: true })
         return send(res, 204, undefined), true
       }
     }
@@ -200,6 +245,18 @@ export function createApiHandler(opts: ApiOptions): Handler {
       await opts.chat(await readJson<unknown>(req, 64 * 1024 * 1024), res)
       return true
     }
+    if (seg[0] === 'extract-text' && method === 'POST') {
+      if (!req.headers['x-wv-client']) throw new HttpError(403, 'missing x-wv-client header')
+      if (req.headers['content-type']?.split(';', 1)[0] !== 'application/pdf') throw new HttpError(415, 'Only local PDF extraction is supported by this endpoint.')
+      const chunks: Buffer[] = []
+      let size = 0
+      for await (const chunk of req as AsyncIterable<Buffer>) {
+        size += chunk.length
+        if (size > MAX_EXTRACT_BYTES) throw new HttpError(413, 'PDF exceeds the 64 MiB extraction limit')
+        chunks.push(chunk)
+      }
+      return send(res, 200, await extractPdfText(Buffer.concat(chunks))), true
+    }
     if (seg[0] === 'fetch-url' && method === 'POST') {
       const b = await readJson<{ url?: unknown }>(req, 64 * 1024)
       if (typeof b.url !== 'string') throw new HttpError(400, 'url is required')
@@ -225,7 +282,7 @@ export function createApiHandler(opts: ApiOptions): Handler {
         if (!handled) send(res, 404, { error: `no route for ${req.method} ${path}` })
       })
       .catch((e: unknown) => {
-        const status = e instanceof HttpError ? e.status : e instanceof StoreInputError ? 400 : isConstraint(e) ? 400 : 500
+        const status = e instanceof HttpError || e instanceof ExtractionError ? e.status : e instanceof WorldStateConflictError ? 409 : e instanceof StoreInputError ? 400 : isConstraint(e) ? 400 : 500
         if (status === 500) console.error('[api]', e)
         if (!res.headersSent) send(res, status, { error: e instanceof Error ? e.message : String(e) })
         else res.destroy()

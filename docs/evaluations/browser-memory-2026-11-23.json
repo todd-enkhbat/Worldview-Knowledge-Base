@@ -1,0 +1,36 @@
+{
+  "checkedAt": "2026-11-23T15:55:19.143Z",
+  "origin": "http://[::1]:5173",
+  "corpusOrigin": "real browser upload, AudioContext decode and local Whisper worker",
+  "transport": "real stateless MCP with official SDK",
+  "sourceId": "5fe53bbc-3304-4ad8-9156-eeb3d16d5933",
+  "currentVersionId": "a9cb8128-d2a9-4e75-a861-d0dcac442f77",
+  "sourceCount": 1,
+  "exactReads": [
+    {
+      "passageId": "bb1d1269-9514-4fe5-86f9-7e80d6e57a31",
+      "sourceId": "5fe53bbc-3304-4ad8-9156-eeb3d16d5933",
+      "versionId": "a9cb8128-d2a9-4e75-a861-d0dcac442f77",
+      "text": "The project Aurora decided to launch on December 12, the copper-orchored budget is $312.",
+      "locator": "Audio 0:00–0:07",
+      "role": "unknown",
+      "citationUrl": "#/library?passage=bb1d1269-9514-4fe5-86f9-7e80d6e57a31"
+    },
+    {
+      "passageId": "8d055772-b048-44ca-86a3-408ecde210fb",
+      "sourceId": "5fe53bbc-3304-4ad8-9156-eeb3d16d5933",
+      "versionId": "a9cb8128-d2a9-4e75-a861-d0dcac442f77",
+      "text": "This is synthetic speech for an integration test.",
+      "locator": "Audio 0:07–0:09",
+      "role": "unknown",
+      "citationUrl": "#/library?passage=8d055772-b048-44ca-86a3-408ecde210fb"
+    }
+  ],
+  "contextDeliveredPassages": 2,
+  "packetBytes": 1038,
+  "packetBudgetBytes": 8192,
+  "tokenRevoked": true,
+  "revokedRequestStatus": 401,
+  "corpusPolicyChanged": false,
+  "worldRecordsChanged": false
+}

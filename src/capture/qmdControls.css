@@ -1,0 +1,12 @@
+.qmd-controls .qmd-controls-state { color:var(--kb-cyan,#9cd2df); font-size:13px; }
+.qmd-controls .qmd-controls-note { border-left:2px solid var(--kb-accent,#e5bd79); padding:10px 14px; background:#e5bd790b; font-size:13px; }
+.qmd-controls details { margin-block:18px; max-width:760px; }
+.qmd-controls summary { color:var(--kb-cyan,#9cd2df); font-size:14px; cursor:pointer; }
+.qmd-controls .qmd-controls-filter { display:grid; gap:8px; margin-block:14px; max-width:480px; font-size:13px; }
+.qmd-controls .qmd-controls-filter input { min-width:0; border:1px solid #40505e; border-radius:6px; background:#152333; color:inherit; padding:10px 12px; font:16px var(--font-sans); }
+.qmd-controls .qmd-controls-sources { display:grid; gap:12px; max-height:280px; overflow:auto; padding-block:5px; }
+.qmd-controls .qmd-controls-sources label { display:flex; gap:9px; align-items:flex-start; font-size:13px; line-height:1.6; }
+.qmd-controls .qmd-controls-sources input { margin-top:4px; }
+.qmd-controls .qmd-controls-follow { max-width:550px; line-height:1.6; }
+.qmd-controls .qmd-controls-actions { margin-top:18px; }
+@media(max-width:600px) { .qmd-controls .knowledge-capture-controls { align-items:flex-start; flex-direction:column; }.qmd-controls .qmd-controls-follow { display:grid; grid-template-columns:auto 1fr; } }

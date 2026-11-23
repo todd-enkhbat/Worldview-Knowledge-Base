@@ -139,7 +139,7 @@ function memoryBackup(log: string[] = []): BackupTarget & { blobs: Map<string, B
   }
 }
 
-const MUTATORS = ['putSettings', 'putNode', 'putNodes', 'deleteNode', 'appendEvent', 'clearEvents', 'putBlob', 'deleteBlob', 'putKv', 'deleteKv', 'wipe'] as const
+const MUTATORS = ['putSettings', 'putNode', 'putNodes', 'deleteNode', 'appendEvent', 'clearEvents', 'putBlob', 'deleteBlob', 'putKv', 'compareAndSwapKv', 'deleteKv', 'wipe', 'resetWithKv'] as const
 
 function spyMutators(store: WorldStore, log?: string[]) {
   return MUTATORS.map((m) => {
@@ -409,8 +409,8 @@ describe('import = replace with a pre-import backup', () => {
 
     expect(result.backupName).toBe(`pre-import-${new Date(NOW).toISOString()}.zip`)
     expect(log.indexOf('backup:end')).toBeGreaterThanOrEqual(0)
-    expect(log.indexOf('backup:end')).toBeLessThan(log.indexOf('wipe'))
-    expect(log.indexOf('prune:3')).toBeLessThan(log.indexOf('wipe'))
+    expect(log.indexOf('backup:end')).toBeLessThan(log.indexOf('resetWithKv'))
+    expect(log.indexOf('prune:3')).toBeLessThan(log.indexOf('resetWithKv'))
     expect(log.slice(0, log.indexOf('backup:start'))).toEqual([])
     expect([...backup.blobs.keys()]).toHaveLength(3)
 
@@ -467,7 +467,8 @@ describe('zip32 limit', () => {
     const store = createMemoryStore()
     await store.putSettings(settings())
     const huge = { size: ZIP32_MAX_BYTES + 1, type: '', stream: () => new ReadableStream() } as unknown as Blob
-    vi.spyOn(store, 'listAssets').mockResolvedValue([imageMeta('huge', ZIP32_MAX_BYTES + 1)])
+    const snapshot = await store.readWorldSnapshot!([])
+    vi.spyOn(store, 'readWorldSnapshot').mockResolvedValue({ ...snapshot, assets: [imageMeta('huge', ZIP32_MAX_BYTES + 1)] })
     vi.spyOn(store, 'getBlob').mockResolvedValue(huge)
     const write = vi.fn()
     const abort = vi.fn()

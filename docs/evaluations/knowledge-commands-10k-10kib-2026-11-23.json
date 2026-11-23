@@ -1,0 +1,35 @@
+{
+  "measuredAt": "2026-11-23T06:11:20.756Z",
+  "node": "v26.5.0",
+  "cpu": "Apple M5 Pro",
+  "os": "darwin 25.6.0",
+  "samples": 30,
+  "captureTextBytes": 10240,
+  "methodology": "Actual captureThought and searchKnowledge application commands through initialized repository and localhost HTTP over durable temporary SQLite. Includes original retention, version/passage creation, cached ledger read, Immer drafts, client diff, pending/published projection phases, repository world updates, and final command resolution. Background organization is drained between captures and reported separately. Three warmups excluded. Synthetic one-passage source corpus; initial sources are unprojected documents, captured thoughts become world nodes. No browser rendering, inference, embeddings or native QMD measured.",
+  "results": [
+    {
+      "sources": 10000,
+      "captureThought": {
+        "samples": 30,
+        "p50Ms": 75.26,
+        "p95Ms": 111.809,
+        "minMs": 57.776,
+        "maxMs": 113.707
+      },
+      "searchKnowledge": {
+        "samples": 30,
+        "p50Ms": 33.299,
+        "p95Ms": 47.449,
+        "minMs": 7.941,
+        "maxMs": 48.926
+      },
+      "organizationDrainAfterCapture": {
+        "samples": 30,
+        "p50Ms": 108.556,
+        "p95Ms": 135.271,
+        "minMs": 94.247,
+        "maxMs": 136.743
+      }
+    }
+  ]
+}

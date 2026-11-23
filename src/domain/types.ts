@@ -128,6 +128,8 @@ export interface NodeRecord {
   /** Live things the note points at (videos, pages, places). Optional: older records have none. */
   embeds?: Embed[]
   visibility: Visibility
+  /** Retained source hidden from active search and spatial projections, independently of trash. */
+  corpusExcluded?: boolean
   splat?: SplatBlock
   entity?: { kind: EntityKind }
   demon?: DemonBlock
@@ -161,6 +163,8 @@ export interface OmniboxProvenance {
  */
 export interface IntakeProvenance {
   source: 'chat' | 'file' | 'url' | 'obsidian'
+  /** Original format metadata retained through portable exports (never privileged instructions). */
+  sourceMetadata?: Record<string, unknown>
   /** File name, URL or vault-relative path the note came from (absent for plain conversation). */
   ref?: string
   /** The supporting passage Claude quoted from the source, if any. */

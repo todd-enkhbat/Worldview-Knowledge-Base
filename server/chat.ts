@@ -17,6 +17,15 @@ export interface ChatOptions {
 
 export type ChatHandler = (body: unknown, res: ServerResponse) => Promise<void>
 
+/** Provider replay envelopes are local metadata, never valid Anthropic content blocks. */
+export function sanitizeAnthropicMessages(messages: { role: 'user' | 'assistant'; content: unknown }[]) {
+  return messages.flatMap((message) => {
+    if (!Array.isArray(message.content)) return [message]
+    const content = message.content.filter((block) => !block || typeof block !== 'object' || (block as { type?: unknown }).type !== 'worldview_provider_state')
+    return content.length ? [{ ...message, content }] : []
+  })
+}
+
 export function createChat(opts: ChatOptions = {}): ChatHandler {
   const client = opts.client ?? new Anthropic({ apiKey: opts.apiKey, maxRetries: 2 })
   const model = opts.model ?? CHAT_MODEL
@@ -42,7 +51,7 @@ export function createChat(opts: ChatOptions = {}): ChatHandler {
         cache_control: { type: 'ephemeral' },
         system: CHAT_SYSTEM,
         tools: CHAT_TOOLS as unknown as Anthropic.Beta.BetaToolUnion[],
-        messages: input.data.messages as Anthropic.Beta.BetaMessageParam[],
+        messages: sanitizeAnthropicMessages(input.data.messages) as Anthropic.Beta.BetaMessageParam[],
       })
       res.on('close', () => stream.abort())
       for await (const event of stream) {

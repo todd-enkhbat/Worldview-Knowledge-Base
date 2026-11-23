@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { useApp, useWorld } from '../../src/app/store.ts'
 import { createMemoryStore } from '../../src/data/memoryStore.ts'
 import { MS_PER_YEAR } from '../../src/domain/constants.ts'
-import { closeRepo, completeFirstRun, createNode, initRepo, softDelete, useRepoStatus } from '../../src/data/repo.ts'
+import { closeRepo, completeFirstRun, createNode, getStore, initRepo, softDelete, useRepoStatus } from '../../src/data/repo.ts'
 import { Banners } from '../../src/hud/Banners.tsx'
 import { FirstRun } from '../../src/hud/FirstRun.tsx'
 import { Settings } from '../../src/hud/Settings.tsx'
@@ -88,7 +88,7 @@ describe('FirstRun', () => {
     const s = useWorld.getState().settings
     expect(s?.T0).toBe(Date.UTC(1990, 2, 14))
     expect(useWorld.getState().nodes.size).toBeGreaterThan(10)
-    expect(useApp.getState().panels.chat).toBe(true)
+    expect(useApp.getState().panels.chat).toBe(false)
     expect(document.body.querySelector('[role="dialog"]')).toBeNull()
   })
 
@@ -105,7 +105,7 @@ describe('FirstRun', () => {
     expect(settings.T0).toBeGreaterThanOrEqual(before - 30 * MS_PER_YEAR)
     expect(settings.T0).toBeLessThanOrEqual(Date.now() - 30 * MS_PER_YEAR)
     expect(useWorld.getState().nodes.size).toBe(0)
-    expect(useApp.getState().panels.chat).toBe(true)
+    expect(useApp.getState().panels.chat).toBe(false)
     expect(document.body.querySelector('[role="dialog"]')).toBeNull()
   })
 })
@@ -113,6 +113,24 @@ describe('FirstRun', () => {
 describe('with a world', () => {
   beforeEach(async () => {
     await completeFirstRun({ T0: Date.UTC(1990, 0, 1), start: 'empty' })
+  })
+
+  it.each([
+    ['sqlite', 'on this local service'],
+    ['idb', 'in browser storage'],
+    ['memory', 'in this session’s memory'],
+  ] as const)('describes the actual %s working-copy location without claiming it is the only copy', async (kind, location) => {
+    getStore().info.kind = kind
+    const past = Date.now() - 40 * 86_400_000
+    act(() => useWorld.setState((state) => ({ settings: { ...state.settings!, createdAt: past, lastBackupAt: null } })))
+    render(<Banners />)
+    expect(text()).toContain(`Its working copy is stored ${location}.`)
+    expect(text()).toContain('has never been exported')
+    expect(text()).not.toMatch(/only copy|only in this browser/)
+    expect(button(/^Export now$/)).toBeTruthy()
+    act(() => useWorld.setState((state) => ({ settings: { ...state.settings!, lastBackupAt: past } })))
+    expect(text()).toContain('Last backup')
+    expect(text()).toContain(`Its working copy is stored ${location}.`)
   })
 
   it('undo toast restores a soft delete', async () => {

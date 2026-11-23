@@ -1,0 +1,62 @@
+{
+  "verifiedAt": "2026-11-23T17:42:04.228Z",
+  "mode": "production built client + real local SQLite HTTP service",
+  "cloudProvider": null,
+  "nodeCount": 3,
+  "firstNoteExact": true,
+  "secondNoteExact": true,
+  "attachment": {
+    "name": "local-ui-original.md",
+    "bytes": 98,
+    "sha256": "16e987e6913c20d2ee84a240d3154e199aea30ee1ee9169d6abbe53f38a8efad",
+    "fixtureSha256": "16e987e6913c20d2ee84a240d3154e199aea30ee1ee9169d6abbe53f38a8efad",
+    "matches": true
+  },
+  "dates": [
+    {
+      "id": "0e3e4073-bdf9-430f-97a0-6bdef374f81b",
+      "temporalOrigin": 1795455075690,
+      "iso": "2026-11-23T17:31:15.690Z"
+    },
+    {
+      "id": "c0826614-e898-4b58-9a92-b35cf810959f",
+      "temporalOrigin": 1795392000000,
+      "iso": "2026-11-23T00:00:00.000Z"
+    },
+    {
+      "id": "f2b407c6-7c80-4f56-ab1b-48410d3a8bd0",
+      "temporalOrigin": 1795392000000,
+      "iso": "2026-11-23T00:00:00.000Z"
+    }
+  ],
+  "externalAiRequests": 0,
+  "verificationSource": "Read-only SQLite and retained-blob audit; browser and server-restart observations supplied by the root agent.",
+  "database": "data/live-tests/local-ui-acceptance-2026-11-23/world.sqlite",
+  "thirdNoteExact": true,
+  "notes": [
+    {
+      "id": "0e3e4073-bdf9-430f-97a0-6bdef374f81b",
+      "exact": true
+    },
+    {
+      "id": "c0826614-e898-4b58-9a92-b35cf810959f",
+      "exact": true
+    },
+    {
+      "id": "f2b407c6-7c80-4f56-ab1b-48410d3a8bd0",
+      "exact": true
+    }
+  ],
+  "persistedAfterServerRestart": {
+    "passed": true,
+    "observedBy": "root agent browser acceptance after restarting the isolated production server",
+    "databaseRecheckedAt": "2026-11-23T17:42:04.228Z"
+  },
+  "receiptNavigation": {
+    "passed": true,
+    "recordId": "f2b407c6-7c80-4f56-ab1b-48410d3a8bd0",
+    "destination": "Library reader",
+    "exactRecordObservedBy": "root agent browser acceptance",
+    "recordRetainedInDatabase": true
+  }
+}
