@@ -85,6 +85,9 @@ function migrateFileKinds(db: DatabaseSync): void {
 }
 
 export class WorldDb {
+  private replacementGeneration = 0
+  /** Device-service guard: restored backups can reuse the same portable revision. */
+  getReplacementGeneration(): number { return this.replacementGeneration }
   readonly db: DatabaseSync
   readonly knowledge: KnowledgeIndex
   readonly corpus: SqliteKnowledgeStore
@@ -471,6 +474,7 @@ export class WorldDb {
       for (const [name, item] of kept) if (item !== undefined) this.writeKv(name, item)
       this.writeKv(key, marker)
     })
+    this.replacementGeneration++
   }
 
   /** Everything except embeddings (those are derived from the records, not part of the world). */
@@ -480,6 +484,7 @@ export class WorldDb {
       this.corpus.clear()
       this.knowledge.clear()
     })
+    this.replacementGeneration++
   }
 
   wipeEmbeddings(): void {

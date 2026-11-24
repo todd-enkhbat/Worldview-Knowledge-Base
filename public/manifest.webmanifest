@@ -1,13 +1,14 @@
 {
-  "name": "Architectural Hyperspace",
-  "short_name": "Hyperspace",
-  "description": "A local-first 4D worldview engine.",
+  "name": "Worldview",
+  "short_name": "Worldview",
+  "description": "Your local library, writing desk, and living knowledge world.",
   "start_url": "/#/",
   "scope": "/",
   "display": "standalone",
   "background_color": "#0b0b0c",
   "theme_color": "#0b0b0c",
   "icons": [
-    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+    { "src": "/brand/worldview-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/brand/worldview-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
   ]
 }

@@ -1,0 +1,202 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-23",
+  "scope": "Personal library, animated graph, reviewed assistant editing, Google Drive connection and macOS vault app",
+  "checks": {
+    "typecheck": "passed",
+    "lint": "passed",
+    "productionBuild": "passed",
+    "tests": {
+      "passed": 1345,
+      "skipped": 4,
+      "failed": 0,
+      "testFilesPassed": 209,
+      "testFilesSkipped": 2
+    },
+    "postBuildDevelopmentConfig": {
+      "change": "Ignore retained data and desktop staging in Vite file watching",
+      "typecheck": "passed",
+      "scopedLint": "passed",
+      "whitespace": "passed"
+    }
+  },
+  "cloudAi": "off",
+  "preservation": {
+    "checkedAt": "2026-11-23T23:17:25.986Z",
+    "changedOriginalFiles": [],
+    "records": {
+      "nodes": {
+        "before": 15,
+        "after": 15,
+        "originalRowsUnchanged": true
+      },
+      "links": {
+        "before": 4,
+        "after": 4,
+        "originalRowsUnchanged": true
+      },
+      "assets": {
+        "before": 25,
+        "after": 25,
+        "originalRowsUnchanged": true
+      }
+    },
+    "stage": "After workspace implementation, before the labeled Drive roundtrip sample"
+  },
+  "interactive": {
+    "browser": "Dia",
+    "diaDefaultBrowserVerified": true,
+    "diaReader": {
+      "installed": true,
+      "version": "0.2.2",
+      "connected": true,
+      "canonicalOrigin": "http://127.0.0.1:5173",
+      "existingBrowserWorldPreserved": true
+    },
+    "bookshelf": {
+      "isolatedQa": true,
+      "exampleTitlesOnlyInQa": true,
+      "editReloadRestore": true,
+      "retainedBookVersionsAfterAssistantEdit": 3
+    },
+    "mcp": {
+      "localSdkClient": true,
+      "tools": 17,
+      "writingProposalReviewedAndApproved": true,
+      "bookProposalReviewedAndApproved": true,
+      "pendingUntilApproval": true
+    },
+    "graph": {
+      "focusedNeighborhood": true,
+      "pauseControl": true,
+      "existingWorldRelationshipsShown": 4
+    },
+    "nativeDesktop": {
+      "verified": true,
+      "checkedAt": "2026-11-23T23:19:59.175Z",
+      "appOpened": true,
+      "selectedExistingVault": true,
+      "storage": "SQLite",
+      "sharedExistingService": true,
+      "origin": "http://127.0.0.1:5173",
+      "cloudAi": "off",
+      "bookshelfRendered": true,
+      "worldRendered": true,
+      "worldNotes": 15,
+      "savedWorldLinks": 4,
+      "frameWorldVerified": true,
+      "screenshots": [
+        "docs/design/native-bookshelf-2026-11-23.png",
+        "docs/design/native-workspace-2026-11-23.png",
+        "docs/design/native-world-2026-11-23.png"
+      ],
+      "refreshedArtifact": {
+        "sha256": "a37775a47690c9e940ffe748d1a3131f91a692bb90506244b17b6d608c891732",
+        "sourceFilesMatched": 749,
+        "privacyScan": "passed",
+        "isolatedBackendChecks": 14,
+        "relaunched": false,
+        "historicalWindowProofPreserved": true
+      }
+    }
+  },
+  "googleDrive": {
+    "implemented": true,
+    "focusedTestsPassed": 38,
+    "liveVerified": true,
+    "checkedAt": "2026-11-23T23:57:59.673103+00:00",
+    "phase": "Connected; formatted Google Docs export, selected-file import and repeat-import check verified",
+    "clientType": "Desktop app",
+    "credentialsCreated": true,
+    "configured": true,
+    "connected": true,
+    "consentBrowser": "Dia",
+    "driveApiEnabled": true,
+    "pickerApiEnabled": true,
+    "userApprovedPickerTermsAndSelectedFileAccess": true,
+    "selectedFileScopeOnly": true,
+    "credentialFileMode": "0600",
+    "refreshTokenPresent": true,
+    "downloadedClientFileMode": "0600",
+    "billingEnabledByAgent": false,
+    "cloudAi": {
+      "configured": false,
+      "provider": null
+    },
+    "roundtrip": {
+      "writingSavedThroughUi": true,
+      "nativeGoogleDocCreatedThroughUi": true,
+      "googleDocViewedInDia": true,
+      "headingBoldItalicAndListVerified": true,
+      "desktopGooglePickerVerified": true,
+      "selectedOriginalImportedThroughUi": true,
+      "docxOriginalRetained": true,
+      "originalHashVerified": true,
+      "textMarkerVerified": true,
+      "repeatedRevisionRecognizedThroughUi": true,
+      "extraVersionOnFinalRepeat": false,
+      "sampleVersionsRetained": [
+        7,
+        7,
+        8
+      ],
+      "preFixDuplicatesPreserved": true
+    },
+    "replacement": {
+      "liveEnabled": false,
+      "reason": "Google did not provide a strong ETag for the editable sample document; create-new-copy remains available."
+    },
+    "sampleData": {
+      "clearlyLabeled": true,
+      "newWritingDocuments": 1,
+      "newLibrarySources": 1,
+      "newGoogleDocuments": 1,
+      "retainedDocxExports": 3,
+      "existingRecordsChanged": false
+    },
+    "preservation": {
+      "originalNodesUnchanged": 15,
+      "originalLinksUnchanged": 4,
+      "originalEventsUnchanged": 94,
+      "originalAssetRowsAndBlobsUnchanged": 25,
+      "originalWritingDocumentsUnchanged": 3
+    },
+    "fixes": [
+      "Verify and reuse retained native originals when the Google revision is unchanged, despite volatile export timestamps.",
+      "Recover missing or damaged retained files without rewriting prior source history.",
+      "Preserve purged history and allow extraction retry."
+    ],
+    "currentWorkspaceTotals": {
+      "worldNodes": 15,
+      "worldLinks": 4,
+      "assetRows": 28,
+      "writingDocuments": 4,
+      "librarySources": 16
+    }
+  },
+  "limitations": [
+    "Google replacements require a strong ETag; the real Google Docs sample did not provide one, so replacement remains disabled.",
+    "Drive is an explicit import/export bridge, without background synchronization.",
+    "The Mac app is locally ad-hoc signed and is not Apple-notarized.",
+    "The browser Reader currently uses the canonical local port 5173."
+  ],
+  "screenshots": [
+    "docs/design/personal-bookshelf-2026-11-23.jpg",
+    "docs/design/personal-graph-2026-11-23.jpg",
+    "docs/design/personal-mobile-bookshelf-2026-11-23.jpg",
+    "docs/design/assistant-review-2026-11-23.jpg",
+    "docs/design/assistant-book-review-mobile-2026-11-23.jpg",
+    "docs/design/dia-reader-connected-2026-11-23.png",
+    "docs/design/google-client-configured-2026-11-23.png",
+    "docs/design/google-apis-enabled-2026-11-23.png",
+    "docs/design/google-drive-connected-2026-11-23.png",
+    "docs/design/google-drive-exported-2026-11-23.png",
+    "docs/design/google-docs-roundtrip-sample-2026-11-23.png",
+    "docs/design/google-drive-imported-2026-11-23.png",
+    "docs/design/google-drive-repeat-import-2026-11-23.png"
+  ],
+  "evidenceArtifacts": {
+    "screenshots": "Dated acceptance captures are local-only and intentionally excluded from Git; they may include personal workspace or account context.",
+    "localBuilds": "Installers, retained sources and credential files remain under ignored local paths."
+  }
+}

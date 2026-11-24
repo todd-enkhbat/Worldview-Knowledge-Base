@@ -1,0 +1,335 @@
+{
+  "schemaVersion": 1,
+  "result": "passed",
+  "zip": "data/desktop/releases/Worldview-mac-arm64.zip",
+  "app": "data/desktop/releases/Worldview-darwin-arm64/Worldview.app",
+  "bytes": 411515630,
+  "sha256": "a37775a47690c9e940ffe748d1a3131f91a692bb90506244b17b6d608c891732",
+  "entries": 21623,
+  "versions": {
+    "electron": "45.4.1",
+    "node": "26.5.0",
+    "worldview": "0.1.0"
+  },
+  "signing": {
+    "type": "ad-hoc",
+    "verified": true,
+    "notarized": false
+  },
+  "privacy": {
+    "forbiddenPrivatePaths": [],
+    "configuredSecretMatches": [],
+    "configuredSecretsChecked": 4,
+    "configuredSecretLabelsChecked": [
+      "ANTHROPIC_API_KEY",
+      "googleDrive.clientSecret",
+      "googleDrive.tokens.access",
+      "googleDrive.tokens.refresh"
+    ],
+    "privateCredentialReadErrors": [],
+    "textEntriesInspected": 14355
+  },
+  "links": {
+    "outsideBundle": []
+  },
+  "criticalSourceMatches": {
+    "electron/main.cjs": true,
+    "electron/preload.cjs": true,
+    "electron/policy.cjs": true,
+    "server/host.ts": true,
+    "server/memoryAccess.ts": true,
+    "server/memoryHttp.ts": true,
+    "server/connections/assistant.ts": true,
+    "server/connections/googleDrive.ts": true,
+    "server/connections/desktop.ts": true,
+    "scripts/desktop/server.mjs": true,
+    "src/bookshelf/model.ts": true,
+    "src/data/worldSnapshot.ts": true
+  },
+  "sourceTree": {
+    "matched": 749,
+    "missing": [],
+    "different": []
+  },
+  "executables": {
+    "Worldview.app/Contents/MacOS/Worldview": true,
+    "Worldview.app/Contents/Resources/app/runtime/node/bin/node": true
+  },
+  "officialNodeBinaryMatchesVerifiedRuntime": true,
+  "nativeWindow": {
+    "verified": true,
+    "checkedAt": "2026-11-23T23:19:59.175Z",
+    "appOpened": true,
+    "selectedExistingVault": true,
+    "storage": "SQLite",
+    "sharedExistingService": true,
+    "origin": "http://127.0.0.1:5173",
+    "cloudAi": "off",
+    "bookshelfRendered": true,
+    "worldRendered": true,
+    "worldNotes": 15,
+    "savedWorldLinks": 4,
+    "frameWorldVerified": true,
+    "screenshots": [
+      "docs/design/native-bookshelf-2026-11-23.png",
+      "docs/design/native-workspace-2026-11-23.png",
+      "docs/design/native-world-2026-11-23.png"
+    ],
+    "observedArtifactSha256": "955a0829825348aa0e75a3a109c4d191e1b17775f5b90438687a83a234e9f082",
+    "observationAppliesTo": "Prior desktop artifact; the refreshed package was not relaunched. The native wrapper is unchanged and the prior window reused the development service."
+  },
+  "previousArtifact": {
+    "sha256": "955a0829825348aa0e75a3a109c4d191e1b17775f5b90438687a83a234e9f082",
+    "bytes": 411514517,
+    "nativeWindowCheckedAt": "2026-11-23T23:19:59.175Z",
+    "bundledBackend": {
+      "checkedAt": "2026-11-23T22:41:18.340Z",
+      "origin": "http://127.0.0.1:5188",
+      "workspace": "isolated test folder; no user corpus accessed",
+      "runtime": "final packaged official Node 26.5.0",
+      "requests": [
+        {
+          "path": "/api/health",
+          "status": 200
+        },
+        {
+          "path": "/api/ai/status",
+          "status": 200
+        },
+        {
+          "path": "/api/memory/clients",
+          "status": 200
+        },
+        {
+          "path": "/api/connections/assistant",
+          "status": 200
+        },
+        {
+          "path": "/api/connections/drive",
+          "status": 200
+        },
+        {
+          "path": "/assets/index-ljQS7SpJ.js",
+          "status": 200,
+          "contentType": "text/javascript",
+          "bytes": 258329
+        },
+        {
+          "path": "/manifest.webmanifest",
+          "status": 200,
+          "contentType": "application/octet-stream",
+          "bytes": 502
+        },
+        {
+          "path": "/brand/worldview-512.png",
+          "status": 200,
+          "contentType": "image/png",
+          "bytes": 384782
+        },
+        {
+          "path": "/assets/jbig2-BUnLb-NU.wasm",
+          "status": 200,
+          "contentType": "application/wasm",
+          "bytes": 103671
+        },
+        {
+          "path": "/assets/openjpeg-HvMz5KIw.wasm",
+          "status": 200,
+          "contentType": "application/wasm",
+          "bytes": 220817
+        },
+        {
+          "path": "/assets/ort-wasm-simd-threaded.asyncify-CxOG5pUO.wasm",
+          "status": 200,
+          "contentType": "application/wasm",
+          "bytes": 26861777
+        },
+        {
+          "path": "/assets/pdf.worker.min-CIqJB0yW.mjs",
+          "status": 200,
+          "contentType": "text/javascript",
+          "bytes": 1271915
+        },
+        {
+          "path": "/assets/qcms_bg-3PJi_GXR.wasm",
+          "status": 200,
+          "contentType": "application/wasm",
+          "bytes": 96589
+        },
+        {
+          "path": "/assets/quickjs-eval-zJSp5SB4.wasm",
+          "status": 200,
+          "contentType": "application/wasm",
+          "bytes": 469105
+        }
+      ],
+      "cloudAi": {
+        "configured": false,
+        "provider": null
+      },
+      "memory": {
+        "reviewRequired": true,
+        "clients": 0,
+        "workspaceFingerprintVerified": true
+      },
+      "assistant": {
+        "available": true,
+        "reviewRequired": true,
+        "pendingChanges": 0,
+        "bridgeUsesBundledNode": true
+      },
+      "drive": {
+        "configured": false,
+        "connected": false,
+        "aiRequired": false
+      },
+      "html": {
+        "status": 200,
+        "title": "Worldview",
+        "bundledJavaScript": "/assets/index-ljQS7SpJ.js"
+      },
+      "sqliteFileHeaderVerified": true,
+      "isolatedServiceStoppedCleanly": true
+    }
+  },
+  "artifactVerification": {
+    "checkedAt": "2026-11-23T23:54:29.131223Z",
+    "builtAt": "2026-11-23T23:52:59.391Z",
+    "sha256": "a37775a47690c9e940ffe748d1a3131f91a692bb90506244b17b6d608c891732",
+    "result": "passed",
+    "productionBuild": "passed",
+    "reason": "Include tested Google native-file version deduplication fix",
+    "driveSourceByteMatched": true,
+    "nativeRelaunchPerformed": false,
+    "activeAppAndUserVaultUntouched": true
+  },
+  "signatureChecks": {
+    "canonicalBuild": {
+      "deep": true,
+      "strict": true,
+      "verified": true
+    },
+    "releaseCopy": {
+      "deep": true,
+      "verified": true
+    },
+    "identity": "ad-hoc",
+    "notarized": false,
+    "developerId": false
+  },
+  "bundledBackend": {
+    "checkedAt": "2026-11-23T23:55:22.871Z",
+    "artifactSha256": "a37775a47690c9e940ffe748d1a3131f91a692bb90506244b17b6d608c891732",
+    "origin": "http://127.0.0.1:5188",
+    "workspace": "isolated test folder; no user corpus accessed",
+    "runtime": "refreshed packaged official Node 26.5.0",
+    "requests": [
+      {
+        "path": "/api/health",
+        "status": 200
+      },
+      {
+        "path": "/api/ai/status",
+        "status": 200
+      },
+      {
+        "path": "/api/memory/clients",
+        "status": 200
+      },
+      {
+        "path": "/api/connections/assistant",
+        "status": 200
+      },
+      {
+        "path": "/api/connections/drive",
+        "status": 200
+      },
+      {
+        "path": "/assets/index-ljQS7SpJ.js",
+        "status": 200,
+        "contentType": "text/javascript",
+        "bytes": 258329
+      },
+      {
+        "path": "/manifest.webmanifest",
+        "status": 200,
+        "contentType": "application/octet-stream",
+        "bytes": 502
+      },
+      {
+        "path": "/brand/worldview-512.png",
+        "status": 200,
+        "contentType": "image/png",
+        "bytes": 384782
+      },
+      {
+        "path": "/assets/jbig2-BUnLb-NU.wasm",
+        "status": 200,
+        "contentType": "application/wasm",
+        "bytes": 103671
+      },
+      {
+        "path": "/assets/openjpeg-HvMz5KIw.wasm",
+        "status": 200,
+        "contentType": "application/wasm",
+        "bytes": 220817
+      },
+      {
+        "path": "/assets/ort-wasm-simd-threaded.asyncify-CxOG5pUO.wasm",
+        "status": 200,
+        "contentType": "application/wasm",
+        "bytes": 26861777
+      },
+      {
+        "path": "/assets/pdf.worker.min-CIqJB0yW.mjs",
+        "status": 200,
+        "contentType": "text/javascript",
+        "bytes": 1271915
+      },
+      {
+        "path": "/assets/qcms_bg-3PJi_GXR.wasm",
+        "status": 200,
+        "contentType": "application/wasm",
+        "bytes": 96589
+      },
+      {
+        "path": "/assets/quickjs-eval-zJSp5SB4.wasm",
+        "status": 200,
+        "contentType": "application/wasm",
+        "bytes": 469105
+      }
+    ],
+    "cloudAi": {
+      "configured": false,
+      "provider": null
+    },
+    "memory": {
+      "reviewRequired": true,
+      "clients": 0,
+      "workspaceFingerprintVerified": true
+    },
+    "assistant": {
+      "available": true,
+      "reviewRequired": true,
+      "pendingChanges": 0,
+      "bridgeUsesBundledNode": true
+    },
+    "drive": {
+      "configured": false,
+      "connected": false,
+      "aiRequired": false,
+      "note": "Intentionally isolated workspace; no live account credentials inherited."
+    },
+    "html": {
+      "status": 200,
+      "title": "Worldview",
+      "bundledJavaScript": "/assets/index-ljQS7SpJ.js"
+    },
+    "sqliteFileHeaderVerified": true,
+    "isolatedServiceStoppedCleanly": true
+  },
+  "evidenceArtifacts": {
+    "screenshots": "Dated acceptance captures are local-only and intentionally excluded from Git; they may include personal workspace or account context.",
+    "localBuilds": "Installers, retained sources and credential files remain under ignored local paths."
+  }
+}

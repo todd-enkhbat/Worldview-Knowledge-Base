@@ -640,7 +640,7 @@ function legacyRole(node: NodeRecord): Authorship {
 }
 
 /** Publish already-retained capture bytes through the same version/projection commands. */
-export function ingestRetainedSource(parsed: ParsedSource, opts: { originalBlobId: string; originalName: string; origin?: SourceVersion['origin']; aiGenerated?: boolean; shouldWrite?: () => boolean }): Promise<KnowledgeSource> {
+export function ingestRetainedSource(parsed: ParsedSource, opts: { originalBlobId: string; originalName: string; origin?: SourceVersion['origin']; aiGenerated?: boolean; project?: boolean; shouldWrite?: () => boolean }): Promise<KnowledgeSource> {
   return serial(async () => {
     if (opts.shouldWrite && !opts.shouldWrite()) throw new Error('This capture changed while its transcript was being prepared.')
     const snapshot = await readWriteSnapshot()
@@ -655,8 +655,12 @@ export function ingestRetainedSource(parsed: ParsedSource, opts: { originalBlobI
     if (imported.created && !portableIdentity(parsed)) source.tags = topicWords(parsed.text)
     const changed = await addVersion(snapshot, source, parsed, opts.originalBlobId, opts.originalName, opts.origin ?? 'capture')
     if (opts.shouldWrite && !opts.shouldWrite()) throw new Error('This capture changed before its transcript could be published.')
-    if (changed || imported.policyChanged) { source.pendingProjection = true; await persist(snapshot) }
-    if (source.pendingProjection) await projectSource(snapshot, source)
+    if (changed || imported.policyChanged) {
+      if (opts.project !== false) source.pendingProjection = true
+      else if (imported.created) { delete source.nodeId; source.pendingProjection = false }
+      await persist(snapshot)
+    }
+    if (opts.project !== false && source.pendingProjection) await projectSource(snapshot, source)
     return owned(source)
   })
 }

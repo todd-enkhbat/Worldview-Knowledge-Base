@@ -1,5 +1,5 @@
 import { Inflate, Zip, ZipPassThrough } from 'fflate'
-import { PORTABLE_WORLD_KEYS, readWorldSnapshot, referencedWorldAssets, voiceOriginalReferences } from './worldSnapshot.ts'
+import { PORTABLE_WORLD_KEYS, readWorldSnapshot, referencedWorldAssets, voiceOriginalReferences, writingOriginalReferences, bookshelfOriginalReferences } from './worldSnapshot.ts'
 import { ARCHETYPES, SCHEMA_VERSION } from '../domain/types.ts'
 import type { AssetMeta, InteractionEvent, InteractionKind, NodeRecord, WorldSettings } from '../domain/types.ts'
 import type { WorldStore } from './WorldStore.ts'
@@ -324,6 +324,8 @@ export async function exportArchive(store: WorldStore, sink: ArchiveSink, opts: 
   const { settings, nodes, events, assets: metas, kv: worldKv } = snapshot
   const requiredAssets = referencedWorldAssets(snapshot)
   const voiceHashes = new Map(voiceOriginalReferences(worldKv).map((voice) => [voice.id, voice.hash]))
+  for (const id of writingOriginalReferences(worldKv)) voiceHashes.set(id, id.slice('writing-'.length))
+  for (const id of bookshelfOriginalReferences(worldKv)) voiceHashes.set(id, id.split('-').at(-1)!)
   const knownAssets = new Set(metas.map((meta) => meta.id))
   for (const id of requiredAssets) if (!knownAssets.has(id)) throw new ArchiveError('corrupt', `Referenced original ${id} is missing from the asset index. The backup was not completed.`)
   const trash = nodes.filter((n) => n.deletedAt !== null).length
@@ -406,7 +408,7 @@ export async function exportArchive(store: WorldStore, sink: ArchiveSink, opts: 
         continue
       }
       if (requiredAssets.has(meta.id) && blob.size !== meta.bytes) throw new ArchiveError('corrupt', `Referenced original ${meta.id} changed while exporting. The backup was not completed.`)
-      if (voiceHashes.has(meta.id) && await hashBytes(blob) !== voiceHashes.get(meta.id)) throw new ArchiveError('hash-mismatch', 'A voice original differs from its retained SHA-256 receipt. The backup was not completed.')
+      if (voiceHashes.has(meta.id) && await hashBytes(blob) !== voiceHashes.get(meta.id)) throw new ArchiveError('hash-mismatch', 'A retained voice or writing original differs from its SHA-256 receipt. The backup was not completed.')
       await addEntry(assetEntryName(meta.id), streamChunks(blob.stream()))
       exported.push(meta)
       assetBytes += blob.size
@@ -901,6 +903,8 @@ export async function readArchive(file: Blob, onProgress?: (p: ArchiveProgress) 
   const assetIds = new Set(assets.map((asset) => asset.id))
   for (const id of referencedWorldAssets({ settings: null, nodes, events, assets, kv })) if (!assetIds.has(id)) throw new ArchiveError('corrupt', `Referenced original ${id} is missing. Nothing was restored.`)
   for (const voice of voiceOriginalReferences(kv)) if (await hashBytes(await assetData(voice.id)) !== voice.hash) throw new ArchiveError('hash-mismatch', 'A voice original differs from its retained SHA-256 receipt. Nothing was restored.')
+  for (const id of writingOriginalReferences(kv)) if (await hashBytes(await assetData(id)) !== id.slice('writing-'.length)) throw new ArchiveError('hash-mismatch', 'A writing original differs from its retained SHA-256 reference. Nothing was restored.')
+  for (const id of bookshelfOriginalReferences(kv)) if (await hashBytes(await assetData(id)) !== id.split('-').at(-1)) throw new ArchiveError('hash-mismatch', 'A bookshelf original differs from its SHA-256 reference. Nothing was restored.')
 
   return {
     manifest,

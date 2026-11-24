@@ -1,0 +1,201 @@
+{
+  "schemaVersion": 1,
+  "verifiedAt": "2026-11-23T18:42:57.054Z",
+  "result": "passed",
+  "verificationMethod": "Independent read-only SQLite transactions, retained-blob comparisons and source-file SHA256 checks. Only this report was written.",
+  "originalWorkspace": {
+    "database": "data/world.sqlite",
+    "baseline": "data/backups/before-reading-archive-2026-11-23/manifest.json",
+    "baselineCreatedAt": "2026-11-23T18:23:18.100Z",
+    "tables": {
+      "nodes": {
+        "count": 14,
+        "expectedCount": 14,
+        "sha256": "70b73a2651cd2bf01df5e2430f8f9dbb1897db784db19df69e7500dab585fc18",
+        "expectedSha256": "70b73a2651cd2bf01df5e2430f8f9dbb1897db784db19df69e7500dab585fc18",
+        "matches": true
+      },
+      "links": {
+        "count": 4,
+        "expectedCount": 4,
+        "sha256": "46f38c2f8b9eb521f711bcd78e1a42574c74f8702e218d4a2ebda81cb08275f3",
+        "expectedSha256": "46f38c2f8b9eb521f711bcd78e1a42574c74f8702e218d4a2ebda81cb08275f3",
+        "matches": true
+      },
+      "assets": {
+        "count": 23,
+        "expectedCount": 23,
+        "sha256": "5169e62dabf044830a1b090a6cf250b4e85887049c7ee0a3b8a0050a291d1930",
+        "expectedSha256": "5169e62dabf044830a1b090a6cf250b4e85887049c7ee0a3b8a0050a291d1930",
+        "matches": true
+      }
+    },
+    "spatialFiles": {
+      "expected": 152,
+      "current": 152,
+      "matched": 152,
+      "mismatched": [],
+      "added": [],
+      "missing": []
+    },
+    "retainedOriginals": {
+      "baseline": "data/backups/before-live-services-d28b44e8-4aae-4cb4-a968-431cb15c14e9/manifest.json",
+      "expected": 23,
+      "matched": 23,
+      "mismatchedIds": []
+    }
+  },
+  "isolatedAcceptance": {
+    "database": "data/live-tests/reading-archive-2026-11-23/world.sqlite",
+    "sourceId": "def50a1e-2488-4c7b-a287-238ab7f7a58b",
+    "sourceVersionId": "6375771b-6d91-47df-a45b-9a45363b1a40",
+    "title": "How evidence becomes knowledge",
+    "url": "https://example.org/reading/evidence?utm_source=qa",
+    "kind": "document",
+    "body": {
+      "characters": 617,
+      "utf8Bytes": 617,
+      "sha256": "4c9feb42a365a880de9353e07ccaff4a4cca98b05f398e88c1fb138b919c573c",
+      "matchesRetainedOriginalEnvelope": true
+    },
+    "retainedOriginal": {
+      "blobId": "knowledge-0b95c8177bfaa119110928dc924713031530b575891d7fc88c6d9068e94e9dd1",
+      "bytes": 774,
+      "sha256": "0b95c8177bfaa119110928dc924713031530b575891d7fc88c6d9068e94e9dd1",
+      "format": "worldview-article-capture.v1",
+      "exactTextTitleAndUrl": true
+    },
+    "currentVersionPassages": {
+      "count": 1,
+      "exactOffsetsAndThirdPartyUnknownDate": true
+    },
+    "nonspatialArticleCapture": {
+      "noNodeId": true,
+      "pendingProjection": false,
+      "qaSpatialNodeCount": 0
+    },
+    "readingRevision": 21,
+    "annotations": {
+      "highlight": {
+        "id": "8e207ae1-bcb9-476e-a3b4-a11f496e25b6",
+        "versionId": "6375771b-6d91-47df-a45b-9a45363b1a40",
+        "quote": "Evidence becomes useful when we can return to its source.",
+        "expectedLength": 57,
+        "actualLength": 57,
+        "start": 0,
+        "end": 57,
+        "exactQuote": true,
+        "exactSourceVersion": true,
+        "exactOffsets": true,
+        "comment": "This is the principle I want my archive to follow.",
+        "exactComment": true,
+        "prefixMatches": true,
+        "suffixMatches": true
+      },
+      "note": {
+        "id": "7c9b0881-f43a-4981-8dfc-7d15010e4d0e",
+        "text": "I want this to connect reading with my own reasoning.",
+        "exact": true
+      },
+      "folder": {
+        "id": "1e75f75d-37f9-4b14-af6b-605208a5c0b0",
+        "name": "Reading systems",
+        "assigned": true
+      },
+      "topics": {
+        "assigned": [
+          "Evidence",
+          "Knowledge systems"
+        ],
+        "expected": [
+          "Evidence",
+          "Knowledge systems"
+        ],
+        "matches": true
+      },
+      "manualConnection": {
+        "id": "480259bf-b0d1-484c-bfae-8dcd02aab5b6",
+        "from": "Evidence",
+        "relation": "supports",
+        "to": "Knowledge systems",
+        "persists": true
+      }
+    },
+    "afterRestartRetention": {
+      "passed": true,
+      "verificationSource": "Root agent observed the isolated browser flow after restarting its local production service; this audit independently confirmed the durable data."
+    },
+    "markdownExport": {
+      "exactSourceUrlVersionQuoteCommentAndNote": true,
+      "verificationSource": "Root agent browser acceptance and exported Markdown inspection; not independently downloaded again during this audit."
+    }
+  },
+  "cloudAi": {
+    "externalRequests": 0,
+    "verificationSource": "Root agent confirmed no cloud AI calls during acceptance; this audit performed no network calls."
+  },
+  "automatedTests": {
+    "finalFullSuiteAsserted": false,
+    "reason": "This integrity audit neither reran tests nor asserts final-suite results; the root agent owns the final run.",
+    "companionTargetedReport": "docs/evaluations/browser-reader-2026-11-23.json"
+  },
+  "auditRestrictions": {
+    "implementationModified": false,
+    "applicationDataModified": false,
+    "testsRun": false,
+    "serversStopped": false,
+    "gitTouched": false
+  },
+  "automatedChecks": {
+    "typecheck": {
+      "command": "npm run typecheck",
+      "passed": true
+    },
+    "lint": {
+      "command": "npm run lint",
+      "passed": true
+    },
+    "build": {
+      "command": "npm run build",
+      "passed": true
+    },
+    "tests": {
+      "command": "npx vitest run --maxWorkers=2",
+      "passed": 1167,
+      "skipped": 4,
+      "filesPassed": 181,
+      "filesSkipped": 2,
+      "durationSeconds": 36.38
+    },
+    "source": "Final root command outputs; full suite after all implementation changes."
+  },
+  "browserPreview": {
+    "mainArchive": "http://127.0.0.1:5173/#/library",
+    "browserPairingReady": true,
+    "cloudAiProvider": null,
+    "extensionInstalled": false,
+    "manualSetupRequired": "Download and pair the Chrome/Edge companion in Sources \u2192 Browser reading."
+  },
+  "markdownExport": {
+    "quote": true,
+    "comment": true,
+    "personalNote": true,
+    "originalUrl": true,
+    "sourceVersionLocator": true,
+    "utf16Start": 0,
+    "utf16End": 57,
+    "verifiedFromDownloadedFile": true
+  },
+  "previews": [
+    "docs/design/reading-annotations-2026-11-23.jpg",
+    "docs/design/reading-archive-2026-11-23.jpg",
+    "docs/design/reading-graph-2026-11-23.jpg",
+    "docs/design/reading-mobile-archive-2026-11-23.jpg",
+    "docs/design/reading-mobile-graph-2026-11-23.jpg",
+    "docs/design/reading-mobile-reader-2026-11-23.jpg"
+  ],
+  "evidenceArtifacts": {
+    "screenshots": "Dated acceptance captures are local-only and intentionally excluded from Git; they may include personal workspace or account context.",
+    "localBuilds": "Installers, retained sources and credential files remain under ignored local paths."
+  }
+}

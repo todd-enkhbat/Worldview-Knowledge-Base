@@ -1,5 +1,41 @@
 # Decisions
 
+## 2026-11-23 — Personal bookshelf, connected editing, and desktop vault
+
+Bookshelves use a versioned CAS ledger with full preceding snapshots and content-addressed cover/import originals; all retained versions participate in portable backups. Graph layout and camera movement are presentation-only, finite, interruptible, and reduced-motion aware. Saved 3D links are read through the existing world-link projection rather than inferred from distance. Both interfaces use a locally served Earth image and shared destinations.
+
+MCP editing extends existing revocable read tokens with explicit document/create/organization scopes. Mutations are staged, reviewed, and committed with revision checks and audit history. Google Drive uses this app’s own OAuth credentials and selected-file scope; credentials remain outside the world database and portable exports. The native macOS app wraps the same interface in a sandboxed renderer, runs a verified bundled Node runtime, and opens an explicitly selected existing workspace. The development and packaged app keep cloud generation off. See [usage and boundaries](PERSONAL-WORKSPACE.md).
+
+## 2026-11-23 — Connect reading, writing, organization, and recovery
+
+Implement all six requested improvements in the current app. Version-bound quotation nodes retain exact source IDs, versions, offsets or PDF pages; publication preserves quoted wording as third-party passages and the writer’s prose as human passages. Canonical topic views reconcile matching source tags and assigned topic names through aliases without rewriting retained evidence. The same home surfaces related sources, annotations, writing, knowledge pages, and investigations.
+
+Add official MIT Tiptap TableKit 3.35.0 and Apache PDF.js 6.5.438. The editor adds selection/slash tools, canonical topic links, tables, footnotes, undoable section movement, and media sizing/progress. PDF rendering uses the exact retained original, a local worker and bundled fonts/CMaps/WASM; page-bound normalized highlight rectangles remain separate from extracted-text offsets. No provider calls or remote PDF resources are required.
+
+Editable drafts stay in `writing.v1`; named, automatic, and pre-restore checkpoints use portable `writingHistory.v1`. Restore flushes and locks editing, verifies the originating workspace, and retains the current draft before replacement. Trash is recoverable. Historical media remains part of verified world backups. Saved archive views and bulk filing live in `reading.v1`; the trigram search index is disposable. Graph pages expose offscreen relationships and expand bounded local neighborhoods, preserving the 3D spatial model.
+
+Chrome reader 0.2.1 uses an explicit Connect → local approval → claim flow, exact extension origins, and private revocable credentials. Real Chromium verification revealed that privileged extension GETs may omit Origin; JSON POST claim/acknowledge requests resolve this without relaxing origin validation. The user explicitly approved Developer mode and installation in the Tsogt Chrome profile. Actual article/highlight/comment delivery, offline retention, retry, and passage deduplication passed. Acceptance tokens were revoked, and the installed reader was freshly paired with the original workspace and left idle.
+
+Final typecheck, lint, production build, and **1,261 tests** passed (4 skipped). Actual browser checks covered the full research/writing/PDF/recovery loop, shared topics, indexed searches, saved views, bulk filing, graph depth, and mobile layouts. All 14 baseline nodes, 4 links, 23 original asset rows/blobs, and 152 spatial source files were preserved. Concurrent additions were recorded separately and retained. See [the implementation guide](SIX-IMPROVEMENTS.md), [acceptance evidence](evaluations/six-improvements-acceptance-2026-11-23.json), and actual writing/research interface (local-only capture: `design/knowledge-writing-research-2026-11-23.jpg`).
+
+## 2026-11-23 — A local writing studio alongside quick capture
+
+Add a separate Writing studio while preserving Today’s quick thought, the reading archive, explicit topic graph, and the existing 3D world. Use the MIT Tiptap/ProseMirror editor with exact Tiptap 3.35.0 dependencies for structured formatting, selection-aware commands, local media nodes, and validated explicit video embeds. Document appearance belongs to each draft: typography, colors, paper width, static waves/dots, and original background images. No cloud AI or paid editor service is required.
+
+Rich drafts live in portable `writing.v1` with serialized revision-checked writes. Debounced autosave keeps newer edits while a save is pending, guards account/store/world generations, and preserves conflicts for explicit recovery. Same-document save echoes do not replace editor content or undo history. Save to Library is an explicit retained source/version checkpoint with rich JSON and plain passages; unchanged checkpoints deduplicate. Editing an imported source creates a derivative with original version provenance. Publication uses `project: false`, preserving spatial records and coordinates.
+
+Media originals are content-addressed and verified; drafts, archived documents, and published historical versions participate in existing backup asset collection. Self-contained HTML, Markdown/media ZIP, full document ZIP, and browser printing provide portable output. Export budgets and missing-original errors are explicit rather than producing broken files. These choices and actual format limits are documented in [WRITING-STUDIO.md](WRITING-STUDIO.md).
+
+Final verification passed typecheck, lint, production build, and **1,212 tests** (4 skipped). Browser acceptance verified rich text, an uploaded image and decoded video, local image backgrounds, wave design, empty-document toolbar readiness, autosave/cold reopen, unchanged publication deduplication, focus/preview, and a 390 px editor/design panel without horizontal overflow. A downloaded HTML retained the exact media and styling. All 152 spatial source files and the existing 14 nodes, 4 links, and 23 originals matched their pre-writing baselines. See the [acceptance record](evaluations/writing-studio-acceptance-2026-11-23.json) and actual editor capture (local-only capture: `design/writing-studio-2026-11-23.jpg`).
+
+## 2026-11-23 — Reading archive and explicit topic graph
+
+Reading state lives in the portable, versioned `reading.v1` ledger: folders, progress, exact version-bound highlights, personal notes, topics and explicit semantic connections. It uses the same account/store/world-generation boundaries and compare-and-swap discipline as the existing workspace. A highlight retains UTF-16 positions, the exact quote and surrounding context; later source revisions do not re-anchor it silently.
+
+Library now provides a document-cover archive and an annotation reader. The separate 2D graph derives edges from source tags, assigned topics and named relationships chosen by the user. Its bounded, static layout never changes 3D coordinates. New article captures retain their original JSON/text and URL without creating spatial projections or enabling cloud AI.
+
+Browser following is explicit per tab. The Chrome/Edge companion uses `activeTab`, scripting and trusted extension storage rather than browsing-history access. It pairs with the local SQLite world using a revocable token, stores delivery receipts privately for retry safety, and stops attribution when the page changes. Visible dwell and scroll position are observations; completion is not inferred from opening a page alone.
+
 ## 2026-11-23 — local workspace and interface refinement
 
 The user paused API use and requested a polished everyday app while retaining the 3D world. Cloud providers now require explicit `AI_PROVIDER=openai|anthropic`; the default and this workspace are `none`. Existing keys are retained privately. Cloud-off capture saves notes and original attachments without provider calls; source reading, local QMD, local Whisper and portable exports remain available. Optional connections are disclosed only when requested.

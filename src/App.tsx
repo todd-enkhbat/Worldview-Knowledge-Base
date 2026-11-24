@@ -6,7 +6,7 @@ import { ExploreBoundary } from './workspace/ExploreBoundary.tsx'
 import { WorkspaceBoundary } from './workspace/WorkspaceBoundary.tsx'
 import { useRepoStatus } from './data/repo.ts'
 import { initializeWorkspacePersistence } from './workspace/persistence.ts'
-import { workspaceScopeForAccount } from './workspace/state.ts'
+import { WORKSPACE_SECTIONS, workspaceScopeForAccount } from './workspace/state.ts'
 import { initialWorkspaceTheme } from './workspace/appearance.ts'
 
 // Daily routes open without WebGL; #/explore retains the full world, alongside the lab routes.
@@ -47,6 +47,7 @@ export default function App() {
   const auth = useAuth((s) => s.state)
   const userId = useAuth((s) => s.user?.id)
   const ready = useRepoStatus((s) => s.ready)
+  const workspaceRoute = WORKSPACE_SECTIONS.find((section) => section === route)
   useEffect(() => {
     if (ready && auth !== 'signed-out') void initializeWorkspacePersistence(workspaceScopeForAccount(userId, location.search, import.meta.env.DEV))
   }, [ready, auth, userId])
@@ -55,7 +56,7 @@ export default function App() {
   return (
     <Suspense fallback={<Boot />}>
       {route === 'world' && <ExploreBoundary key={hash}><WorldPage /><ExploreBridge hash={hash} /></ExploreBoundary>}
-      {(route === 'today' || route === 'search' || route === 'library' || route === 'topics' || route === 'knowledge' || route === 'review' || route === 'sources') && <WorkspaceBoundary key={userId ?? 'local'}><Workbench section={route} hash={hash} /></WorkspaceBoundary>}
+      {workspaceRoute && <WorkspaceBoundary key={userId ?? 'local'}><Workbench section={workspaceRoute} hash={hash} /></WorkspaceBoundary>}
       {route === 'lab' && <LabPage />}
       {route === 'perf' && <PerfBench />}
       {route === 's1' && <S1Spike />}

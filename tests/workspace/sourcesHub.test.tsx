@@ -23,6 +23,9 @@ const values: Record<string, unknown> = {
   '/api/memory/clients': { clients: [{ expiresAt: Date.now() + 60_000, revokedAt: 123 }, { expiresAt: 1, revokedAt: null }] },
   '/api/capture/telegram': { configured: false, enabled: false },
   '/api/ai/status': { provider: null, configured: false },
+  '/api/reading-capture': { available: true, clients: [] },
+  '/api/connections/drive': { available: true, configured: false, connected: false },
+  '/api/connections/desktop': { available: true },
 }
 let root: Root, host: HTMLDivElement
 let fetchMock: ReturnType<typeof vi.fn<typeof fetch>>
@@ -42,7 +45,7 @@ afterEach(async () => { await act(async () => root.unmount()); host.remove(); aw
 
 it('starts with compact native disclosures, truthful readiness, and no setup side effects', async () => {
   await act(async () => root.render(<SourcesHub hash="#/sources" importActions={<button>Import files</button>} />))
-  expect(host.querySelectorAll('details.sources-hub-connection')).toHaveLength(7)
+  expect(host.querySelectorAll('details.sources-hub-connection')).toHaveLength(10)
   expect(host.querySelector('details[open]')).toBeNull()
   expect(mounts.voice).not.toHaveBeenCalled(); expect(mounts.cloud).not.toHaveBeenCalled()
   expect(connection('voice').textContent).toContain('Transcription ready')
@@ -51,9 +54,12 @@ it('starts with compact native disclosures, truthful readiness, and no setup sid
   expect(connection('memory').textContent).toContain('No agents connected')
   expect(connection('telegram').textContent).toContain('Setup needed')
   expect(connection('cloud').textContent).toContain('Off')
+  expect(connection('browser').textContent).toContain('Ready to pair')
+  expect(connection('drive').textContent).toContain('Setup needed')
+  expect(connection('desktop').textContent).toContain('Ready to download')
   expect(host.querySelector('button')?.getAttribute('aria-label')).toBe('Refresh connection status')
   expect([...host.querySelectorAll('button')].some((button) => button.textContent === 'Import files')).toBe(true)
-  expect(fetchMock).toHaveBeenCalledTimes(6)
+  expect(fetchMock).toHaveBeenCalledTimes(9)
   for (const [, options] of fetchMock.mock.calls) expect(options?.method ?? 'GET').toBe('GET')
 })
 

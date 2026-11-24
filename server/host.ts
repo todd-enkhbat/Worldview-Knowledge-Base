@@ -12,6 +12,9 @@ import { TelegramCapture, handleTelegramRequest, type TelegramOptions } from './
 import { transcribeLocalMedia, closeLocalTranscription } from './localTranscription.ts'
 import { handleWhisperModelRequest } from './whisperModels.ts'
 import type { AiRuntime } from './ai.ts'
+import { ArticleCapture, handleArticleCaptureRequest } from './articleCapture.ts'
+import { GoogleDriveConnection, handleGoogleDriveRequest } from './connections/googleDrive.ts'
+import { handleDesktopConnectionRequest } from './connections/desktop.ts'
 
 // The /api surface for either way of running the app:
 //
@@ -50,6 +53,8 @@ interface World {
   memory: ReturnType<typeof createMemoryHttp>
   qmd: ReturnType<typeof createQmdHttp>
   telegram: TelegramCapture
+  articles: ArticleCapture
+  drive: GoogleDriveConnection
 }
 
 type Handler = (req: IncomingMessage, res: ServerResponse, next?: () => void) => void
@@ -108,7 +113,7 @@ export function createHost(opts: HostOptions): Host {
     if (!w) {
       const db = openWorldDb(join(dir, 'world.sqlite'))
       const bus = new ChangeBus()
-      w = { db, bus, handler: createApiHandler({ db, blobDir: join(dir, 'blobs'), refine: opts.refine, chat: opts.chat, bus, now: opts.now }), memory: createMemoryHttp(db, key, opts.now), qmd: createQmdHttp({ db, directory: join(dir, 'qmd') }), telegram: new TelegramCapture({ db, blobDir: join(dir, 'blobs'), bus, now: opts.now, ...(key === 'local' ? opts.telegram : {}), transcribe: transcribeLocalMedia }) }
+      w = { db, bus, drive: new GoogleDriveConnection({ db, blobDir: join(dir, 'blobs'), bus, now: opts.now }), articles: new ArticleCapture({ db, blobDir: join(dir, 'blobs'), bus, now: opts.now }), handler: createApiHandler({ db, blobDir: join(dir, 'blobs'), refine: opts.refine, chat: opts.chat, bus, now: opts.now }), memory: createMemoryHttp(db, key, opts.now, { bus, directory: dir }), qmd: createQmdHttp({ db, directory: join(dir, 'qmd') }), telegram: new TelegramCapture({ db, blobDir: join(dir, 'blobs'), bus, now: opts.now, ...(key === 'local' ? opts.telegram : {}), transcribe: transcribeLocalMedia }) }
       worlds.set(key, w)
     }
     return w
@@ -159,6 +164,10 @@ export function createHost(opts: HostOptions): Host {
     const seg = path.split('/').filter(Boolean)
     const method = req.method ?? 'GET'
     const run = async () => {
+      if (seg[0] === 'reading-capture') {
+        if (accounts) return sendJson(res, 403, { available: false, error: 'Browser reading capture is available only in the local app.' })
+        return handleArticleCaptureRequest(worldFor(null).articles, req, res)
+      }
       if (seg[0] === 'models' && await handleWhisperModelRequest(req, res)) return
       if (seg[0] === 'capture' && seg[1] !== 'telegram') {
         if (accounts) return sendJson(res, 403, { available: false, error: 'Local folder capture is disabled on account-hosted servers.' })
@@ -168,7 +177,7 @@ export function createHost(opts: HostOptions): Host {
       }
       if (seg[0] === 'auth') return auth(req, res, seg[1] ?? '')
       const user = accounts ? accounts.userForToken(cookieValue(req.headers.cookie, SESSION_COOKIE)) : null
-      if (!accounts && (seg[0] === 'memory' || seg[0] === 'mcp' || seg[0] === 'qmd' || seg[0] === 'ai' || seg[0] === 'capture' && seg[1] === 'telegram')) {
+      if (!accounts && (seg[0] === 'connections' || seg[0] === 'memory' || seg[0] === 'mcp' || seg[0] === 'qmd' || seg[0] === 'ai' || seg[0] === 'capture' && seg[1] === 'telegram')) {
         let hostname = ''
         try { hostname = new URL(`http://${req.headers.host ?? ''}`).hostname } catch { /* invalid host is refused */ }
         if (!['localhost', '127.0.0.1', '[::1]'].includes(hostname)) return sendMemoryJson(res, 403, { error: 'Local memory requires a loopback host.' })
@@ -201,6 +210,9 @@ export function createHost(opts: HostOptions): Host {
         if (method === 'POST') return sendJson(res, 200, await opts.ai?.probe() ?? { provider: null, model: null, configured: false, ok: false, message: 'No AI provider is configured.' })
         return sendJson(res, 405, { error: 'Method not allowed.' })
       }
+      if (seg[0] === 'connections' && seg[1] === 'assistant') return worldFor(user).memory.connections(req, res)
+      if (seg[0] === 'connections' && seg[1] === 'desktop') { if (accounts) return sendJson(res, 403, { error: 'Desktop downloads are available from the local workspace.' }); return handleDesktopConnectionRequest(req, res) }
+      if (seg[0] === 'connections' && seg[1] === 'drive') { if (accounts) return sendJson(res, 403, { error: 'Google Drive is available only in the local workspace.' }); return handleGoogleDriveRequest(worldFor(user).drive, req, res) }
       if (seg[0] === 'qmd') return worldFor(user).qmd.handle(req, res)
       if (seg[0] === 'capture' && seg[1] === 'telegram') return handleTelegramRequest(worldFor(user).telegram, req, res)
       if (seg[0] === 'memory' && seg[1] === 'mirror') return worldFor(user).memory.mirror(req, res)

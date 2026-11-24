@@ -9,3 +9,6 @@ bench-results/
 /data/
 .env.local
 /:memory:.ses
+# Dated acceptance captures may show private notes or signed-in browser details.
+/docs/design/*-20??-??-??.png
+/docs/design/*-20??-??-??.jpg

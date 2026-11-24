@@ -15,7 +15,9 @@ export default defineConfig(({ mode }) => {
   return {
     // Vitest starts a Vite server too: keep tests off the real data/world.sqlite.
     plugins: [react(), tailwindcss(), ...(process.env.VITEST ? [] : [hyperspaceEngine({ env, accounts: env.HYPERSPACE_ACCOUNTS === '1', dataDir: env.HYPERSPACE_DATA_DIR || undefined })])],
-    server: { host: 'localhost', port: PORT, strictPort: true },
+    // Retained files and desktop staging are data; their HTML/CSS must not reload
+    // an open writing or reading session when an import or package is written.
+    server: { host: 'localhost', port: PORT, strictPort: true, watch: { ignored: ['**/data/**'] } },
     preview: { host: 'localhost', port: PORT, strictPort: true },
     worker: { format: 'es' as const },
     build: { target: 'es2023', sourcemap: true, chunkSizeWarningLimit: 4096 },

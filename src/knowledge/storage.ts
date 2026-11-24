@@ -28,7 +28,7 @@ export interface KnowledgeCommitOptions {
   expectedNodes?: Record<string, number | null>
   assets?: AssetMeta[]
   /** Sidecars whose changes must share the corpus transaction (for example, purging a voice original). */
-  state?: { key: 'voiceInbox.v1' | 'artifacts.v1' | 'collections.v1'; value: unknown; expectedRevision: number }[]
+  state?: { key: 'voiceInbox.v1' | 'artifacts.v1' | 'collections.v1' | 'reading.v1' | 'reading.capture.receipts.v1'; value: unknown; expectedRevision: number }[]
 }
 export interface KnowledgeReceipt { id: string; fingerprint: string; revision: number }
 export interface KnowledgeHead { revision: number; metadata: Record<string, unknown>; nextOrder?: Partial<Record<KnowledgeCollection, number>> }
@@ -90,7 +90,7 @@ export function validateKnowledgeCommit(delta: KnowledgeDelta, opts: KnowledgeCo
   if (opts.state !== undefined) {
     if (!Array.isArray(opts.state) || new Set(opts.state.map((entry) => entry.key)).size !== opts.state.length) throw new Error('Atomic knowledge sidecars must have unique keys.')
     for (const entry of opts.state) {
-      if (!entry || !['voiceInbox.v1', 'artifacts.v1', 'collections.v1'].includes(entry.key)) throw new Error('Unsupported atomic knowledge sidecar.')
+      if (!entry || !['voiceInbox.v1', 'artifacts.v1', 'collections.v1', 'reading.v1', 'reading.capture.receipts.v1'].includes(entry.key)) throw new Error('Unsupported atomic knowledge sidecar.')
       assertRevisionMutation(entry.value, entry.expectedRevision)
     }
   }

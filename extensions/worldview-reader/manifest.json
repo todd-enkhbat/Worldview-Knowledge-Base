@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "Worldview Reader",
+  "version": "0.2.2",
+  "description": "Explicitly save and follow one article, with local highlights and reading progress.",
+  "minimum_chrome_version": "114",
+  "permissions": ["activeTab", "scripting", "storage"],
+  "host_permissions": ["http://localhost/*", "http://127.0.0.1/*"],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "action": { "default_popup": "popup.html", "default_title": "Worldview Reader · choose an article to follow" }
+}

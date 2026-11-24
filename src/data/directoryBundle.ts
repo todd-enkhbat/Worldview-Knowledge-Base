@@ -5,7 +5,7 @@ import { DEVICE_KV_KEYS, IMPORT_MARKER_KV, WORLD_KV_KEYS } from './archive.ts'
 import type { ImportMarker } from './archive.ts'
 import { hashBytes, hashJson, hashRecords } from './hash.ts'
 import type { WorldStore } from './WorldStore.ts'
-import { readWorldSnapshot, voiceOriginalReferences } from './worldSnapshot.ts'
+import { readWorldSnapshot, voiceOriginalReferences, writingOriginalReferences, bookshelfOriginalReferences } from './worldSnapshot.ts'
 import { stateRevision, WorldStateConflictError } from './worldState.ts'
 
 export const DIRECTORY_BUNDLE_FORMAT = 'worldview-directory-bundle'
@@ -90,6 +90,8 @@ export async function exportDirectoryBundle(store: WorldStore, writer: BundleWri
   const kv: [string, unknown][] = Object.entries(worldKv)
   validateKnowledgeOriginals(Object.fromEntries(kv), assets)
   const voiceHashes = new Map(voiceOriginalReferences(worldKv).map((voice) => [voice.id, voice.hash]))
+  for (const id of writingOriginalReferences(worldKv)) voiceHashes.set(id, id.slice('writing-'.length))
+  for (const id of bookshelfOriginalReferences(worldKv)) voiceHashes.set(id, id.split('-').at(-1)!)
   const runId = crypto.randomUUID()
   let partIndex = 0
   let written = 0
@@ -134,7 +136,7 @@ export async function exportDirectoryBundle(store: WorldStore, writer: BundleWri
     for (const meta of assets) {
       const original = await store.getBlob(meta.id)
       if (!original || original.size !== meta.bytes) throw new DirectoryBundleError('missing', `Original ${meta.id} is missing or has the wrong byte count. The backup was not completed.`)
-      if (voiceHashes.has(meta.id) && await hashBytes(original) !== voiceHashes.get(meta.id)) throw new DirectoryBundleError('hash', 'A voice original differs from its retained SHA-256 receipt. The backup was not completed.')
+      if (voiceHashes.has(meta.id) && await hashBytes(original) !== voiceHashes.get(meta.id)) throw new DirectoryBundleError('hash', 'A retained voice or writing original differs from its SHA-256 receipt. The backup was not completed.')
       await writeEntry(assetPath(meta.id), blobChunks(original))
     }
     const manifest: DirectoryBundleManifest = {
@@ -219,6 +221,7 @@ function validateOriginalReferences(nodes: readonly NodeRecord[], assets: readon
 }
 
 function validateKnowledgeOriginals(kv: Record<string, unknown>, assets: readonly AssetMeta[]): void {
+  for (const id of [...writingOriginalReferences(kv), ...bookshelfOriginalReferences(kv)]) if (!assets.some((asset) => asset.id === id)) throw new DirectoryBundleError('missing', 'A writing original is missing. The bundle was not completed.')
   for (const voice of voiceOriginalReferences(kv)) {
     const asset = assets.find((item) => item.id === voice.id)
     if (!asset || asset.bytes !== voice.bytes) throw new DirectoryBundleError('missing', 'A voice original is missing or differs from its receipt. The bundle was not completed.')
@@ -324,6 +327,8 @@ export async function readDirectoryBundle(reader: BundleReader, opts: Pick<Direc
   validateOriginalReferences(nodes, assets)
   validateKnowledgeOriginals(kv, assets)
   for (const voice of voiceOriginalReferences(kv)) if (await hashBytes(get(assetPath(voice.id))) !== voice.hash) throw new DirectoryBundleError('hash', 'A voice original differs from its retained SHA-256 receipt. Nothing was restored.')
+  for (const id of writingOriginalReferences(kv)) if (await hashBytes(get(assetPath(id))) !== id.slice('writing-'.length)) throw new DirectoryBundleError('hash', 'A writing original differs from its retained SHA-256 reference. Nothing was restored.')
+  for (const id of bookshelfOriginalReferences(kv)) if (await hashBytes(get(assetPath(id))) !== id.split('-').at(-1)) throw new DirectoryBundleError('hash', 'A bookshelf original differs from its SHA-256 reference. Nothing was restored.')
   const actualCounts = { nodes: nodes.length, live: nodes.filter((n) => n.deletedAt === null && !n.corpusExcluded).length, trash: nodes.filter((n) => n.deletedAt !== null).length, excluded: nodes.filter((n) => n.deletedAt === null && n.corpusExcluded).length, events: events.length, assets: assets.length, assetBytes: assets.reduce((sum, asset) => sum + asset.bytes, 0), worldKv: Object.keys(kv).length }
   if (Object.entries(actualCounts).some(([key, value]) => manifest.counts[key as keyof typeof actualCounts] !== value)) fail('The completed bundle counts do not match its content.')
   if (files.size !== REQUIRED.length + assets.length) fail('The bundle contains unlisted or duplicate asset entries.')

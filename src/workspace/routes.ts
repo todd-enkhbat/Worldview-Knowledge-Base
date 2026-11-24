@@ -10,6 +10,8 @@ export function parseAppRoute(hash: string, development = false): AppRoute {
   if (path === '/lab') return 'lab'
   if (path === '/explore' || path === '/world') return 'world'
   if (path === '/ask') return 'search'
+  if (path === '/archive') return 'library'
+  if (path === '/writing') return 'write'
   const section = path.replace(/^\//, '') as WorkspaceSection
   return WORKSPACE_SECTIONS.includes(section) ? section : 'today'
 }

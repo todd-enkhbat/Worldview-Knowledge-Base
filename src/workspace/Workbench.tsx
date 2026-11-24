@@ -1,5 +1,5 @@
-import { Activity, useEffect, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode, type RefObject } from 'react'
-import { ArrowUp, ArrowUpRight, CaretDown, FunnelSimple, Microphone, List, Moon, ShieldCheck, SidebarSimple, BookOpen, CaretLeft, ChatCircle, Check, CheckSquare, ClockCounterClockwise, DownloadSimple, FileText, FolderOpen, GearSix, MagnifyingGlass, Planet, Plus, Stack, Sun, UploadSimple, X } from '@phosphor-icons/react'
+import { Activity, lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode, type RefObject } from 'react'
+import { ArrowUp, ArrowUpRight, CaretDown, FunnelSimple, Microphone, List, Moon, ShieldCheck, SidebarSimple, BookOpen, Books, CaretLeft, ChatCircle, Check, CheckSquare, ClockCounterClockwise, DownloadSimple, FileText, FolderOpen, GearSix, MagnifyingGlass, PencilSimple, Planet, Plus, Stack, Sun, TreeStructure, UploadSimple, X } from '@phosphor-icons/react'
 import { useApp, useWorld } from '../app/store.ts'
 import { useChat } from '../ai/chat/session.ts'
 import { trapKeys } from '../hud/DurabilityKit.tsx'
@@ -29,8 +29,22 @@ import { useRetrievalTrace } from '../knowledge/retrievalTrace.ts'
 import { SourcesHub } from './SourcesHub.tsx'
 import { Investigations, SaveInvestigation } from './Investigations.tsx'
 import { passageLocator } from './evidence.ts'
+import ReadingArchive from '../reading/ReadingArchive.tsx'
+import AnnotatedReader from '../reading/AnnotatedReader.tsx'
+import { isPdfVersion } from '../reading/pdfModel.ts'
+import KnowledgeGraph from '../reading/KnowledgeGraph.tsx'
+import TopicHome from '../reading/TopicHome.tsx'
+import { initializeReading } from '../reading/store.ts'
+import { createWritingFromSource, initializeWriting, useWriting } from '../writing/store.ts'
+import { createBookFromSource, initializeBookshelf } from '../bookshelf/store.ts'
+import { WorldviewMark } from './WorldviewMark.tsx'
+import { AsciiOrbit } from './AsciiOrbit.tsx'
+import './worldviewVisuals.css'
 import './workbench.css'
 import './workspace-polish.css'
+
+const Bookshelf = lazy(() => import('../bookshelf/Bookshelf.tsx'))
+const WritingStudio = lazy(() => import('../writing/WritingStudio.tsx'))
 
 type Source = ReturnType<typeof useKnowledge.getState>['sources'][number]
 type SearchHit = NonNullable<Awaited<ReturnType<typeof readKnowledgePassage>>>
@@ -48,8 +62,11 @@ function openSettings() {
 
 const SECTIONS: { id: WorkspaceSection; label: string; icon: typeof Sun; description: string }[] = [
   { id: 'today', label: 'Today', icon: Sun, description: 'Capture a thought. Pick up a thread.' },
+  { id: 'write', label: 'Writing studio', icon: PencilSimple, description: 'A page for your own words, in your own style.' },
   { id: 'search', label: 'Search & ask', icon: MagnifyingGlass, description: 'Find the passage. Follow the evidence.' },
   { id: 'library', label: 'Library', icon: BookOpen, description: 'Your original words and sources, in context.' },
+  { id: 'bookshelf', label: 'Bookshelf', icon: Books, description: 'Books, articles, recommendations, and your reading life.' },
+  { id: 'graph', label: 'Knowledge graph', icon: TreeStructure, description: 'Follow a connection. Build your own understanding.' },
   { id: 'topics', label: 'Projects & topics', icon: FolderOpen, description: 'Resume an investigation and follow the subjects that connect your record.' },
   { id: 'knowledge', label: 'Knowledge pages', icon: FileText, description: 'Review and maintain the understanding built from your sources.' },
   { id: 'review', label: 'Review', icon: CheckSquare, description: 'Inspect suggested connections before you keep them.' },
@@ -121,6 +138,9 @@ export default function Workbench({ section, hash }: { section: WorkspaceSection
       if (!location.hash || location.hash === '#/' || location.hash === '#') location.replace(workspaceHomeHash())
     })
     void initializeKnowledge().catch((e) => setNotice(message(e)))
+    void initializeReading().catch((e) => setNotice(message(e)))
+    void initializeWriting().catch((e) => setNotice(message(e)))
+    void initializeBookshelf().catch((e) => setNotice(message(e)))
   }, [repoReady, authUser])
   useEffect(() => { if (repoReady) rememberWorkspaceSection(section); setVisited((previous) => previous.includes(section) ? previous : [...previous, section]) }, [section, repoReady])
   useEffect(() => subscribeRepo((change) => {
@@ -136,6 +156,7 @@ export default function Workbench({ section, hash }: { section: WorkspaceSection
     if (destination.passageId) useWorkspace.setState({ selectedPassageId: destination.passageId, selectedSourceId: null, selectedRecordId: null })
     else if (destination.sourceId) useWorkspace.setState({ selectedSourceId: destination.sourceId, selectedPassageId: null, selectedRecordId: null })
     else if (destination.recordId) selectWorkspaceRecord(destination.recordId)
+    else selectWorkspaceRecord(null)
   }, [hash, section])
   function focusCapture() {
     pendingCapture.current = true
@@ -186,12 +207,12 @@ export default function Workbench({ section, hash }: { section: WorkspaceSection
     <a className="knowledge-skip" href="#knowledge-main" onClick={(event) => { event.preventDefault(); document.getElementById('knowledge-main')?.focus() }}>Skip to workspace</a>
     {compact && navigationOpen && <button className="knowledge-nav-scrim" type="button" aria-label="Close navigation" tabIndex={-1} onClick={() => setNavigationOpen(false)} />}
     <aside ref={navigation} className="knowledge-nav" aria-label="Workspace navigation" role={compact && navigationOpen && !chat ? 'dialog' : undefined} aria-modal={compact && navigationOpen && !chat ? true : undefined} inert={compact && (!navigationOpen || chat) ? true : undefined} onKeyDown={(event) => { if (compact && navigationOpen) trapKeys(event, navigation.current, () => setNavigationOpen(false)) }}>
-      <div className="knowledge-brand-row"><a className="knowledge-brand" href="#/today" aria-label="Worldview home" onClick={() => setNavigationOpen(false)}><Planet size={26} weight="duotone" /><span>Worldview</span></a><button type="button" className="knowledge-icon-button knowledge-close-navigation" aria-label="Close navigation" onClick={() => setNavigationOpen(false)}><X size={20} /></button></div>
+      <div className="knowledge-brand-row"><a className="knowledge-brand" href="#/today" aria-label="Worldview home" onClick={() => setNavigationOpen(false)}><WorldviewMark /><span>Worldview</span></a><button type="button" className="knowledge-icon-button knowledge-close-navigation" aria-label="Close navigation" onClick={() => setNavigationOpen(false)}><X size={20} /></button></div>
       <button type="button" className="knowledge-capture-shortcut" aria-label="Capture a thought" title="New thought (⌘/Ctrl+Shift+N)" onClick={focusCapture}><Plus size={18} /><span>New thought</span><kbd>⇧⌘ N</kbd></button>
       <button type="button" className="knowledge-command-shortcut" aria-label="Search and commands" title="Search and commands (⌘/Ctrl+K)" onClick={openCommandMenu}><MagnifyingGlass size={17} /><span>Search anything</span><kbd>⌘ K</kbd></button>
       <nav aria-label="Workspace sections">{SECTIONS.map(({ id, label, icon: Icon }) => <a key={id} href={`#/${id}`} title={collapsed ? label : undefined} onClick={() => setNavigationOpen(false)} aria-label={label} aria-current={section === id ? 'page' : undefined}><Icon size={19} weight={section === id ? 'fill' : 'regular'} /><span>{label}</span>{id === 'review' && proposals.some((proposal) => proposal.status === 'proposed') && <small>{proposals.filter((proposal) => proposal.status === 'proposed').length}</small>}</a>)}</nav>
       {recentNodes.length > 0 && <div className="knowledge-nav-recents"><h2>Recent</h2>{recentNodes.map((node) => <button key={node.id} type="button" onClick={() => { openWorkspaceRecord(node.id); setNavigationOpen(false) }} title={node.title}><FileText size={15} /><span>{node.title}</span></button>)}</div>}
-      <div className="knowledge-nav-bottom"><a className="knowledge-explore-link" href="#/explore" aria-label="Explore in 3D" title="Explore in 3D"><Planet size={19} /><span>Explore in 3D</span><ArrowUpRight size={14} /></a><button type="button" onClick={openSettings} aria-label="Settings and backups" title="Settings and backups"><GearSix size={18} /><span>Settings & backups</span></button><label className="knowledge-theme-control" title="Appearance">{theme === 'dark' ? <Moon size={17} /> : <Sun size={17} />}<span className="knowledge-sr-only">Appearance</span><select aria-label="Appearance" value={appearance} onChange={(event) => setAppearance(event.target.value as typeof appearance)}><option value="system">System theme</option><option value="dark">Dark theme</option><option value="light">Light theme</option></select></label><span className="knowledge-storage"><ShieldCheck size={13} />{fallback ? 'Session only' : writer ? 'Local workspace' : 'Read only'}</span></div>
+      <div className="knowledge-nav-bottom"><AsciiOrbit /><a className="knowledge-explore-link" href="#/explore" aria-label="Explore in 3D" title="Explore in 3D"><Planet size={19} /><span>Explore in 3D</span><ArrowUpRight size={14} /></a><button type="button" onClick={openSettings} aria-label="Settings and backups" title="Settings and backups"><GearSix size={18} /><span>Settings & backups</span></button><label className="knowledge-theme-control" title="Appearance">{theme === 'dark' ? <Moon size={17} /> : <Sun size={17} />}<span className="knowledge-sr-only">Appearance</span><select aria-label="Appearance" value={appearance} onChange={(event) => setAppearance(event.target.value as typeof appearance)}><option value="system">System theme</option><option value="dark">Dark theme</option><option value="light">Light theme</option></select></label><span className="knowledge-storage"><ShieldCheck size={13} />{fallback ? 'Session only' : writer ? 'Local workspace' : 'Read only'}</span></div>
     </aside>
     <div className="knowledge-center" inert={compact && (navigationOpen || chat) ? true : undefined}>
       <header className="knowledge-top"><div className="knowledge-top-location"><button type="button" className="knowledge-icon-button" aria-label={compact ? 'Open navigation' : collapsed ? 'Expand sidebar' : 'Collapse sidebar'} aria-expanded={compact ? navigationOpen : !collapsed} onClick={toggleNavigation}>{compact ? <List size={21} /> : <SidebarSimple size={20} />}</button><h1>{active.label}</h1><span className="knowledge-top-description knowledge-sr-only">{active.description}</span></div><div className="knowledge-top-actions"><span className="knowledge-local-label"><ShieldCheck size={14} />Local</span><button ref={quickCaptureTrigger} type="button" className={`knowledge-button knowledge-quick-capture ${chat ? 'is-active' : ''}`} aria-label={chat ? 'Close quick capture' : 'Open quick capture'} aria-pressed={chat} onClick={() => useApp.getState().togglePanel('chat')}><ChatCircle size={18} /><span>Quick capture</span></button></div></header>
@@ -199,9 +220,12 @@ export default function Workbench({ section, hash }: { section: WorkspaceSection
       <main id="knowledge-main" className="knowledge-main" tabIndex={-1}>
         {!ready ? <div className="knowledge-loading" role="status">{repoReady ? 'Set up your workspace to begin.' : 'Opening your saved record…'}</div> : <>
           {panel('today', <Today captureRef={capture} />, true)}
+          {panel('write', <Suspense fallback={<div className="knowledge-empty" role="status">Opening your writing desk…</div>}><WritingStudio hash={hash} /></Suspense>, true)}
           {panel('search', <Search />, true)}
           {panel('library', <Library hash={hash} />, true)}
-          {panel('topics', <Topics />)}
+          {panel('bookshelf', <Suspense fallback={<div className="knowledge-empty" role="status">Opening your bookshelf…</div>}><Bookshelf hash={hash} /></Suspense>, true)}
+          {panel('graph', <KnowledgeGraph initialSourceId={new URLSearchParams(hash.split('?')[1] ?? '').get('source') ?? undefined} initialTopicId={new URLSearchParams(hash.split('?')[1] ?? '').get('topic') ?? undefined} />, true)}
+          {panel('topics', new URLSearchParams(hash.split('?')[1] ?? '').get('view') === 'projects' ? <Topics /> : <TopicHome hash={hash} />)}
           {panel('knowledge', <KnowledgePages hash={hash} />)}
           {panel('review', <Review />)}
           {panel('sources', <Sources key={authUser ?? 'local'} hash={hash} />)}
@@ -239,7 +263,7 @@ function Today({ captureRef }: { captureRef: RefObject<HTMLTextAreaElement | nul
   }
   const shortcut = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.userAgent) ? '⌘' : 'Ctrl'
   return <div className="knowledge-today">
-    <section className="knowledge-capture"><div className="knowledge-today-heading"><span className="knowledge-eyebrow">{new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</span><h2>What’s on your mind?</h2><p>A thought, a question, something worth keeping.</p></div><form onSubmit={(event) => void save(event)}><label className="knowledge-sr-only" htmlFor="knowledge-thought">Capture a thought</label><textarea id="knowledge-thought" ref={captureRef} value={draft} onChange={(event) => useWorkspace.setState({ draft: event.target.value })} onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); event.currentTarget.form?.requestSubmit() } }} placeholder="Start writing. Your words belong here…" rows={4} /><div className="knowledge-capture-footer"><div className="knowledge-capture-add"><ImportButton compact /><a className="knowledge-capture-voice" href="#/sources?connection=voice"><Microphone size={17} /><span>Voice note</span></a></div><button className="knowledge-button is-primary knowledge-save-thought" disabled={!writer || saving || !draft.trim()} type="submit"><span>{saving ? 'Saving…' : 'Save thought'}</span><ArrowUp size={16} /></button></div></form><div className="knowledge-composer-caption"><span><ShieldCheck size={13} />Saved in your words. No cloud AI needed.</span><span><kbd>{shortcut}</kbd><kbd>↵</kbd> to save</span></div>{error && <p className="knowledge-error" role="alert">{error}</p>}{saved && <p className="knowledge-saved" role="status"><Check size={16} />Saved to your record. <button type="button" onClick={() => openWorkspaceRecord(saved)}>Read it</button></p>}</section>
+    <section className="knowledge-capture"><div className="knowledge-today-heading"><span className="knowledge-eyebrow">{new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</span><h2>What’s on your mind?</h2><p>A thought, a question, something worth keeping.</p></div><div className="knowledge-writing-modes" aria-label="Writing mode"><span><ChatCircle size={14} />Quick thought</span><a href="#/write"><PencilSimple size={14} />Writing studio <ArrowUpRight size={12} /></a></div><form onSubmit={(event) => void save(event)}><label className="knowledge-sr-only" htmlFor="knowledge-thought">Capture a thought</label><textarea id="knowledge-thought" ref={captureRef} value={draft} onChange={(event) => useWorkspace.setState({ draft: event.target.value })} onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); event.currentTarget.form?.requestSubmit() } }} placeholder="Start writing. Your words belong here…" rows={4} /><div className="knowledge-capture-footer"><div className="knowledge-capture-add"><ImportButton compact /><a className="knowledge-capture-voice" href="#/sources?connection=voice"><Microphone size={17} /><span>Voice note</span></a></div><button className="knowledge-button is-primary knowledge-save-thought" disabled={!writer || saving || !draft.trim()} type="submit"><span>{saving ? 'Saving…' : 'Save thought'}</span><ArrowUp size={16} /></button></div></form><div className="knowledge-composer-caption"><span><ShieldCheck size={13} />Saved in your words. No cloud AI needed.</span><span><kbd>{shortcut}</kbd><kbd>↵</kbd> to save</span></div>{error && <p className="knowledge-error" role="alert">{error}</p>}{saved && <p className="knowledge-saved" role="status"><Check size={16} />Saved to your record. <button type="button" onClick={() => openWorkspaceRecord(saved)}>Read it</button></p>}</section>
     <section className="knowledge-section knowledge-recent-section"><div className="knowledge-section-title"><h2>Pick up a thread</h2><a href="#/library">Open library <ArrowUpRight size={13} /></a></div>{recent.length ? <div className="knowledge-record-list">{recent.map((node) => <button type="button" key={node.id} onClick={() => openWorkspaceRecord(node.id)}><span className="knowledge-record-glyph"><FileText size={18} /></span><span><strong>{node.title}</strong><small>{node.contentMd.replace(/[#*_`]/g, '').slice(0, 135) || node.archetype}</small></span><time>{localDate(node.updatedAt)}</time><ArrowUpRight className="knowledge-record-arrow" size={16} /></button>)}</div> : <Empty icon={<BookOpen size={27} />} title="Your record starts with one thought" text="Write something above, or bring in files and conversations. Everything you keep stays readable without an AI service." />}</section>
     <div className="knowledge-today-bottom"><span>Your words. Your sources. Your own point of view.</span><a href="#/explore"><Planet size={16} />Explore your world <ArrowUpRight size={13} /></a></div>
   </div>
@@ -303,18 +327,14 @@ function Search() {
 }
 
 function Library({ hash }: { hash: string }) {
-  const sources = useKnowledge((s) => s.sources)
-  const nodes = useWorld((s) => s.nodes)
   const selected = useWorkspace((s) => s.selectedRecordId)
   const passageId = useWorkspace((s) => s.selectedPassageId)
   const sourceId = useWorkspace((s) => s.selectedSourceId)
-  const [filter, setFilter] = useState('')
-  const [visible, setVisible] = useState(50)
-  const sourceNodes = new Set(sources.map((s) => s.nodeId))
-  const items = sources.filter((s) => !s.excluded && !s.deleted && `${s.title} ${s.tags.join(' ')}`.toLowerCase().includes(filter.toLowerCase()))
-  const legacy = [...nodes.values()].filter((n) => !sourceNodes.has(n.id) && `${n.title} ${n.tags.join(' ')} ${n.contentMd}`.toLowerCase().includes(filter.toLowerCase()))
   const hasSelection = Boolean(selected || passageId || sourceId)
-  return <div className={`knowledge-library ${hasSelection ? 'has-selection' : ''}`}><aside className="knowledge-library-list" aria-label="Library records"><div className="knowledge-library-filter"><MagnifyingGlass size={17} /><label className="knowledge-sr-only" htmlFor="library-filter">Filter library</label><input id="library-filter" value={filter} placeholder="Filter your library…" onChange={(e) => { setFilter(e.target.value); setVisible(50) }} /></div><div className="knowledge-library-count">{items.length + legacy.length} records</div>{!items.length && !legacy.length && <p className="knowledge-list-empty">{filter ? 'No matching records.' : 'Saved thoughts and imported sources will appear here.'}</p>}{items.slice(0, visible).map((source) => <button key={source.id} className="knowledge-library-item" aria-current={source.id === sourceId || source.nodeId === selected && selected !== null ? 'true' : undefined} onClick={() => openSource(source)}><FileText size={18} /><span><strong>{source.title}</strong><small>{source.kind} · {localDate(source.updatedAt)}</small></span></button>)}{legacy.slice(0, Math.max(0, visible - items.length)).map((node) => <button key={node.id} className="knowledge-library-item" aria-current={node.id === selected ? 'true' : undefined} onClick={() => openWorkspaceRecord(node.id)}><FileText size={18} /><span><strong>{node.title}</strong><small>{node.archetype} · {localDate(node.updatedAt)}</small></span></button>)}{items.length + legacy.length > visible && <button className="knowledge-button knowledge-show-more" onClick={() => setVisible(visible + 50)}>Show more records</button>}</aside><Reader hash={hash} /></div>
+  return <div className={`knowledge-library reading-library ${hasSelection ? 'has-selection' : ''}`}>
+    <Activity mode={hasSelection ? 'hidden' : 'visible'}><ReadingArchive importAction={<ImportButton compact />} onOpenSource={(id) => { useWorkspace.setState({ selectedSourceId: id, selectedRecordId: null, selectedPassageId: null }); location.hash = `#/library?source=${encodeURIComponent(id)}` }} onOpenRecord={openWorkspaceRecord} /></Activity>
+    <Activity mode={hasSelection ? 'visible' : 'hidden'}><Reader hash={hash} /></Activity>
+  </div>
 }
 
 function Reader({ hash }: { hash: string }) {
@@ -328,6 +348,7 @@ function Reader({ hash }: { hash: string }) {
   const selectedSource = useWorkspace((s) => s.selectedSourceId)
   const selectedPassage = useWorkspace((s) => s.selectedPassageId)
   const writer = useRepoStatus((s) => s.writer)
+  const writingDocs = useWriting((s) => s.docs)
   const content = useRef<HTMLDivElement>(null)
   const heading = useRef<HTMLHeadingElement>(null)
   const lastScrollSave = useRef(0)
@@ -338,18 +359,22 @@ function Reader({ hash }: { hash: string }) {
   const [versionId, setVersionId] = useState<string | null>(null)
   const priorSelection = useRef<string | null>(null)
   const [downloading, setDownloading] = useState(false)
+  const [openingWriting, setOpeningWriting] = useState(false)
   const selectedEvidence = passages.find((p) => p.id === selectedPassage)
   const source = sources.find((s) => s.id === (selectedEvidence?.sourceId ?? selectedSource) || selectedRecord !== null && s.nodeId === selectedRecord)
   const nodeId = selectedRecord ?? source?.nodeId ?? selectedEvidence?.nodeId
   const node = nodeId ? nodes.get(nodeId) : undefined
   const sourceVersions = versions.filter((v) => v.sourceId === source?.id).sort((a, b) => b.createdAt - a.createdAt)
-  const version = versions.find((v) => v.id === (versionId ?? selectedEvidence?.versionId ?? source?.currentVersionId))
+  const requestedVersionId = new URLSearchParams(hash.split('?')[1] ?? '').get('version')
+  const requestedVersion = versions.find((entry) => entry.id === requestedVersionId && entry.sourceId === source?.id)
+  const version = versions.find((v) => v.id === (versionId ?? requestedVersion?.id ?? selectedEvidence?.versionId ?? source?.currentVersionId) && v.sourceId === source?.id)
   const readingId = versionId ?? selectedPassage ?? version?.id ?? node?.id ?? source?.id ?? ''
   const title = source?.title ?? node?.title
   const text = version?.text ?? node?.contentMd ?? ''
   const hasTitle = Boolean(title)
+  const ownWriting = source ? writingDocs.find((entry) => !entry.archivedAt && entry.sourceId === source.id) : undefined
   useEffect(() => { if (hasTitle) heading.current?.focus({ preventScroll: true }) }, [selectedRecord, selectedSource, selectedPassage, hasTitle])
-  useLayoutEffect(() => { const identity = JSON.stringify([selectedRecord, selectedSource, selectedPassage]); if (priorSelection.current === identity) return; priorSelection.current = identity; setVersionId(null); setError(''); setStale(false); setEvidence(null) }, [selectedRecord, selectedSource, selectedPassage])
+  useLayoutEffect(() => { const identity = JSON.stringify([selectedRecord, selectedSource, selectedPassage, requestedVersionId]); if (priorSelection.current === identity) return; priorSelection.current = identity; setVersionId(null); setError(''); setStale(false); setEvidence(null) }, [selectedRecord, selectedSource, selectedPassage, requestedVersionId])
   useEffect(() => {
     let current = true
     if (!selectedPassage) return
@@ -381,9 +406,24 @@ function Reader({ hash }: { hash: string }) {
       window.setTimeout(() => URL.revokeObjectURL(url), 1000)
     } catch (e) { setError(message(e)) } finally { setDownloading(false) }
   }
+  async function addToBookshelf() {
+    if (!source) return
+    const store = getStore(), generation = getWorldGeneration()
+    setOpeningWriting(true); setError('')
+    try { const book = await createBookFromSource(source.id); if (isRepoReady() && getStore() === store && getWorldGeneration() === generation) location.hash = `#/bookshelf?book=${encodeURIComponent(book.id)}` }
+    catch (cause) { setError(message(cause)) } finally { setOpeningWriting(false) }
+  }
+  async function openWriting() {
+    if (!source) return
+    if (ownWriting) { location.hash = `#/write?doc=${encodeURIComponent(ownWriting.id)}`; return }
+    const store = getStore(), generation = getWorldGeneration()
+    setOpeningWriting(true); setError('')
+    try { const saved = await createWritingFromSource(source.id); if (isRepoReady() && getStore() === store && getWorldGeneration() === generation) location.hash = `#/write?doc=${encodeURIComponent(saved.id)}` }
+    catch (cause) { setError(message(cause)) } finally { setOpeningWriting(false) }
+  }
   if (!title && !selectedPassage) return <section className="knowledge-reader"><Empty icon={<BookOpen size={30} />} title="Read the things themselves" text="Choose a record to read its original text, follow supporting evidence, or explore where it belongs in your world." /></section>
   if (source?.excluded || source?.deleted) return <section className="knowledge-reader"><Empty icon={<FileText size={28} />} title="This source is excluded" text="It is not available in your library or search. Change its policy in Sources & activity to include it again." /></section>
-  return <article className="knowledge-reader" aria-label="Record reader"><header className="knowledge-reader-header"><button className="knowledge-reader-back knowledge-text-button" onClick={() => { selectWorkspaceRecord(null); location.hash = '#/library'; requestAnimationFrame(() => document.getElementById('library-filter')?.focus()) }}><CaretLeft size={16} />Library</button><div className="knowledge-reader-kicker"><span>{source?.kind ?? node?.archetype ?? 'Source passage'}</span><span>{version ? version.authoredAt !== null ? `Source date (UTC): ${date(version.authoredAt)}` : `Recorded ${localDate(version.createdAt)} · authored date unknown` : `History date (UTC): ${date(node?.temporalOrigin)}`}</span></div><h2 ref={heading} tabIndex={-1}>{title ?? 'Source passage'}</h2><div className="knowledge-reader-actions">{node && <button className="knowledge-button" onClick={() => { useApp.getState().select(node.id); exploreWorkspaceRecord(node.id) }}><Planet size={17} />Explore this record</button>}{node && <button className="knowledge-button" disabled={!writer} onClick={() => editNode(node.id)}>Edit note</button>}{source && <button className="knowledge-button" disabled={downloading} onClick={() => void download()}><DownloadSimple size={17} />{downloading ? 'Opening…' : 'Original file'}</button>}</div>{sourceVersions.length > 0 && <label className="knowledge-version"><ClockCounterClockwise size={15} /><span>Version</span><select aria-label="Source version" value={version?.id ?? ''} onChange={(e) => setVersionId(e.target.value)}>{sourceVersions.map((v, i) => <option key={v.id} value={v.id}>{localDate(v.createdAt)} · {v.origin}{i === 0 ? ' · current' : ''}</option>)}</select></label>}</header><div ref={content} className="knowledge-reader-content" data-reader-id={readingId} onScroll={(e) => { const now = performance.now(); const top = e.currentTarget.scrollTop; if (trailingScrollSave.current) clearTimeout(trailingScrollSave.current); if (now - lastScrollSave.current >= 200) { lastScrollSave.current = now; rememberReaderPosition(readingId, top) } trailingScrollSave.current = setTimeout(() => rememberReaderPosition(readingId, top), 180) }}>{version && source && version.id !== source.currentVersionId && <p className="knowledge-notice" role="status">You are reading an earlier retained source version.</p>}{stale && <p className="knowledge-notice" role="status">This note has changed since that reference was created. You are reading its current wording.</p>}{error && <p className="knowledge-error" role="alert">{error}</p>}{evidence && evidence.versionId === version?.id && <section className="knowledge-evidence" data-evidence><span className="knowledge-eyebrow">Cited passage · {evidence.role} · {date(evidence.authoredAt)}</span><blockquote>{evidence.text}</blockquote><small>{passageLocator(evidence, version)} · characters {evidence.start + 1}–{evidence.end} of this retained source version</small></section>}{source && <VoiceEvidencePlayer sourceId={source.id} passageId={evidence?.id} />}<div className="knowledge-reader-provenance"><FileText size={15} /><span>{version ? 'Retained source text. Generated connections are shown separately below.' : 'Saved note text. Earlier original provenance may be unavailable.'}</span></div>{text ? <Markdown source={text} className="knowledge-prose" /> : <p className="knowledge-list-empty">This file is retained as an original. Its contents have not been indexed as readable text.</p>}{node?.attachments.map((attachment) => <FileRow key={attachment.id} attachment={attachment} nodeId={node.id} canWrite={writer} />)}{node?.embeds?.length ? <EmbedsSection embeds={node.embeds} nodeId={node.id} canWrite={writer} /> : null}{related.length > 0 && <section className="knowledge-related"><h3>Connections and their evidence</h3>{related.slice(0, 12).map((p) => <div key={p.id}><span className="knowledge-kind">{p.status === 'accepted' ? 'Accepted relationship' : 'Suggested relationship'}</span><strong>{p.title}</strong><p>{p.explanation}</p><div className="knowledge-inline-actions"><button className="knowledge-text-button" onClick={() => openWorkspaceRecord(p.sourceNodeId === node?.id ? p.targetNodeId : p.sourceNodeId)}>Read related record</button>{p.evidencePassageIds.map((id, index) => <button key={id} className="knowledge-text-button" onClick={() => { useWorkspace.setState({ selectedPassageId: id }); location.hash = `#/library?passage=${encodeURIComponent(id)}` }}>Evidence {index + 1}</button>)}</div></div>)}</section>}</div></article>
+  return <article className="knowledge-reader" aria-label="Record reader"><header className="knowledge-reader-header"><button className="knowledge-reader-back knowledge-text-button" onClick={() => { selectWorkspaceRecord(null); location.hash = '#/library'; requestAnimationFrame(() => document.getElementById('library-filter')?.focus()) }}><CaretLeft size={16} />Library</button><div className="knowledge-reader-kicker"><span>{source?.kind ?? node?.archetype ?? 'Source passage'}</span><span>{version ? version.authoredAt !== null ? `Source date (UTC): ${date(version.authoredAt)}` : `Recorded ${localDate(version.createdAt)} · authored date unknown` : `History date (UTC): ${date(node?.temporalOrigin)}`}</span></div><h2 ref={heading} tabIndex={-1}>{title ?? 'Source passage'}</h2><div className="knowledge-reader-actions">{node && <button className="knowledge-button" onClick={() => { useApp.getState().select(node.id); exploreWorkspaceRecord(node.id) }}><Planet size={17} />Explore this record</button>}{node && <button className="knowledge-button" disabled={!writer} onClick={() => editNode(node.id)}>Edit note</button>}{source && <button className="knowledge-button" disabled={!writer || openingWriting} onClick={() => void addToBookshelf()}><Books size={17} />Add to bookshelf</button>}{source && <button className="knowledge-button" disabled={!writer || openingWriting} onClick={() => void openWriting()}><PencilSimple size={16} />{openingWriting ? 'Opening…' : ownWriting ? 'Edit document' : 'Edit a copy'}</button>}{source && <button className="knowledge-button" disabled={downloading} onClick={() => void download()}><DownloadSimple size={17} />{downloading ? 'Opening…' : 'Original file'}</button>}</div>{sourceVersions.length > 0 && <label className="knowledge-version"><ClockCounterClockwise size={15} /><span>Version</span><select aria-label="Source version" value={version?.id ?? ''} onChange={(e) => setVersionId(e.target.value)}>{sourceVersions.map((v, i) => <option key={v.id} value={v.id}>{localDate(v.createdAt)} · {v.origin}{i === 0 ? ' · current' : ''}</option>)}</select></label>}</header><div ref={content} className="knowledge-reader-content" data-reader-id={readingId} onScroll={(e) => { const now = performance.now(); const top = e.currentTarget.scrollTop; if (trailingScrollSave.current) clearTimeout(trailingScrollSave.current); if (now - lastScrollSave.current >= 200) { lastScrollSave.current = now; rememberReaderPosition(readingId, top) } trailingScrollSave.current = setTimeout(() => rememberReaderPosition(readingId, top), 180) }}>{version && source && version.id !== source.currentVersionId && <p className="knowledge-notice" role="status">You are reading an earlier retained source version.</p>}{stale && <p className="knowledge-notice" role="status">This note has changed since that reference was created. You are reading its current wording.</p>}{error && <p className="knowledge-error" role="alert">{error}</p>}{evidence && evidence.versionId === version?.id && <section className="knowledge-evidence" data-evidence><span className="knowledge-eyebrow">Cited passage · {evidence.role} · {date(evidence.authoredAt)}</span><blockquote>{evidence.text}</blockquote><small>{passageLocator(evidence, version)} · characters {evidence.start + 1}–{evidence.end} of this retained source version</small></section>}{source && <VoiceEvidencePlayer sourceId={source.id} passageId={evidence?.id} />}<div className="knowledge-reader-provenance"><FileText size={15} /><span>{version ? 'Retained source text. Generated connections are shown separately below.' : 'Saved note text. Earlier original provenance may be unavailable.'}</span></div>{text || version && isPdfVersion(version) ? <>{source && version ? <AnnotatedReader key={source.id} source={source} version={version} scrollRef={content} onReadVersion={setVersionId} /> : <Markdown source={text} className="knowledge-prose" />}</> : <p className="knowledge-list-empty">This file is retained as an original. Its contents have not been indexed as readable text.</p>}{node?.attachments.map((attachment) => <FileRow key={attachment.id} attachment={attachment} nodeId={node.id} canWrite={writer} />)}{node?.embeds?.length ? <EmbedsSection embeds={node.embeds} nodeId={node.id} canWrite={writer} /> : null}{related.length > 0 && <section className="knowledge-related"><h3>Connections and their evidence</h3>{related.slice(0, 12).map((p) => <div key={p.id}><span className="knowledge-kind">{p.status === 'accepted' ? 'Accepted relationship' : 'Suggested relationship'}</span><strong>{p.title}</strong><p>{p.explanation}</p><div className="knowledge-inline-actions"><button className="knowledge-text-button" onClick={() => openWorkspaceRecord(p.sourceNodeId === node?.id ? p.targetNodeId : p.sourceNodeId)}>Read related record</button>{p.evidencePassageIds.map((id, index) => <button key={id} className="knowledge-text-button" onClick={() => { useWorkspace.setState({ selectedPassageId: id }); location.hash = `#/library?passage=${encodeURIComponent(id)}` }}>Evidence {index + 1}</button>)}</div></div>)}</section>}</div></article>
 }
 
 function Topics() {

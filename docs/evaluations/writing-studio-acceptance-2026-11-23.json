@@ -1,0 +1,272 @@
+{
+  "schemaVersion": 1,
+  "verifiedAt": "2026-11-23T19:16:43.709Z",
+  "result": "passed",
+  "verificationMethod": "Read-only SQLite transactions, SHA256 comparisons, nonexecuting HTML parsing, and a local read-only ffprobe. Only this report was written.",
+  "originalWorkspace": {
+    "database": "data/world.sqlite",
+    "baseline": "data/backups/before-writing-studio-2026-11-23/manifest.json",
+    "baselineCreatedAt": "2026-11-23T18:53:51.886Z",
+    "tables": {
+      "nodes": {
+        "count": 14,
+        "expectedCount": 14,
+        "sha256": "70b73a2651cd2bf01df5e2430f8f9dbb1897db784db19df69e7500dab585fc18",
+        "expectedSha256": "70b73a2651cd2bf01df5e2430f8f9dbb1897db784db19df69e7500dab585fc18",
+        "matches": true
+      },
+      "links": {
+        "count": 4,
+        "expectedCount": 4,
+        "sha256": "46f38c2f8b9eb521f711bcd78e1a42574c74f8702e218d4a2ebda81cb08275f3",
+        "expectedSha256": "46f38c2f8b9eb521f711bcd78e1a42574c74f8702e218d4a2ebda81cb08275f3",
+        "matches": true
+      },
+      "assets": {
+        "count": 23,
+        "expectedCount": 23,
+        "sha256": "5169e62dabf044830a1b090a6cf250b4e85887049c7ee0a3b8a0050a291d1930",
+        "expectedSha256": "5169e62dabf044830a1b090a6cf250b4e85887049c7ee0a3b8a0050a291d1930",
+        "matches": true
+      }
+    },
+    "spatialFiles": {
+      "expected": 152,
+      "current": 152,
+      "matched": 152,
+      "changed": [],
+      "added": [],
+      "missing": []
+    },
+    "retainedOriginals": {
+      "baseline": "data/backups/before-live-services-d28b44e8-4aae-4cb4-a968-431cb15c14e9/manifest.json",
+      "expected": 23,
+      "matched": 23,
+      "mismatchedIds": []
+    }
+  },
+  "isolatedAcceptance": {
+    "database": "data/live-tests/writing-studio-2026-11-23/world.sqlite",
+    "writingRevision": 10,
+    "documentId": "9100abae-bdfa-406a-9ccb-1e5d94a73c67",
+    "sourceId": "a6ea9f20-4a08-4d67-8da4-164f00b48f2d",
+    "sourceVersionId": "c288401d-a371-453d-9bc8-89046052d09c",
+    "richChecks": {
+      "title": true,
+      "subtitle": true,
+      "byline": true,
+      "firstSentence": true,
+      "bold": true,
+      "yellowHighlight": true,
+      "heading": true,
+      "italic": true,
+      "oceanAppearance": true,
+      "imageAlt": true,
+      "imageCaption": true,
+      "imageWidth": true
+    },
+    "appearance": {
+      "fontFamily": "serif",
+      "fontSize": 18,
+      "lineHeight": 1.8,
+      "pageWidth": 760,
+      "pageColor": "#f8fafb",
+      "textColor": "#253b4a",
+      "accentColor": "#416d86",
+      "backgroundColor": "#dce5eb",
+      "background": "waves",
+      "backgroundAssetId": null,
+      "waveColor": "#8aaec3",
+      "waveIntensity": 30,
+      "pageStyle": "paper"
+    },
+    "originalPublication": {
+      "blobId": "knowledge-e81053e499eb35ebe968f67a7c7f4e75e4d808d9a3594b22464ea010622fb5e2",
+      "bytes": 1840,
+      "sha256": "e81053e499eb35ebe968f67a7c7f4e75e4d808d9a3594b22464ea010622fb5e2",
+      "format": "worldview-writing.v1",
+      "richDocumentMatchesDraft": true,
+      "metadataRichContentAndAppearanceMatch": true,
+      "writingAssetIds": [
+        "writing-d9d538cc58dfb9120cf4fd1029b72d1c1a0b8f84198fa2c34106f29c3d996c46",
+        "writing-debe5f97790a855377377a0b05d8be891a79e68c404fbcb8b3f7d6f1f2c86833"
+      ],
+      "includesImageAndVideo": true
+    },
+    "media": {
+      "image": {
+        "assetId": "writing-d9d538cc58dfb9120cf4fd1029b72d1c1a0b8f84198fa2c34106f29c3d996c46",
+        "mime": "image/jpeg",
+        "bytes": 60356,
+        "sha256": "d9d538cc58dfb9120cf4fd1029b72d1c1a0b8f84198fa2c34106f29c3d996c46",
+        "fixture": "docs/design/reading-graph-2026-11-23.jpg",
+        "exactOriginal": true,
+        "alt": "A local graph connecting a source to its topics.",
+        "caption": "The same ideas, seen through their connections.",
+        "width": "wide"
+      },
+      "video": {
+        "assetId": "writing-debe5f97790a855377377a0b05d8be891a79e68c404fbcb8b3f7d6f1f2c86833",
+        "mime": "video/mp4",
+        "bytes": 6392,
+        "sha256": "debe5f97790a855377377a0b05d8be891a79e68c404fbcb8b3f7d6f1f2c86833",
+        "fixture": "data/live-tests/writing-studio-2026-11-23/writing-video.mp4",
+        "exactOriginal": true,
+        "localProbe": {
+          "durationSeconds": 1,
+          "width": 320,
+          "height": 180
+        },
+        "browserPlayback": {
+          "readyState": 4,
+          "durationSeconds": 1,
+          "width": 320,
+          "height": 180,
+          "controls": true,
+          "autoplay": false,
+          "verificationSource": "Root agent directly observed the actual browser decoder/player."
+        }
+      }
+    },
+    "qaSpatialNodes": 0,
+    "sourceHasNoNodeId": true
+  },
+  "downloadedHtml": {
+    "path": "local-download/A place for longer thoughts.html",
+    "bytes": 91937,
+    "sha256": "0609588bfe0461a0c501189f4e105e1ba11fd57bfe2e9b4b2ce6bde259046f74",
+    "checks": {
+      "title": true,
+      "subtitle": true,
+      "byline": true,
+      "boldFirstSentence": true,
+      "yellowHighlight": true,
+      "h2": true,
+      "italicParagraph": true,
+      "embeddedImageExact": true,
+      "embeddedVideoExact": true,
+      "videoControls": true,
+      "videoAutoplay": false,
+      "waveCss": true,
+      "pageColors": true,
+      "fontAndWidth": true,
+      "scripts": 0,
+      "iframes": 0,
+      "externalAssetReferences": [],
+      "externalCssFetches": false,
+      "networkBlockedByCsp": true
+    },
+    "passed": true
+  },
+  "reopenAfterLatestBuild": {
+    "verified": true,
+    "productionServerRebuiltAndRestarted": true,
+    "coldBrowserReopen": true,
+    "preserved": [
+      "title",
+      "subtitle",
+      "byline",
+      "rich text",
+      "local image",
+      "local video",
+      "Ocean waves appearance"
+    ],
+    "verificationSource": "Root agent directly observed a cold browser reopen against the rebuilt and restarted isolated production service."
+  },
+  "cloudAi": {
+    "externalRequests": 0,
+    "verificationSource": "Root agent confirmed no cloud AI calls for writing acceptance; this audit used no network."
+  },
+  "automatedTests": {
+    "finalFullSuiteAsserted": true,
+    "verificationSource": "Root agent reported final completed command results; this read-only report update did not rerun them.",
+    "typecheck": {
+      "command": "npm run typecheck",
+      "passed": true
+    },
+    "lint": {
+      "command": "npm run lint",
+      "passed": true
+    },
+    "build": {
+      "command": "npm run build",
+      "passed": true
+    },
+    "tests": {
+      "passed": 1212,
+      "skipped": 4,
+      "filesPassed": 186,
+      "filesSkipped": 2,
+      "totalTests": 1216,
+      "totalFiles": 188,
+      "command": "npx vitest run --maxWorkers=2",
+      "log": "/tmp/worldview-writing-final-tests.log"
+    }
+  },
+  "auditRestrictions": {
+    "applicationDataModified": false,
+    "implementationModified": false,
+    "testsRun": false,
+    "serversRestarted": false,
+    "gitTouched": false
+  },
+  "finalVerificationUpdatedAt": "2026-11-23T19:27:24.445540+00:00",
+  "unchangedSaveAndLibraryNavigation": {
+    "passed": true,
+    "publicationVersionCount": 1,
+    "currentVersionUnchanged": true,
+    "currentVersionId": "c288401d-a371-453d-9bc8-89046052d09c",
+    "documentSourceAssociationUnchanged": true,
+    "libraryWritingFileCount": 1,
+    "libraryClickReturnedDocumentId": "9100abae-bdfa-406a-9ccb-1e5d94a73c67",
+    "verificationSource": "Root agent clicked unchanged Save revision, observed exactly one Writing file in Library and returned to the same document; this audit independently rechecked publication rows and identity read-only."
+  },
+  "additionalUiChecks": {
+    "status": "passed",
+    "verificationSource": "Root agent directly observed the final production build through the browser; test fixtures remained in the isolated writing acceptance world.",
+    "freshEmptyDocument": {
+      "id": "6b3b61a8-f38d-48f8-ba14-29351ec32a03",
+      "boldEnabledBeforeTyping": true,
+      "imageUploadEnabledBeforeTyping": true
+    },
+    "backgroundImage": {
+      "uploadSucceeded": true,
+      "originalRetainedMessageVisible": true,
+      "renderedBehindPage": true,
+      "savedLocally": true
+    },
+    "focusMode": {
+      "workspaceNavigationHidden": true,
+      "toggleExitedSuccessfully": true
+    },
+    "preview": {
+      "toolbarHidden": true,
+      "documentReadOnly": true
+    },
+    "mobileEditor": {
+      "viewportWidth": 390,
+      "viewportHeight": 844,
+      "documentScrollWidth": 390,
+      "toolbarWrapped": true,
+      "readablePage": true
+    },
+    "mobileDesign": {
+      "viewportWidth": 390,
+      "documentScrollWidth": 390,
+      "drawerAndControlsVisible": true
+    },
+    "viewportOverridesReset": true,
+    "isolatedQaTabClosed": true,
+    "mainAppLeftAt": "http://127.0.0.1:5173/#/write",
+    "screenshots": [
+      "docs/design/writing-studio-2026-11-23.jpg",
+      "docs/design/writing-preview-2026-11-23.jpg",
+      "docs/design/writing-mobile-2026-11-23.jpg",
+      "docs/design/writing-mobile-design-2026-11-23.jpg"
+    ]
+  },
+  "evidenceArtifacts": {
+    "screenshots": "Dated acceptance captures are local-only and intentionally excluded from Git; they may include personal workspace or account context.",
+    "localBuilds": "Installers, retained sources and credential files remain under ignored local paths."
+  }
+}

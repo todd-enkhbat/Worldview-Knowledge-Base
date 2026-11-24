@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { ArrowSquareOut, ArrowsClockwise, CaretDown, Cloud, FolderSimple, Microphone, PaperPlaneTilt, PlugsConnected, MagnifyingGlass } from '@phosphor-icons/react'
+import { ArrowSquareOut, ArrowsClockwise, Browser, CaretDown, Cloud, FolderSimple, Microphone, PaperPlaneTilt, PlugsConnected, MagnifyingGlass } from '@phosphor-icons/react'
 import { getStore, getWorldGeneration, isRepoReady, subscribeRepo, useRepoStatus } from '../data/repo.ts'
 import { useAuth } from '../data/auth.ts'
 import { useKnowledge } from '../knowledge/index.ts'
@@ -9,19 +9,26 @@ import { PortabilityControls } from '../capture/PortabilityControls.tsx'
 import { QmdControls } from '../capture/QmdControls.tsx'
 import { SourcesVoiceInbox } from '../capture/SourcesVoiceInbox.tsx'
 import { TelegramCaptureControls } from '../capture/TelegramCaptureControls.tsx'
-import { MemoryClients } from './MemoryClients.tsx'
+import AssistantConnections from '../connections/AssistantConnections.tsx'
+import DesktopConnection from '../connections/DesktopConnection.tsx'
+import GoogleDriveConnection from '../connections/GoogleDriveConnection.tsx'
+import { BrowserCaptureSetup } from '../reading/BrowserCaptureSetup.tsx'
 import './sourcesHub.css'
 
-type ConnectionId = 'voice' | 'folders' | 'qmd' | 'memory' | 'export' | 'telegram' | 'cloud'
+type ConnectionId = 'voice' | 'folders' | 'qmd' | 'memory' | 'export' | 'telegram' | 'cloud' | 'browser' | 'desktop' | 'drive'
 type Readiness = { label: string; tone?: 'ready' | 'attention' | 'quiet' }
 type Statuses = Partial<Record<ConnectionId, Readiness>>
 const endpoints = {
   voice: '/api/models/whisper/status', folders: '/api/capture/folders', qmd: '/api/qmd/status',
   memory: '/api/memory/clients', telegram: '/api/capture/telegram', cloud: '/api/ai/status',
+  browser: '/api/reading-capture', drive: '/api/connections/drive', desktop: '/api/connections/desktop',
 } as const
 
 function readiness(id: keyof typeof endpoints, value: Record<string, unknown>): Readiness {
   switch (id) {
+    case 'desktop': return { label: window.worldviewDesktop ? 'Desktop app' : value.available ? 'Ready to download' : 'Build pending', tone: value.available ? 'ready' : 'quiet' }
+    case 'drive': return { label: value.connected ? 'Connected' : value.configured ? 'Ready to connect' : 'Setup needed', tone: value.connected ? 'ready' : 'quiet' }
+    case 'browser': { const pairs = Array.isArray(value.clients) ? (value.clients as { revokedAt?: number | null; expiresAt?: number }[]).filter((client) => !client.revokedAt && (client.expiresAt ?? 0) > Date.now()) : []; return value.available === false ? { label: 'Local app needed', tone: 'quiet' } : { label: pairs.length ? `${pairs.length} paired` : 'Ready to pair', tone: pairs.length ? 'ready' : 'quiet' } }
     case 'voice': return value.available === true ? { label: 'Transcription ready', tone: 'ready' } : { label: value.modelReady === false ? 'Model download needed' : 'Capture available', tone: 'quiet' }
     case 'folders': {
       if (value.available !== true) return { label: 'Local service needed', tone: 'quiet' }
@@ -116,12 +123,15 @@ export function SourcesHub({ hash, importActions }: { hash?: string; importActio
     <header className="sources-hub-heading"><div><h2 id="sources-hub-title">Connections</h2><p>Capture locally. Connect other tools when you need them.</p></div><button type="button" className="sources-hub-refresh" disabled={checking || !ready} onClick={reload} aria-label="Refresh connection status" title="Refresh connection status"><ArrowsClockwise size={17} aria-hidden="true" /></button></header>
     <div className="sources-hub-groups">
       <section className="sources-hub-group" aria-labelledby="sources-hub-local"><h3 id="sources-hub-local">Local capture</h3>
+        <ConnectionDisclosure {...common('desktop')} title="Desktop workspace" description="Open a local folder as your Worldview vault" icon={<FolderSimple size={21} />}><DesktopConnection /></ConnectionDisclosure>
+        <ConnectionDisclosure {...common('browser')} title="Browser reading" description="Keep articles, highlights and comments from a tab you choose" icon={<Browser size={21} />}><BrowserCaptureSetup /></ConnectionDisclosure>
         <ConnectionDisclosure {...common('voice')} title="Voice & media" description="Keep originals and transcribe on this device" icon={<Microphone size={21} />}><SourcesVoiceInbox /></ConnectionDisclosure>
         <ConnectionDisclosure {...common('folders')} title="Watched folders" description="Bring new and edited local files into your library" icon={<FolderSimple size={21} />}><FolderCapture /></ConnectionDisclosure>
       </section>
       <section className="sources-hub-group" aria-labelledby="sources-hub-memory"><h3 id="sources-hub-memory">Search & memory</h3>
+        <ConnectionDisclosure {...common('drive')} title="Google Drive" description="Import selected files and send writing back to your Drive" icon={<Cloud size={21} />}><GoogleDriveConnection /></ConnectionDisclosure>
         <ConnectionDisclosure {...common('qmd')} title="Local search" description="Choose sources for QMD’s optional search index" icon={<MagnifyingGlass size={21} />}><QmdControls /></ConnectionDisclosure>
-        <ConnectionDisclosure {...common('memory')} title="Agent access" description="Give an assistant revocable access to chosen sources" icon={<PlugsConnected size={21} />}><MemoryClients /></ConnectionDisclosure>
+        <ConnectionDisclosure {...common('memory')} title="Agent access" description="Connect ChatGPT, Claude, or Cursor to chosen sources and review proposed edits" icon={<PlugsConnected size={21} />}><AssistantConnections /></ConnectionDisclosure>
       </section>
       <section className="sources-hub-group" aria-labelledby="sources-hub-portable"><h3 id="sources-hub-portable">Import & export</h3>
         {importActions && <div className="sources-hub-import"><p>Bring in files, notes or chat exports.</p><div className="sources-hub-import-actions">{importActions}</div></div>}

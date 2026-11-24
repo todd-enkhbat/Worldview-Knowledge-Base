@@ -3,10 +3,16 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 import type { WorldDb } from './worldDb.ts'
-import { createMemoryClient, listMemoryClients, revokeMemoryClient, type MemoryClient } from './memoryAccess.ts'
+import { authenticateMemoryClient, createMemoryClient, listMemoryClients, revokeMemoryClient, type MemoryClient } from './memoryAccess.ts'
 import { createMemoryReader, type MemoryOperation } from './memoryService.ts'
 import { buildQmdMirror, qmdMirrorZip } from './qmdMirror.ts'
 import type { KnowledgeSnapshot } from '../src/knowledge/types.ts'
+import { assistantTools, canEdit, createAssistantEditor, type AssistantOperation } from './connections/assistant.ts'
+import type { ChangeBus } from './changes.ts'
+import { createHash } from 'node:crypto'
+import { realpathSync } from 'node:fs'
+import { decodeBookshelf } from '../src/bookshelf/model.ts'
+import { decodeWriting } from '../src/writing/model.ts'
 
 export const memoryToolNames = { search: 'search', read_passage: 'read_passage', read_record: 'read_record', get_project_context: 'get_project_context', get_memory_context: 'context', status: 'status' } as const
 const tools = Object.entries(memoryToolNames).map(([name, operation]) => ({ name,
@@ -31,9 +37,18 @@ export function memoryOriginAllowed(req: IncomingMessage): boolean {
   try { const url = new URL(origin); return ['http:', 'https:'].includes(url.protocol) && url.host.toLowerCase() === req.headers.host.toLowerCase() } catch { return false }
 }
 
-export function createMemoryHttp(db: WorldDb, worldId: string, now: () => number = Date.now) {
+export function createMemoryHttp(db: WorldDb, worldId: string, now: () => number = Date.now, options: { bus?: ChangeBus; directory?: string } = {}) {
   const reader = createMemoryReader(db)
+  const editor = createAssistantEditor(db, { bus: options.bus, now })
+  const reauthorize = (req: IncomingMessage, previous: MemoryClient) => { const token = /^Bearer (\S+)$/.exec(String(req.headers.authorization ?? ''))?.[1] ?? ''; const current = authenticateMemoryClient(db, token, worldId, now()); if (!current || current.id !== previous.id) throw new Error('This memory client expired or was revoked before its request completed.'); return current }
   return {
+    async connections(req: IncomingMessage, res: ServerResponse) {
+      if (worldId !== 'local' || !memoryOriginAllowed(req) || !req.headers['x-wv-client']) return sendMemoryJson(res, 403, { error: 'Open the local workspace to review assistant editing.' })
+      const parts = (req.url ?? '').split('?')[0].split('/').filter(Boolean)
+      if (req.method === 'GET') return sendMemoryJson(res, 200, editor.status())
+      if (req.method === 'POST' && parts[3] && ['approve', 'reject'].includes(parts[4])) return sendMemoryJson(res, 200, editor.review(decodeURIComponent(parts[3]), parts[4] as 'approve' | 'reject'))
+      return sendMemoryJson(res, 405, { error: 'Choose an assistant change to approve or reject.' })
+    },
     async mirror(req: IncomingMessage, res: ServerResponse) {
       if (!memoryOriginAllowed(req) || !req.headers['x-wv-client']) return sendMemoryJson(res, 403, { error: 'Open the authorized workspace to export a mirror.' })
       if (req.method !== 'POST') return sendMemoryJson(res, 405, { error: 'Use POST with an explicit source selection.' })
@@ -48,11 +63,15 @@ export function createMemoryHttp(db: WorldDb, worldId: string, now: () => number
     async management(req: IncomingMessage, res: ServerResponse) {
       if (!memoryOriginAllowed(req) || !req.headers['x-wv-client']) return sendMemoryJson(res, 403, { error: 'Open Sources in the authorized workspace to manage memory clients.' })
       const parts = (req.url ?? '').split('?')[0].split('/').filter(Boolean)
-      if (req.method === 'GET') return sendMemoryJson(res, 200, { clients: listMemoryClients(db), mcpPath: '/api/mcp' })
+      if (req.method === 'GET') return sendMemoryJson(res, 200, { clients: listMemoryClients(db), mcpPath: '/api/mcp', editingAvailable: worldId === 'local', reviewRequired: true, ...(options.directory ? { workspaceFingerprint: createHash('sha256').update(realpathSync(options.directory)).digest('hex') } : {}) })
       if (req.method === 'POST' && parts.length === 3) {
         const body = await readMemoryBody(req)
         const sources = db.getKv<{ sources: { id: string }[] }>('knowledge.v1')?.sources ?? []
         if (Array.isArray(body.sourceIds) && body.sourceIds.some((id) => !sources.some((source) => source.id === id))) return sendMemoryJson(res, 400, { error: 'A selected source is no longer available.' })
+        const documents = decodeWriting(db.getKv('writing.v1')).docs
+        if (Array.isArray(body.writingDocumentIds) && body.writingDocumentIds.some((id) => !documents.some((doc) => doc.id === id && !doc.archivedAt))) return sendMemoryJson(res, 400, { error: 'A selected writing document is no longer available.' })
+        const shelf = decodeBookshelf(db.getKv('bookshelves.v1'))
+        if (Array.isArray(body.bookshelfBookIds) && body.bookshelfBookIds.some((id) => !shelf.books.some((book) => book.id === id && !book.archivedAt))) return sendMemoryJson(res, 400, { error: 'A selected bookshelf record is no longer available.' })
         return sendMemoryJson(res, 201, createMemoryClient(db, worldId, body as Parameters<typeof createMemoryClient>[2], now()))
       }
       if (req.method === 'DELETE' && parts[3]) { revokeMemoryClient(db, parts[3], now()); return sendMemoryJson(res, 200, { ok: true }) }
@@ -61,25 +80,26 @@ export function createMemoryHttp(db: WorldDb, worldId: string, now: () => number
     async operation(req: IncomingMessage, res: ServerResponse, client: MemoryClient, operation: string) {
       if (!memoryOriginAllowed(req)) return sendMemoryJson(res, 403, { error: 'Origin is not permitted.' })
       if (req.method !== 'POST') return sendMemoryJson(res, 405, { error: 'Use POST for a memory operation.' })
-      if (!Object.values(memoryToolNames).includes(operation as MemoryOperation)) return sendMemoryJson(res, 404, { error: 'Unknown memory operation.' })
-      const result = reader(operation as MemoryOperation, await readMemoryBody(req), client)
+      const writingOperation = assistantTools.some((tool) => tool.name === operation)
+      if (!Object.values(memoryToolNames).includes(operation as MemoryOperation) && !writingOperation) return sendMemoryJson(res, 404, { error: 'Unknown memory operation.' })
+      const input = await readMemoryBody(req), active = reauthorize(req, client), result = writingOperation ? editor.operation(operation as AssistantOperation, input, active) : reader(operation as MemoryOperation, input, active)
       return sendMemoryJson(res, 200, result)
     },
     async mcp(req: IncomingMessage, res: ServerResponse, client: MemoryClient) {
       if (!memoryOriginAllowed(req)) return sendMemoryJson(res, 403, { error: 'Origin is not permitted.' })
       if (req.method !== 'POST') { res.setHeader('Allow', 'POST'); return sendMemoryJson(res, 405, { error: 'This stateless server does not offer an SSE stream.' }) }
       const server = new Server({ name: 'worldview-memory', version: '1.0.0' }, { capabilities: { tools: {} } })
-      server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }))
+      server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: canEdit(reauthorize(req, client)) && worldId === 'local' ? [...tools, ...assistantTools] : tools }))
       server.setRequestHandler(CallToolRequestSchema, async (request) => {
-        const operation = memoryToolNames[request.params.name as keyof typeof memoryToolNames]
-        if (!operation) throw new Error('Unknown memory tool.')
-        const result = reader(operation, request.params.arguments, client)
+        const operation = memoryToolNames[request.params.name as keyof typeof memoryToolNames], writingOperation = assistantTools.some((tool) => tool.name === request.params.name)
+        if (!operation && !writingOperation) throw new Error('Unknown memory tool.')
+        const active = reauthorize(req, client), result = writingOperation ? editor.operation(request.params.name as AssistantOperation, request.params.arguments, active) : reader(operation!, request.params.arguments, active)
         return { content: [{ type: 'text' as const, text: JSON.stringify(result) }], structuredContent: result as Record<string, unknown> }
       })
       const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true })
       res.once('close', () => { void transport.close(); void server.close() })
       await server.connect(transport)
-      await transport.handleRequest(req, res, await readMemoryBody(req))
+      const body = await readMemoryBody(req); reauthorize(req, client); await transport.handleRequest(req, res, body)
     },
   }
 }

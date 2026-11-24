@@ -1,0 +1,21 @@
+.worldview-mark { display:block; width:36px; height:36px; flex:none; border-radius:50%; object-fit:cover; object-position:center; background:#080b0c; box-shadow:0 0 0 1px #b9cbd933,0 4px 14px #0003; }
+.knowledge-brand .worldview-mark,.workspace-brand .worldview-mark { width:33px; height:33px; }
+.knowledge-brand span,.workspace-brand span { font-family:Georgia,'Times New Roman',serif; font-size:25px; font-weight:400; letter-spacing:-.7px; }
+.worldview-ascii-orbit { color:var(--kb-muted,#8e9b9e); font:8px/1.06 var(--font-mono,monospace); margin:4px auto 16px; width:max-content; opacity:.65; user-select:none; pointer-events:none; }
+.knowledge-workbench.is-nav-collapsed .worldview-ascii-orbit { display:none; }
+@keyframes worldview-arrive { from { opacity:0; transform:translateY(5px) } to { opacity:1; transform:none } }
+.knowledge-page { animation:worldview-arrive 240ms cubic-bezier(.2,.8,.2,1) both; }
+.knowledge-nav nav a,.workspace-links>a { transition:background-color 160ms,color 160ms; }
+.workspace-links>a { display:flex; align-items:center; gap:11px; min-height:40px; padding:9px 12px; border-radius:7px; font-size:13px; color:#a7b3b8; text-decoration:none; }
+.workspace-links>a:hover,.workspace-links>a:focus-visible { color:#f4eee4; background:#fff1; }
+.world-workspace .workspace-brand { color:#f1ede3; }
+.world-workspace .workspace-nav { background:#161a1deF; backdrop-filter:blur(16px); border-right:1px solid #dce6ed14; }
+.world-workspace .world-toolbar h1 { font-family:Georgia,'Times New Roman',serif; font-weight:400; letter-spacing:-.6px; }
+.world-workspace .world-toolbar { border-bottom:1px solid #dce6ed16; }
+.world-workspace .workspace-nav .worldview-ascii-orbit { margin-top:18px; }
+@media(max-height:800px) { .knowledge-nav .worldview-ascii-orbit { display:none } }
+@media(max-width:660px) { .worldview-ascii-orbit { display:none } .workspace-links>a { min-height:44px; } }
+@media(prefers-reduced-motion:reduce) { .knowledge-page { animation:none; } .knowledge-nav nav a,.workspace-links>a { transition:none; } }
+
+.world-workspace .workspace-nav { overflow-y:auto; scrollbar-width:thin; }
+@media (min-width:661px) and (max-width:900px) { .workspace-links>a>span { display:none; } .workspace-links>a { justify-content:center; padding-inline:0; } .world-workspace .worldview-ascii-orbit { display:none; } }

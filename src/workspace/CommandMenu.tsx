@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react'
-import { ArrowDown, ArrowElbowDownLeft, ArrowUp, BookOpen, CheckSquare, FileText, FolderOpen, MagnifyingGlass, Planet, Plus, Stack, Sun, X } from '@phosphor-icons/react'
+import { ArrowDown, ArrowElbowDownLeft, ArrowUp, BookOpen, Books, CheckSquare, FileText, FolderOpen, MagnifyingGlass, PencilSimple, Planet, Plus, Stack, Sun, TreeStructure, X } from '@phosphor-icons/react'
 import { useApp, useWorld } from '../app/store.ts'
 import { useAuth } from '../data/auth.ts'
 import { useKnowledge } from '../knowledge/index.ts'
@@ -40,12 +40,15 @@ type MenuEntry = {
 const commands: MenuEntry[] = [
   { id: 'capture', title: 'Capture a thought', detail: 'Write something down', icon: Plus, keywords: 'new note idea create' },
   { id: 'today', title: 'Today', detail: 'Capture and recent records', icon: Sun, href: '#/today', keywords: 'home recent' },
+  { id: 'write', title: 'Writing studio', detail: 'Documents, formatting and your own design', icon: PencilSimple, href: '#/write', keywords: 'write editor essay newsletter journal poem rich text' },
   { id: 'search', title: 'Search & ask', detail: 'Find words and passages', icon: MagnifyingGlass, href: '#/search', keywords: 'find evidence question' },
   { id: 'library', title: 'Library', detail: 'Read your original sources', icon: BookOpen, href: '#/library', keywords: 'records notes documents files' },
+  { id: 'graph', title: 'Knowledge graph', detail: 'Connect sources, ideas and topics', icon: TreeStructure, href: '#/graph', keywords: 'network connections links topics map' },
   { id: 'topics', title: 'Projects & topics', detail: 'Follow a subject or investigation', icon: FolderOpen, href: '#/topics', keywords: 'subjects investigations' },
   { id: 'knowledge', title: 'Knowledge pages', detail: 'Your connected understanding', icon: FileText, href: '#/knowledge', keywords: 'wiki pages' },
   { id: 'review', title: 'Review', detail: 'Inspect suggested connections', icon: CheckSquare, href: '#/review', keywords: 'proposals suggestions' },
   { id: 'sources', title: 'Sources & activity', detail: 'Imports, capture, and connections', icon: Stack, href: '#/sources', keywords: 'import telegram voice qmd integrations settings' },
+  { id: 'bookshelf', title: 'Bookshelf', detail: 'Books, articles, ratings and reading lists', icon: Books, href: '#/bookshelf', keywords: 'books shelves want buy unread read reading recommendation author ranking' },
   { id: 'explore', title: 'Explore in 3D', detail: 'Open your spatial world', icon: Planet, href: '#/explore', keywords: 'world map spatial' },
 ]
 

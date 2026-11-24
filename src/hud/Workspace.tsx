@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowSquareOut, ArrowsClockwise, BookOpen, CaretDown, ChatCircle, Compass, DotsThree, FileText, GearSix, Info, Leaf, MagnifyingGlass, Pause, Planet, Play, Plus, Robot, Sparkle, Stack, Sun, UploadSimple } from '@phosphor-icons/react'
+import { ArrowSquareOut, ArrowsClockwise, BookOpen, Books, CaretDown, ChatCircle, Compass, DotsThree, FileText, GearSix, Info, Leaf, MagnifyingGlass, Pause, Planet, Play, PencilSimple, Plus, Robot, Sparkle, Stack, Sun, TreeStructure, UploadSimple } from '@phosphor-icons/react'
 import { useApp, useWorld } from '../app/store.ts'
 import { seedDemo, useRepoStatus } from '../data/repo.ts'
 import { buildTypedLinks } from '../world/links/style.ts'
@@ -14,6 +14,9 @@ import { Reflection } from './Reflection.tsx'
 import { Agents } from './Agents.tsx'
 import { OPEN_AGENTS_EVENT, openAgentsPanel } from '../world/agents/model.ts'
 import { ProductDialog } from './ProductDialog.tsx'
+import { WorldviewMark } from '../workspace/WorldviewMark.tsx'
+import { AsciiOrbit } from '../workspace/AsciiOrbit.tsx'
+import '../workspace/worldviewVisuals.css'
 import { returnToWorkspace } from '../workspace/state.ts'
 
 function revealWorld() {
@@ -32,10 +35,13 @@ export function WorkspaceNav() {
   const recent = useMemo(() => [...nodes.values()].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 5), [nodes])
   return <>
     <aside className="workspace-nav" aria-label="Main navigation">
-      <a className="workspace-brand" href="#/" aria-label="Worldview home"><Planet size={29} weight="duotone" /><span>Worldview</span></a>
+      <a className="workspace-brand" href="#/" aria-label="Worldview home"><WorldviewMark /><span>Worldview</span></a>
       <button className="workspace-search" onClick={() => openPalette()} title={`Search your world (${MOD_KEY}K)`}><MagnifyingGlass size={17} /><span>Search your world</span><kbd>{MOD_KEY}K</kbd></button>
       <button aria-label="Add to your world" className="workspace-add" onClick={() => useApp.getState().togglePanel('chat', true)} disabled={!writer}><Plus size={18} /><span>Add to your world</span></button>
       <nav className="workspace-links">
+        <a href="#/write" aria-label="Writing studio" title="Writing studio"><PencilSimple size={20} /><span>Writing studio</span></a>
+        <a href="#/bookshelf" aria-label="Bookshelf" title="Bookshelf"><Books size={20} /><span>Bookshelf</span></a>
+        <a href="#/graph" aria-label="Knowledge graph" title="Knowledge graph"><TreeStructure size={20} /><span>Knowledge graph</span></a>
         <button aria-label="Return to knowledge workspace" onClick={() => returnToWorkspace()}><BookOpen size={20} /><span>Back to workspace</span></button>
         <button aria-label="My world" className={!library ? 'is-active' : ''} onClick={() => { revealWorld(); useApp.getState().togglePanel('library', false); useApp.getState().setMode('orbit'); recenterWorld() }}><Compass size={20} /><span>My world</span></button>
         <button aria-label="Library" className={library ? 'is-active' : ''} onClick={() => { revealWorld(); useApp.getState().togglePanel('library') }}><BookOpen size={20} /><span>Library</span><small>{nodes.size}</small></button>
@@ -46,7 +52,7 @@ export function WorkspaceNav() {
       <div className="workspace-recents"><h2>Recently added</h2>
         {recent.length ? recent.map((n) => <button key={n.id} aria-current={selected === n.id ? 'true' : undefined} onClick={() => { revealWorld(); selectAndFly(n.id) }} title={n.title}><span className={`recent-icon kind-${n.archetype}`}>{n.archetype === 'idea' ? <Sparkle size={18} /> : n.archetype === 'memory' ? <Leaf size={18} /> : <FileText size={18} />}</span><span><strong>{n.title}</strong><small>{n.archetype} · {new Date(n.temporalOrigin).toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' })}</small></span></button>) : <p>Your thoughts, memories, and files will appear here.</p>}
       </div>
-      <footer className="workspace-nav-footer"><button aria-label="Settings and backups" onClick={() => useApp.getState().togglePanel('settings', true)}><GearSix size={19} /><span>Settings & backups</span></button><div><span className={`storage-dot ${writer ? '' : 'is-readonly'}`} /><span>{fallback ? 'Session storage' : 'Saved locally'}{writer ? '' : ' · Read only'}</span></div></footer>
+      <footer className="workspace-nav-footer"><AsciiOrbit /><button aria-label="Settings and backups" onClick={() => useApp.getState().togglePanel('settings', true)}><GearSix size={19} /><span>Settings & backups</span></button><div><span className={`storage-dot ${writer ? '' : 'is-readonly'}`} /><span>{fallback ? 'Session storage' : 'Saved locally'}{writer ? '' : ' · Read only'}</span></div></footer>
     </aside>
     {modal === 'agents' && <Agents onClose={() => setModal(null)} />}
     {modal === 'sources' && <Sources onClose={() => setModal(null)} />}

@@ -4,6 +4,14 @@ The researched second-brain integration adds maintained knowledge pages, increme
 
 A personal knowledge workspace with retained sources, evidence-backed retrieval, and an explorable 3D world. XYZ represents space; the timeline represents history.
 
+The [local reading archive](docs/READING-ARCHIVE.md) adds document covers, folders, highlights with comments, reading progress, topic organization, and a connected 2D graph. The optional [Dia/Chrome/Edge reader companion](docs/BROWSER-READING.md) saves explicitly selected articles to the local app; no cloud AI is required.
+
+The [writing studio](docs/WRITING-STUDIO.md) adds rich documents, local media, page design, autosaved drafts, explicit Library revisions, and HTML/Markdown/ZIP exports alongside quick thoughts. Print-to-PDF uses your browser's print dialog.
+
+The [connected reading and writing update](docs/SIX-IMPROVEMENTS.md) brings research citations, unified topic homes, original PDF annotation, browser approval and retry, tables/footnotes/section tools, version recovery and Trash, indexed search, bulk filing, and expandable graph neighborhoods. Cloud AI stays optional and off in this workspace.
+
+The [personal workspace update](docs/PERSONAL-WORKSPACE.md) adds a physical-style bookshelf with reading details and full edit history, animated graph exploration, shared 3D navigation, scoped assistant editing with review, a Google Drive connection, and a downloadable macOS vault app. Cloud generation remains off.
+
 ## Run locally
 
 Use Node 26 or newer, then run `npm ci` and `npm run dev`. Open [localhost:5173](http://localhost:5173). Keep this origin and port: browser storage belongs to it. The local service stores SQLite and original files under `data/`; existing browser worlds keep their current storage until explicitly migrated in Settings.

@@ -52,7 +52,7 @@ export function createMemoryReader(db: WorldDb) {
   return function read(operation: MemoryOperation, raw: unknown, client: MemoryClient): unknown {
     const input = obj(raw), filters = filtersFor(client, input), corpus = snapshot()
     if (db.getKv('importInProgress')) throw new Error('Memory is unavailable while workspace recovery is in progress.')
-    if (operation === 'status') return { revision: corpus.revision, coverage: retrievalCoverage(corpus, filters), scope: { sourceIds: client.sourceIds, projectId: client.projectId }, readOnly: !client.allowObservations }
+    if (operation === 'status') return { revision: corpus.revision, coverage: retrievalCoverage(corpus, filters), scope: { sourceIds: client.sourceIds, projectId: client.projectId, writingDocumentIds: client.writingDocumentIds ?? [], allowCreateWriting: !!client.allowCreateWriting, allowFiling: !!client.allowFiling, bookshelfBookIds: client.bookshelfBookIds ?? [], allowCreateBooks: !!client.allowCreateBooks }, readOnly: !(client.allowCreateWriting || client.allowFiling || client.writingDocumentIds?.length || client.allowCreateBooks || client.bookshelfBookIds?.length), reviewRequired: true }
     if (operation === 'read_passage') {
       const passage = corpus.passages.find((passage) => passage.id === input.id)
       if (!passage || !liveSource(corpus, passage.sourceId) || !eligibleEvidence(corpus, passage, filters)) return { ok: false, error: 'not_available' }

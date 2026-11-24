@@ -1,0 +1,59 @@
+.knowledge-workbench .topic-home { max-width:1440px; margin:0 auto; padding:30px 34px 60px; color:var(--kb-text); }
+.topic-home-heading { display:flex; justify-content:space-between; align-items:center; gap:24px; margin-bottom:32px; }
+.topic-home-heading h2 { margin:8px 0; font:400 clamp(29px,3vw,40px)/1.25 Georgia,serif; letter-spacing:-1px; overflow-wrap:anywhere; }
+.topic-home-heading p { margin:0; color:var(--kb-muted); font-size:13px; line-height:1.8; max-width:620px; }
+.topic-home-layout { display:grid; grid-template-columns:230px minmax(0,1fr); gap:44px; }
+.topic-index { min-width:0; }
+.topic-search { display:flex; align-items:center; gap:8px; color:var(--kb-muted); border-bottom:1px solid var(--kb-line); margin-bottom:15px; }
+.topic-home input { min-width:0; border:1px solid var(--kb-line); border-radius:6px; padding:10px; color:var(--kb-text); background:var(--kb-panel); font:inherit; }
+.topic-search input { border:0; background:transparent; width:100%; font-size:12px; padding:12px 0; }
+.topic-index nav { display:grid; gap:4px; max-height:55dvh; overflow:auto; overscroll-behavior:contain; }
+.topic-index nav a { display:flex; align-items:center; gap:9px; padding:10px; color:var(--kb-muted); text-decoration:none; font-size:13px; border-radius:6px; }
+.topic-index nav a span { min-width:0; overflow-wrap:anywhere; flex:1; }
+.topic-index nav a small { font-size:10px; font-variant-numeric:tabular-nums; }
+.topic-index nav a:is(:hover,[aria-current=page]) { background:var(--kb-hover); color:var(--kb-text); }
+.topic-create { display:flex; align-items:center; gap:5px; margin-top:20px; }
+.topic-create input { width:100%; font-size:11px; }
+.topic-index > p { color:var(--kb-muted); font-size:11px; line-height:1.7; }
+.topic-content { min-width:0; }
+.topic-actions { display:flex; justify-content:space-between; gap:12px; align-items:center; margin-bottom:15px; }
+.topic-actions > a:first-child { display:inline-flex; gap:6px; align-items:center; text-decoration:none; color:var(--kb-muted); font-size:12px; }
+.topic-tabs { display:flex; overflow:auto; gap:22px; border-bottom:1px solid var(--kb-line); scrollbar-width:thin; }
+.topic-tabs a { display:flex; gap:6px; white-space:nowrap; padding:14px 0; color:var(--kb-muted); text-decoration:none; border-bottom:2px solid transparent; font-size:12px; }
+.topic-tabs a[aria-current=page] { color:var(--kb-text); border-color:var(--kb-accent); }
+.topic-tabs a span { font-size:10px; opacity:.7; }
+.topic-section { padding:28px 0 9px; }
+.topic-section > header { display:flex; justify-content:space-between; gap:14px; align-items:center; margin-bottom:14px; }
+.topic-section h3 { margin:0; font-size:15px; font-weight:500; }
+.topic-section h3 span { margin-left:6px; color:var(--kb-muted); font-size:11px; font-weight:400; }
+.topic-section header > a { display:flex; align-items:center; gap:4px; color:var(--kb-muted); text-decoration:none; font-size:11px; }
+.knowledge-workbench .topic-row { display:flex; gap:13px; align-items:center; width:100%; padding:15px 4px; border:0; border-bottom:1px solid var(--kb-line); background:transparent; color:var(--kb-text); text-align:left; text-decoration:none; border-radius:0; font:inherit; }
+.topic-row > svg { color:var(--kb-muted); flex-shrink:0; }
+.topic-row > span { flex:1; min-width:0; }
+.topic-row strong { display:block; font-size:13px; line-height:1.6; font-weight:500; overflow-wrap:anywhere; }
+.topic-row small { display:block; color:var(--kb-muted); font-size:11px; line-height:1.7; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:100%; }
+.topic-row:hover { background:var(--kb-hover); }
+.topic-highlight { display:flex; align-items:flex-start; gap:12px; padding:17px 0; text-decoration:none; color:var(--kb-text); }
+.topic-highlight > svg { margin-top:5px; color:var(--kb-muted); flex-shrink:0; }
+.topic-highlight > div { min-width:0; }
+.knowledge-workbench .topic-highlight blockquote { display:block; margin:0; padding-left:14px; border-left:2px solid var(--kb-accent); color:var(--kb-text); font:16px/1.8 Georgia,serif; white-space:pre-wrap; overflow-wrap:anywhere; }
+.topic-highlight-comment > span { display:block; margin-bottom:3px; color:var(--kb-muted); font-size:10px; }
+.topic-highlight p,.topic-note p { margin:9px 0; font-size:12px; line-height:1.8; white-space:pre-wrap; overflow-wrap:anywhere; }
+.topic-highlight small,.topic-note small { display:block; margin-top:8px; color:var(--kb-muted); font-size:10px; }
+.topic-note { display:block; color:var(--kb-text); text-decoration:none; padding:12px 0 12px 30px; }
+.topic-empty-copy { color:var(--kb-muted); font-size:12px; line-height:1.9; padding:8px 0 16px; }
+.topic-welcome,.topic-empty { max-width:590px; padding:50px 10px 60px; }
+.topic-welcome > svg,.topic-empty > svg { color:var(--kb-muted); }
+.topic-welcome h3,.topic-empty h3 { margin:24px 0 16px; font:400 28px/1.5 Georgia,serif; letter-spacing:-.5px; }
+.topic-welcome p,.topic-empty p { color:var(--kb-muted); font-size:13px; line-height:1.9; }
+.topic-overview-counts { display:flex; gap:32px; margin:30px 0; color:var(--kb-muted); font-size:11px; }
+.topic-overview-counts strong { display:block; color:var(--kb-text); font:400 27px Georgia,serif; margin-bottom:4px; }
+.topic-assign { border:1px solid var(--kb-line); border-radius:8px; padding:15px; margin-top:25px; font-size:12px; }
+.topic-assign summary { cursor:pointer; }
+.topic-assign > label { display:grid; gap:7px; margin:16px 0; color:var(--kb-muted); }
+.topic-assign > div { display:grid; gap:13px; max-height:340px; overflow:auto; }
+.topic-assign > div > label { display:flex; align-items:center; gap:9px; }
+.topic-assign input[type=checkbox] { accent-color:var(--kb-accent); }
+.topic-assign small { display:block; color:var(--kb-muted); margin-top:4px; font-size:10px; }
+.topic-home :is(a,button,input,summary):focus-visible { outline:2px solid var(--kb-accent); outline-offset:3px; }
+@media(max-width:800px) { .knowledge-workbench .topic-home { padding:23px 19px 45px; }.topic-home-layout { grid-template-columns:1fr; gap:25px; }.topic-index nav { display:flex; max-height:none; overflow:auto; }.topic-index nav a { flex-shrink:0; max-width:210px; }.topic-create { max-width:360px; margin-top:12px; }.topic-home-heading { align-items:flex-start; margin-bottom:22px; }.topic-home-heading > a { font-size:10px; max-width:135px; }.topic-welcome { padding-top:15px; }.topic-tabs { gap:18px; }.topic-section { padding-top:24px; } }

@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import type { RetrievalEngine } from '../knowledge/types.ts'
 
-export const WORKSPACE_SECTIONS = ['today', 'search', 'library', 'topics', 'knowledge', 'review', 'sources'] as const
+export const WORKSPACE_SECTIONS = ['today', 'write', 'search', 'library', 'bookshelf', 'graph', 'topics', 'knowledge', 'review', 'sources'] as const
 export type WorkspaceSection = typeof WORKSPACE_SECTIONS[number]
 
 export interface WorkspaceContext {
@@ -45,7 +45,7 @@ export function validateWorkspaceContext(value: unknown): WorkspaceContext {
       selectedRecordId: typeof v.selectedRecordId === 'string' ? v.selectedRecordId : null,
       selectedPassageId: typeof v.selectedPassageId === 'string' ? v.selectedPassageId : null,
       selectedSourceId: typeof v.selectedSourceId === 'string' ? v.selectedSourceId : null,
-      returnHash: typeof v.returnHash === 'string' && /^#\/(today|search|library|topics|knowledge|review|sources)(?:[?]|$)/.test(v.returnHash) ? v.returnHash : base.returnHash,
+      returnHash: typeof v.returnHash === 'string' && /^#\/(today|write|search|library|bookshelf|graph|topics|knowledge|review|sources)(?:[?]|$)/.test(v.returnHash) ? v.returnHash : base.returnHash,
       lastSection: WORKSPACE_SECTIONS.includes(v.lastSection as WorkspaceSection) ? v.lastSection as WorkspaceSection : 'today',
       readerPositions: v.readerPositions && typeof v.readerPositions === 'object' ? Object.fromEntries(Object.entries(v.readerPositions).filter(([, n]) => typeof n === 'number' && Number.isFinite(n) && n >= 0).slice(-80)) : {},
       draft: typeof v.draft === 'string' ? v.draft : '',

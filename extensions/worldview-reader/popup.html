@@ -1,0 +1,9 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Worldview Reader</title><link rel="stylesheet" href="popup.css"></head><body>
+<main><header><strong>Worldview Reader</strong><span id="state" role="status">Checking local pairing…</span></header>
+<p>Follow only the article you choose. Highlights and comments stay in your local workspace.</p>
+<div id="connection"><button id="connect">Connect to Worldview</button><p id="connection-help">Approve this browser in the local app. No IDs or tokens to copy.</p></div>
+<div class="actions"><button id="follow">Save and follow this article</button><label for="note">Your comment (optional)</label><textarea id="note" rows="3" maxlength="20000" placeholder="What stood out to you?"></textarea><button id="highlight">Save selected text + comment</button><button id="stop">Stop following this tab</button></div>
+<p id="notice" role="status"></p><p id="error" role="alert"></p>
+<section class="delivery"><p id="queue" role="status"></p><p id="delivery"></p><p id="delivery-error"></p><ul id="pending"></ul><button id="retry">Retry pending captures</button></section>
+<details id="setup"><summary>Connection settings</summary><p>Advanced pairing is available if your browser cannot finish the approval flow.</p><input id="extension-id" aria-label="Extension ID" readonly><label for="token">Pairing token</label><input id="token" type="password" autocomplete="off" spellcheck="false" placeholder="Paste the token shown once by Worldview"><button id="pair">Save pairing</button><button id="discard">Discard pending captures</button><button id="disconnect">Disconnect this browser</button></details>
+<footer>Worldview must run locally at 127.0.0.1:5173. No browsing history access. Navigation and browser restart stop following.</footer></main><script type="module" src="popup.js"></script></body></html>

@@ -5,8 +5,8 @@ import { dirname, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 export const QMD_VERSION = '2.9.0'
-export const QMD_RUNTIME_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../data/tools/qmd')
-export const QMD_CACHE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../data/tools/qmd-cache')
+export const QMD_RUNTIME_ROOT = resolve(process.env.WORLDVIEW_QMD_RUNTIME_ROOT ?? resolve(dirname(fileURLToPath(import.meta.url)), '../data/tools/qmd'))
+export const QMD_CACHE_ROOT = resolve(process.env.WORLDVIEW_QMD_CACHE_ROOT ?? resolve(dirname(fileURLToPath(import.meta.url)), '../data/tools/qmd-cache'))
 export type QmdMode = 'lexical' | 'hybrid'
 export interface NativeQmdHit { file?: string; score?: number; explain?: unknown }
 interface Pending { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }

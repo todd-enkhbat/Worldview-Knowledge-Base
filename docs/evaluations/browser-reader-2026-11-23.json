@@ -1,0 +1,84 @@
+{
+  "verifiedAt": "2026-11-23T18:40:45.225002+00:00",
+  "scope": "Local pasted-article capture, paired Chrome/Edge MV3 companion, and host HTTP boundary",
+  "result": "passed",
+  "checks": {
+    "targetedTestsPassed": 17,
+    "testFiles": 4,
+    "typescript": "passed",
+    "scopedLint": "passed",
+    "realLoopbackHttpAndSQLite": "passed",
+    "staticDownloadZipAllowlist": "passed",
+    "sourceAndReadingAtomicity": "passed",
+    "retryIdempotence": "passed",
+    "repeatedHighlightCommentsRetained": "passed",
+    "zeroDwellDoesNotMarkRead": "passed",
+    "visibleFocusedCompletionThresholdMs": 15000,
+    "synchronousMv3ListenerRegistration": "passed",
+    "spaNavigationStopsAndRejectsUrlDrift": "passed",
+    "bfcacheExplicitFollowRestartsTimers": "passed",
+    "offlineOutboxAndRestrictedTokenStorage": "passed",
+    "pastedArticleAndExactDomSelection": "passed",
+    "activeBrowserStorageCannotPairDifferentSqliteWorld": "passed",
+    "popupNewerAndQueuedCommentDraftsRetained": "passed"
+  },
+  "tests": [
+    "tests/server/articleCapture.test.ts",
+    "tests/reading/articleCompanion.test.tsx",
+    "tests/reading/browserExtension.test.ts",
+    "tests/reading/popupDrafts.test.ts"
+  ],
+  "browserRuntimeVerification": {
+    "userBrowserExtensionInstalled": false,
+    "actualUnpackedBrowserInteractionTested": false,
+    "method": "Real host HTTP tests plus shipped background/content scripts executed with controlled browser API and DOM runtimes. Manual Load unpacked remains a user setup step."
+  },
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
+  "hostPermissions": [
+    "http://localhost/*",
+    "http://127.0.0.1/*"
+  ],
+  "authentication": {
+    "exactPairedExtensionOrigin": true,
+    "bearerTokenStoredAsHashOnServer": true,
+    "credentialShownOnce": true,
+    "managementLoopbackHostAndSocket": true,
+    "managementSameOriginAndClientHeader": true,
+    "privatePairingsAndReceiptsExcludedFromPortableSnapshots": true,
+    "accountHostedRouteDisabled": true
+  },
+  "retention": {
+    "articleOriginal": "Extracted plain text and original URL retained in an application/json capture envelope; no full-page HTML.",
+    "articlePassageAuthorship": "third-party",
+    "authoredAt": null,
+    "highlightAnchor": "Exact source/version/start/end/quote/context",
+    "comments": "Personal reading annotations retained separately from source passages",
+    "newSpatialProjection": false
+  },
+  "limits": {
+    "captureJsonBytes": 1048576,
+    "articleTextBytes": 524288,
+    "quoteCharacters": 20000,
+    "commentCharacters": 20000,
+    "outboxEntries": 20,
+    "pairingDays": 90
+  },
+  "limitations": [
+    "No general browsing/history surveillance or implicit capture.",
+    "Only an explicitly chosen tab is followed; navigation and browser restart stop following.",
+    "Scroll and visible/focused dwell are observations, not evidence of comprehension.",
+    "Abrupt termination can lose the latest unflushed progress.",
+    "Unpacked Chrome/Edge setup is manual; Firefox, protected pages, PDFs, cross-origin iframe text and paywall extraction are not guaranteed.",
+    "A queued capture is not confirmed service delivery; retry is explicit."
+  ],
+  "externalAiRequests": 0,
+  "documentation": "docs/BROWSER-READING.md",
+  "evidenceArtifacts": {
+    "screenshots": "Dated acceptance captures are local-only and intentionally excluded from Git; they may include personal workspace or account context.",
+    "localBuilds": "Installers, retained sources and credential files remain under ignored local paths."
+  }
+}
