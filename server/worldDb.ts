@@ -11,6 +11,9 @@ import { PORTABLE_WORLD_KEYS } from '../src/data/worldSnapshot.ts'
 import { assertKnowledgeReceipt, diffKnowledgeSnapshots, isKnowledgeSnapshot, KNOWLEDGE_KEY, KNOWLEDGE_MIGRATION_KEY, KNOWLEDGE_RECEIPTS_KEY, validateKnowledgeCommit, type KnowledgeCommitOptions, type KnowledgeDelta } from '../src/knowledge/storage.ts'
 import { SqliteKnowledgeStore } from './knowledgeStore.ts'
 import { createKnowledgeMigrationBackup } from './knowledgeMigrationBackup.ts'
+import { SqliteCrmStore } from './crmStore.ts'
+import { CRM_KV } from '../src/crm/types.ts'
+import { crmAssetReferences } from '../src/crm/model.ts'
 
 // The SQLite engine (Phase 4): node:sqlite + sqlite-vec, synchronous, one connection per
 // server process. It stores exactly what the browser stores, normalised per
@@ -91,15 +94,18 @@ export class WorldDb {
   readonly db: DatabaseSync
   readonly knowledge: KnowledgeIndex
   readonly corpus: SqliteKnowledgeStore
+  readonly crm: SqliteCrmStore
 
   constructor(db: DatabaseSync, migrationBackup?: Record<string, unknown>) {
     this.db = db
     this.knowledge = new KnowledgeIndex(db)
     this.corpus = new SqliteKnowledgeStore(db)
+    this.crm = new SqliteCrmStore(this)
     // Rebuildable after migration/restore; no source content is changed by the index.
     this.tx(() => {
       if (migrationBackup && Number((db.prepare('PRAGMA data_version').get() as Row).data_version) !== migrationBackup.dataVersion) throw new Error('The world changed after its pre-migration backup; retry startup before switching knowledge storage.')
       const migrated = this.corpus.migrateLegacy(migrationBackup)
+      this.crm.migrateLegacy()
       const indexed = db.prepare('SELECT revision FROM knowledge_index_state WHERE id = 1').get() as Row | undefined
       if (migrated || !indexed || Number(indexed.revision) !== this.corpus.revision()) this.knowledge.update(this.getKv(KNOWLEDGE_KEY))
       db.exec('PRAGMA user_version = 3')
@@ -316,6 +322,7 @@ export class WorldDb {
   }
 
   deleteAssetMeta(id: string): void {
+    if (this.crm.hasData() && crmAssetReferences(this.crm.getSnapshot()).has(id)) throw new StoreInputError('This original is retained by People, a comment, or CRM history. Preserve it when removing other files.')
     this.db.prepare('DELETE FROM assets WHERE id = ?').run(id)
   }
 
@@ -323,6 +330,7 @@ export class WorldDb {
 
   getKv<T = unknown>(key: string): T | undefined
   getKv(key: string): unknown {
+    if (key === CRM_KV && this.crm.hasData()) return this.crm.getSnapshot()
     if (key === KNOWLEDGE_KEY && this.corpus.head()) return this.corpus.read()
     if (key === KNOWLEDGE_RECEIPTS_KEY) { const rows = this.corpus.receipts(); return rows.length ? rows : undefined }
     if (key === KNOWLEDGE_MIGRATION_KEY) return this.corpus.state('migration')
@@ -331,12 +339,13 @@ export class WorldDb {
   }
 
   putKv(key: string, value: unknown): void {
-    if (key === KNOWLEDGE_KEY || key === KNOWLEDGE_RECEIPTS_KEY) {
+    if (key === KNOWLEDGE_KEY || key === KNOWLEDGE_RECEIPTS_KEY || key === CRM_KV) {
       this.tx(() => this.writeKv(key, value))
     } else this.writeKv(key, value)
   }
 
   private writeKv(key: string, value: unknown): void {
+    if (key === CRM_KV) { this.crm.restoreSnapshot(value); this.db.prepare('DELETE FROM kv WHERE key = ?').run(key); return }
     if (key === KNOWLEDGE_RECEIPTS_KEY) { this.corpus.setReceipts(value); return }
     if (key === KNOWLEDGE_KEY && isKnowledgeSnapshot(value)) {
       this.corpus.replace(value)
@@ -381,6 +390,7 @@ export class WorldDb {
   deleteKv(key: string): void {
     this.tx(() => {
       this.db.prepare('DELETE FROM kv WHERE key = ?').run(key)
+      if (key === CRM_KV) this.crm.clear()
       if (key === KNOWLEDGE_KEY) { this.corpus.clear(); this.knowledge.clear() }
       if (key === KNOWLEDGE_RECEIPTS_KEY) this.corpus.setReceipts([])
     })
@@ -470,6 +480,7 @@ export class WorldDb {
       const kept = preserveKeys.filter((name) => name !== key).map((name) => [name, this.getKv(name)] as const)
       for (const table of ['links', 'attachments', 'nodes', 'events', 'assets', 'kv', 'settings']) this.db.exec(`DELETE FROM ${table}`)
       this.corpus.clear()
+      this.crm.clear()
       this.knowledge.clear()
       for (const [name, item] of kept) if (item !== undefined) this.writeKv(name, item)
       this.writeKv(key, marker)
@@ -482,6 +493,7 @@ export class WorldDb {
     this.tx(() => {
       for (const t of ['links', 'attachments', 'nodes', 'events', 'assets', 'kv', 'settings']) this.db.exec(`DELETE FROM ${t}`)
       this.corpus.clear()
+      this.crm.clear()
       this.knowledge.clear()
     })
     this.replacementGeneration++

@@ -13,6 +13,7 @@ import { createHash } from 'node:crypto'
 import { realpathSync } from 'node:fs'
 import { decodeBookshelf } from '../src/bookshelf/model.ts'
 import { decodeWriting } from '../src/writing/model.ts'
+import { canUseCrm, createCrmAssistant, crmAssistantTools } from './crmAssistant.ts'
 
 export const memoryToolNames = { search: 'search', read_passage: 'read_passage', read_record: 'read_record', get_project_context: 'get_project_context', get_memory_context: 'context', status: 'status' } as const
 const tools = Object.entries(memoryToolNames).map(([name, operation]) => ({ name,
@@ -40,6 +41,7 @@ export function memoryOriginAllowed(req: IncomingMessage): boolean {
 export function createMemoryHttp(db: WorldDb, worldId: string, now: () => number = Date.now, options: { bus?: ChangeBus; directory?: string } = {}) {
   const reader = createMemoryReader(db)
   const editor = createAssistantEditor(db, { bus: options.bus, now })
+  const crmAssistant = createCrmAssistant(db, now)
   const reauthorize = (req: IncomingMessage, previous: MemoryClient) => { const token = /^Bearer (\S+)$/.exec(String(req.headers.authorization ?? ''))?.[1] ?? ''; const current = authenticateMemoryClient(db, token, worldId, now()); if (!current || current.id !== previous.id) throw new Error('This memory client expired or was revoked before its request completed.'); return current }
   return {
     async connections(req: IncomingMessage, res: ServerResponse) {
@@ -72,6 +74,7 @@ export function createMemoryHttp(db: WorldDb, worldId: string, now: () => number
         if (Array.isArray(body.writingDocumentIds) && body.writingDocumentIds.some((id) => !documents.some((doc) => doc.id === id && !doc.archivedAt))) return sendMemoryJson(res, 400, { error: 'A selected writing document is no longer available.' })
         const shelf = decodeBookshelf(db.getKv('bookshelves.v1'))
         if (Array.isArray(body.bookshelfBookIds) && body.bookshelfBookIds.some((id) => !shelf.books.some((book) => book.id === id && !book.archivedAt))) return sendMemoryJson(res, 400, { error: 'A selected bookshelf record is no longer available.' })
+        for (const [scope, collection] of [['crmPersonIds', 'people'], ['crmGroupIds', 'groups']] as const) if (Array.isArray(body[scope]) && (body[scope] as unknown[]).some(id => typeof id !== 'string' || db.crm.get(collection, id)?.archivedAt !== null)) return sendMemoryJson(res, 400, { error: 'A selected People scope is unavailable. Refresh your selections.' })
         return sendMemoryJson(res, 201, createMemoryClient(db, worldId, body as Parameters<typeof createMemoryClient>[2], now()))
       }
       if (req.method === 'DELETE' && parts[3]) { revokeMemoryClient(db, parts[3], now()); return sendMemoryJson(res, 200, { ok: true }) }
@@ -80,20 +83,20 @@ export function createMemoryHttp(db: WorldDb, worldId: string, now: () => number
     async operation(req: IncomingMessage, res: ServerResponse, client: MemoryClient, operation: string) {
       if (!memoryOriginAllowed(req)) return sendMemoryJson(res, 403, { error: 'Origin is not permitted.' })
       if (req.method !== 'POST') return sendMemoryJson(res, 405, { error: 'Use POST for a memory operation.' })
-      const writingOperation = assistantTools.some((tool) => tool.name === operation)
-      if (!Object.values(memoryToolNames).includes(operation as MemoryOperation) && !writingOperation) return sendMemoryJson(res, 404, { error: 'Unknown memory operation.' })
-      const input = await readMemoryBody(req), active = reauthorize(req, client), result = writingOperation ? editor.operation(operation as AssistantOperation, input, active) : reader(operation as MemoryOperation, input, active)
+      const writingOperation = assistantTools.some((tool) => tool.name === operation), crmOperation = crmAssistantTools.some(tool => tool.name === operation)
+      if (!Object.values(memoryToolNames).includes(operation as MemoryOperation) && !writingOperation && !crmOperation) return sendMemoryJson(res, 404, { error: 'Unknown memory operation.' })
+      const input = await readMemoryBody(req), active = reauthorize(req, client), result = crmOperation ? crmAssistant.operation(operation, input, active) : writingOperation ? editor.operation(operation as AssistantOperation, input, active) : reader(operation as MemoryOperation, input, active)
       return sendMemoryJson(res, 200, result)
     },
     async mcp(req: IncomingMessage, res: ServerResponse, client: MemoryClient) {
       if (!memoryOriginAllowed(req)) return sendMemoryJson(res, 403, { error: 'Origin is not permitted.' })
       if (req.method !== 'POST') { res.setHeader('Allow', 'POST'); return sendMemoryJson(res, 405, { error: 'This stateless server does not offer an SSE stream.' }) }
       const server = new Server({ name: 'worldview-memory', version: '1.0.0' }, { capabilities: { tools: {} } })
-      server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: canEdit(reauthorize(req, client)) && worldId === 'local' ? [...tools, ...assistantTools] : tools }))
+      server.setRequestHandler(ListToolsRequestSchema, async () => { const active = reauthorize(req, client); return { tools: [...tools, ...(canEdit(active) && worldId === 'local' ? assistantTools : []), ...(canUseCrm(active) && worldId === 'local' ? crmAssistantTools : [])] } })
       server.setRequestHandler(CallToolRequestSchema, async (request) => {
-        const operation = memoryToolNames[request.params.name as keyof typeof memoryToolNames], writingOperation = assistantTools.some((tool) => tool.name === request.params.name)
-        if (!operation && !writingOperation) throw new Error('Unknown memory tool.')
-        const active = reauthorize(req, client), result = writingOperation ? editor.operation(request.params.name as AssistantOperation, request.params.arguments, active) : reader(operation!, request.params.arguments, active)
+        const operation = memoryToolNames[request.params.name as keyof typeof memoryToolNames], writingOperation = assistantTools.some((tool) => tool.name === request.params.name), crmOperation = crmAssistantTools.some(tool => tool.name === request.params.name)
+        if (!operation && !writingOperation && !crmOperation) throw new Error('Unknown memory tool.')
+        const active = reauthorize(req, client), result = crmOperation ? crmAssistant.operation(request.params.name, request.params.arguments, active) : writingOperation ? editor.operation(request.params.name as AssistantOperation, request.params.arguments, active) : reader(operation!, request.params.arguments, active)
         return { content: [{ type: 'text' as const, text: JSON.stringify(result) }], structuredContent: result as Record<string, unknown> }
       })
       const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true })

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowSquareOut, ArrowsClockwise, BookOpen, Books, CaretDown, ChatCircle, Compass, DotsThree, FileText, GearSix, Info, Leaf, MagnifyingGlass, Pause, Planet, Play, PencilSimple, Plus, Robot, Sparkle, Stack, Sun, TreeStructure, UploadSimple } from '@phosphor-icons/react'
+import { ArrowSquareOut, ArrowsClockwise, BookOpen, Books, CaretDown, ChatCircle, Compass, DotsThree, FileText, GearSix, Info, Leaf, MagnifyingGlass, Pause, Planet, Play, PencilSimple, Plus, Robot, Sparkle, Stack, Sun, TreeStructure, UploadSimple, Users } from '@phosphor-icons/react'
 import { useApp, useWorld } from '../app/store.ts'
 import { seedDemo, useRepoStatus } from '../data/repo.ts'
 import { buildTypedLinks } from '../world/links/style.ts'
@@ -42,6 +42,7 @@ export function WorkspaceNav() {
         <a href="#/write" aria-label="Writing studio" title="Writing studio"><PencilSimple size={20} /><span>Writing studio</span></a>
         <a href="#/bookshelf" aria-label="Bookshelf" title="Bookshelf"><Books size={20} /><span>Bookshelf</span></a>
         <a href="#/graph" aria-label="Knowledge graph" title="Knowledge graph"><TreeStructure size={20} /><span>Knowledge graph</span></a>
+        <a href="#/people" aria-label="People" title="People"><Users size={20} /><span>People</span></a>
         <button aria-label="Return to knowledge workspace" onClick={() => returnToWorkspace()}><BookOpen size={20} /><span>Back to workspace</span></button>
         <button aria-label="My world" className={!library ? 'is-active' : ''} onClick={() => { revealWorld(); useApp.getState().togglePanel('library', false); useApp.getState().setMode('orbit'); recenterWorld() }}><Compass size={20} /><span>My world</span></button>
         <button aria-label="Library" className={library ? 'is-active' : ''} onClick={() => { revealWorld(); useApp.getState().togglePanel('library') }}><BookOpen size={20} /><span>Library</span><small>{nodes.size}</small></button>

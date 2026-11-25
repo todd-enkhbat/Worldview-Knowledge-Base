@@ -27,6 +27,21 @@ if google_private.exists():
         # Only symbolic labels leave this process; never log credentials or an
         # exception that could include private JSON contents.
         private_credential_read_errors.append('googleDrive.privateCredentialFile')
+crm_private=root/'data/connections/crm-google.private.json'
+if crm_private.exists():
+    try:
+        crm=json.loads(crm_private.read_text())
+        if not isinstance(crm,dict) or not isinstance(crm.get('accounts'),list):raise ValueError('Invalid private credential record')
+        for index,account in enumerate(crm['accounts']):
+            if not isinstance(account,dict):raise ValueError('Invalid private account')
+            client=account.get('client') or {};tokens=account.get('tokens') or {}
+            for label,value in [('clientSecret',client.get('clientSecret')),('access',tokens.get('access')),('refresh',tokens.get('refresh'))]:
+                if isinstance(value,str) and len(value)>=16:secret_values[f'crm.account{index}.{label}']=value.encode()
+        for label in ['happenstanceKey','folkKey']:
+            value=crm.get(label)
+            if isinstance(value,str) and len(value)>=16:secret_values['crm.'+label]=value.encode()
+    except (OSError,UnicodeError,ValueError,AttributeError):
+        private_credential_read_errors.append('crm.privateCredentialFile')
 forbidden=[];outside_links=[];matches=set();count=0;checked=0
 prefix='Worldview.app/Contents/Resources/app/'
 critical={
@@ -40,7 +55,7 @@ with zipfile.ZipFile(archive_path) as archive:
     names=set(archive.namelist())
     for item in archive.infolist():
         name=item.filename;count+=1
-        if name.endswith(('/.env.local','/world.sqlite','/google-drive.private.json','/workspace.json')) or '/runtime/data/' in name or '/runtime/blobs/' in name:forbidden.append(name)
+        if name.endswith(('/.env.local','/world.sqlite','/google-drive.private.json','/crm-google.private.json','/crm-authorization-pending.json','/workspace.json')) or '/runtime/data/' in name or '/runtime/blobs/' in name:forbidden.append(name)
         if stat.S_ISLNK(item.external_attr>>16):
             target=archive.read(item).decode('utf-8')
             resolved=posixpath.normpath(posixpath.join(posixpath.dirname(name),target))
@@ -52,7 +67,7 @@ with zipfile.ZipFile(archive_path) as archive:
     for source,target in critical.items():
         expected=(root/source).read_bytes();actual=archive.read(prefix+target)
         critical_matches[source]=hashlib.sha256(expected).hexdigest()==hashlib.sha256(actual).hexdigest()
-    for directory,destination in [('server','runtime/server'),('src','runtime/src'),('dist','dist'),('electron','electron')]:
+    for directory,destination in [('server','runtime/server'),('src','runtime/src'),('dist','dist'),('electron','electron'),('extensions/worldview-reader','runtime/extensions/worldview-reader')]:
         for source in (root/directory).rglob('*'):
             if not source.is_file():continue
             member=prefix+destination+'/'+source.relative_to(root/directory).as_posix()

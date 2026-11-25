@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { createReadStream, createWriteStream } from 'node:fs'
 import { mkdir, readdir, rename, rm, stat } from 'node:fs/promises'
 import type { IncomingMessage, ServerResponse } from 'node:http'
@@ -156,6 +157,7 @@ export function createApiHandler(opts: ApiOptions): Handler {
         if (method === 'GET' && id) return send(res, 200, db.getAssetMeta(id) ?? null), true
       }
       if (what === 'blobs' && id) {
+        const blobGeneration = db.getReplacementGeneration()
         await ensureDir()
         const file = blobFile(blobDir, id)
         if (method === 'PUT') {
@@ -168,7 +170,10 @@ export function createApiHandler(opts: ApiOptions): Handler {
           try {
             await pipeline(req, createWriteStream(tmp))
             const { size } = await stat(tmp)
+            if (/^crm-(?:file|avatar)-/.test(id)) { const expected = /^crm-(?:file|avatar)-([a-f0-9]{64})$/.exec(id)?.[1]; if (!expected) throw new HttpError(400, 'CRM originals require a SHA-256 identity.'); const digest = createHash('sha256'); for await (const chunk of createReadStream(tmp)) digest.update(chunk); if (digest.digest('hex') !== expected) throw new HttpError(400, 'The CRM original does not match its SHA-256 identity. Existing bytes were preserved.') }
+            if (blobGeneration !== db.getReplacementGeneration()) throw new HttpError(409, 'The workspace changed during this upload. The original was not attached. Retry in the current workspace.')
             await rename(tmp, file)
+            if (blobGeneration !== db.getReplacementGeneration()) throw new HttpError(409, 'The workspace changed during this upload. Retry in the current workspace.')
             db.putAssetMeta({ ...meta, bytes: size })
           } catch (e) {
             await rm(tmp, { force: true })

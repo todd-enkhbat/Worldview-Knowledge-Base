@@ -1,5 +1,5 @@
 import { Activity, lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode, type RefObject } from 'react'
-import { ArrowUp, ArrowUpRight, CaretDown, FunnelSimple, Microphone, List, Moon, ShieldCheck, SidebarSimple, BookOpen, Books, CaretLeft, ChatCircle, Check, CheckSquare, ClockCounterClockwise, DownloadSimple, FileText, FolderOpen, GearSix, MagnifyingGlass, PencilSimple, Planet, Plus, Stack, Sun, TreeStructure, UploadSimple, X } from '@phosphor-icons/react'
+import { ArrowUp, ArrowUpRight, CaretDown, FunnelSimple, Microphone, List, Moon, ShieldCheck, SidebarSimple, BookOpen, Books, CaretLeft, ChatCircle, Check, CheckSquare, ClockCounterClockwise, DownloadSimple, FileText, FolderOpen, GearSix, MagnifyingGlass, PencilSimple, Planet, Plus, Stack, Sun, TreeStructure, UploadSimple, Users, X } from '@phosphor-icons/react'
 import { useApp, useWorld } from '../app/store.ts'
 import { useChat } from '../ai/chat/session.ts'
 import { trapKeys } from '../hud/DurabilityKit.tsx'
@@ -45,6 +45,7 @@ import './workspace-polish.css'
 
 const Bookshelf = lazy(() => import('../bookshelf/Bookshelf.tsx'))
 const WritingStudio = lazy(() => import('../writing/WritingStudio.tsx'))
+const PeopleWorkspace = lazy(() => import('../crm/PeopleWorkspace.tsx'))
 
 type Source = ReturnType<typeof useKnowledge.getState>['sources'][number]
 type SearchHit = NonNullable<Awaited<ReturnType<typeof readKnowledgePassage>>>
@@ -66,6 +67,7 @@ const SECTIONS: { id: WorkspaceSection; label: string; icon: typeof Sun; descrip
   { id: 'search', label: 'Search & ask', icon: MagnifyingGlass, description: 'Find the passage. Follow the evidence.' },
   { id: 'library', label: 'Library', icon: BookOpen, description: 'Your original words and sources, in context.' },
   { id: 'bookshelf', label: 'Bookshelf', icon: Books, description: 'Books, articles, recommendations, and your reading life.' },
+  { id: 'people', label: 'People', icon: Users, description: 'People, conversations and the context that connects them.' },
   { id: 'graph', label: 'Knowledge graph', icon: TreeStructure, description: 'Follow a connection. Build your own understanding.' },
   { id: 'topics', label: 'Projects & topics', icon: FolderOpen, description: 'Resume an investigation and follow the subjects that connect your record.' },
   { id: 'knowledge', label: 'Knowledge pages', icon: FileText, description: 'Review and maintain the understanding built from your sources.' },
@@ -224,6 +226,7 @@ export default function Workbench({ section, hash }: { section: WorkspaceSection
           {panel('search', <Search />, true)}
           {panel('library', <Library hash={hash} />, true)}
           {panel('bookshelf', <Suspense fallback={<div className="knowledge-empty" role="status">Opening your bookshelf…</div>}><Bookshelf hash={hash} /></Suspense>, true)}
+          {panel('people', <Suspense fallback={<div className="knowledge-empty" role="status">Opening your people workspace…</div>}><PeopleWorkspace hash={hash} /></Suspense>, true)}
           {panel('graph', <KnowledgeGraph initialSourceId={new URLSearchParams(hash.split('?')[1] ?? '').get('source') ?? undefined} initialTopicId={new URLSearchParams(hash.split('?')[1] ?? '').get('topic') ?? undefined} />, true)}
           {panel('topics', new URLSearchParams(hash.split('?')[1] ?? '').get('view') === 'projects' ? <Topics /> : <TopicHome hash={hash} />)}
           {panel('knowledge', <KnowledgePages hash={hash} />)}

@@ -1,0 +1,30 @@
+// @vitest-environment jsdom
+import { act } from 'react'
+import { createRoot, type Root } from 'react-dom/client'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { CalendarPicker, CrmConnections } from '../../src/crm/CrmConnections.tsx'
+import type { CrmCalendarEvent } from '../../src/crm/connectionTypes.ts'
+;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+let host: HTMLDivElement, root: Root
+const fetcher = vi.fn<typeof fetch>(), response = (value: unknown) => new Response(JSON.stringify(value), { headers: { 'content-type': 'application/json' } }), status = { available: true, accounts: [], driveClientAvailable: false, aiRequired: false, happenstance: { configured: false, automaticResearch: false, mcpUrl: 'https://happenstance.ai/mcp' } }
+const button = (text: string) => { const found = [...host.querySelectorAll('button')].find((entry) => entry.textContent?.trim() === text); if (!found) throw new Error('Missing button: ' + text); return found }
+beforeEach(() => { host = document.createElement('div'); document.body.append(host); root = createRoot(host); fetcher.mockReset(); vi.stubGlobal('fetch', fetcher) })
+afterEach(async () => { await act(async () => root.unmount()); host.remove(); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers() })
+
+it('starts honestly disconnected and leaves metadata, optional sending and paid research off until selected', async () => {
+  fetcher.mockResolvedValue(response(status)); await act(async () => root.render(<CrmConnections />)); expect(host.textContent).toContain('Cloud AI is off'); await act(async () => button('Add account').click()); const checkboxes = [...host.querySelectorAll<HTMLInputElement>('input[type=checkbox]')]; expect(checkboxes).toHaveLength(5); expect(checkboxes.map((input) => input.checked)).toEqual([true, true, false, false, false]); expect(host.textContent).toContain('Restricted Google permission'); expect(fetcher).toHaveBeenCalledTimes(1); expect(String(fetcher.mock.calls[0][0])).toBe('/api/crm/connections')
+})
+it('does not imply existing Codex connections are live app grants and disables mutations outside the local workspace', async () => {
+  fetcher.mockResolvedValue(response(status)); await act(async () => root.render(<CrmConnections local={false} />)); expect(host.textContent).toContain('Connections are available in your local workspace'); expect(button('Add account').disabled).toBe(true); expect(host.querySelector<HTMLInputElement>('input[type=file]')?.disabled).toBe(true); expect(fetcher).toHaveBeenCalledTimes(1)
+})
+it('keeps the newer disconnected status if an earlier status request completes late', async () => {
+  let release!: (value: Response) => void; fetcher.mockImplementationOnce(() => new Promise((resolve) => { release = resolve })).mockResolvedValue(response(status)); await act(async () => root.render(<CrmConnections />)); await act(async () => button('Refresh status').click()); await act(async () => release(response({ ...status, accounts: [{ id: 'stale', label: 'Old connection', email: null, configured: true, connected: true, capabilities: ['calendar'], scopes: [], connectedAt: 1, lastSyncAt: null }] }))); expect(host.textContent).not.toContain('Old connection')
+})
+
+it('shows saved Gmail progress and enables explicit resume only after the quota cooldown without retrying automatically', async () => {
+  vi.useFakeTimers(); const retryAt = Date.now() + 2000; fetcher.mockResolvedValue(response({ ...status, accounts: [{ id: 'gmail-account', label: 'Personal', email: null, configured: true, connected: true, capabilities: ['gmail'], scopes: [], connectedAt: 1, lastSyncAt: null, gmailSync: { pendingMessages: 3, hasMore: true, retryAt } }] })); await act(async () => root.render(<CrmConnections />)); const paused = [...host.querySelectorAll('button')].find((entry) => entry.textContent?.startsWith('Resume after'))!; expect(paused.disabled).toBe(true); expect(host.textContent).toContain('3 saved message IDs remain'); await act(async () => vi.advanceTimersByTimeAsync(2100)); expect(button('Continue email discovery').disabled).toBe(false); expect(fetcher).toHaveBeenCalledTimes(1)
+})
+it('selects real calendar events only on user action and preserves declined/unconfirmed context', async () => {
+  const event = { id: 'event1', accountId: 'one', calendarId: 'calendar1', iCalUID: 'stable', title: 'Selected meeting', body: '', status: 'confirmed', startAt: Date.parse('2026-11-23T15:00:00Z'), endAt: Date.parse('2026-11-23T16:00:00Z'), timezone: 'America/New_York', allDay: false, htmlLink: '', attendees: [{ email: 'ada@example.test', name: 'Ada', responseStatus: 'accepted', self: false, organizer: false }, { email: 'owner@example.test', name: '', responseStatus: 'declined', self: true, organizer: false }], organizer: { name: 'Ada', email: 'ada@example.test' }, updated: '', originalStartTime: '', raw: {} } satisfies CrmCalendarEvent, onSelect = vi.fn<(event: CrmCalendarEvent) => Promise<void>>().mockResolvedValue(undefined)
+  fetcher.mockImplementation(async (url) => String(url).endsWith('google/calendars') ? response({ calendars: [{ id: 'calendar1', summary: 'My calendar', primary: true, selected: true, timeZone: 'UTC', accessRole: 'owner' }] }) : String(url).endsWith('google/events') ? response({ events: [event], nextPageToken: null }) : response({ ...status, accounts: [{ id: 'one', label: 'Personal', connected: true, capabilities: ['calendar'] }] })); await act(async () => root.render(<CalendarPicker personId="person1" personEmails={['ada@example.test']} onSelect={onSelect} />)); expect(onSelect).not.toHaveBeenCalled(); await act(async () => button('Find events').click()); expect(host.textContent).toContain('You declined · attendance unconfirmed'); await act(async () => button('Add interaction').click()); expect(onSelect).toHaveBeenCalledWith(event); expect(host.textContent).toContain('Attendance remains unconfirmed'); expect(fetcher.mock.calls.some(([url]) => String(url).includes('mail/send'))).toBe(false)
+})

@@ -1,5 +1,5 @@
 import { Inflate, Zip, ZipPassThrough } from 'fflate'
-import { PORTABLE_WORLD_KEYS, readWorldSnapshot, referencedWorldAssets, voiceOriginalReferences, writingOriginalReferences, bookshelfOriginalReferences } from './worldSnapshot.ts'
+import { PORTABLE_WORLD_KEYS, readWorldSnapshot, referencedWorldAssets, voiceOriginalReferences, writingOriginalReferences, bookshelfOriginalReferences, crmOriginalReferences } from './worldSnapshot.ts'
 import { ARCHETYPES, SCHEMA_VERSION } from '../domain/types.ts'
 import type { AssetMeta, InteractionEvent, InteractionKind, NodeRecord, WorldSettings } from '../domain/types.ts'
 import type { WorldStore } from './WorldStore.ts'
@@ -326,6 +326,7 @@ export async function exportArchive(store: WorldStore, sink: ArchiveSink, opts: 
   const voiceHashes = new Map(voiceOriginalReferences(worldKv).map((voice) => [voice.id, voice.hash]))
   for (const id of writingOriginalReferences(worldKv)) voiceHashes.set(id, id.slice('writing-'.length))
   for (const id of bookshelfOriginalReferences(worldKv)) voiceHashes.set(id, id.split('-').at(-1)!)
+  for (const id of crmOriginalReferences(worldKv)) voiceHashes.set(id, id.split('-').at(-1)!)
   const knownAssets = new Set(metas.map((meta) => meta.id))
   for (const id of requiredAssets) if (!knownAssets.has(id)) throw new ArchiveError('corrupt', `Referenced original ${id} is missing from the asset index. The backup was not completed.`)
   const trash = nodes.filter((n) => n.deletedAt !== null).length
@@ -905,6 +906,7 @@ export async function readArchive(file: Blob, onProgress?: (p: ArchiveProgress) 
   for (const voice of voiceOriginalReferences(kv)) if (await hashBytes(await assetData(voice.id)) !== voice.hash) throw new ArchiveError('hash-mismatch', 'A voice original differs from its retained SHA-256 receipt. Nothing was restored.')
   for (const id of writingOriginalReferences(kv)) if (await hashBytes(await assetData(id)) !== id.slice('writing-'.length)) throw new ArchiveError('hash-mismatch', 'A writing original differs from its retained SHA-256 reference. Nothing was restored.')
   for (const id of bookshelfOriginalReferences(kv)) if (await hashBytes(await assetData(id)) !== id.split('-').at(-1)) throw new ArchiveError('hash-mismatch', 'A bookshelf original differs from its SHA-256 reference. Nothing was restored.')
+  for (const id of crmOriginalReferences(kv)) if (await hashBytes(await assetData(id)) !== id.split('-').at(-1)) throw new ArchiveError('hash-mismatch', 'A CRM original differs from its SHA-256 reference. Nothing was restored.')
 
   return {
     manifest,

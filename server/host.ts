@@ -6,6 +6,8 @@ import { ChangeBus } from './changes.ts'
 import { openWorldDb, EMBEDDING_DIM, type WorldDb } from './worldDb.ts'
 import { FolderCapture, handleFolderRequest } from './folderCapture.ts'
 import { authenticateMemoryClient, memoryTokenWorld } from './memoryAccess.ts'
+import { createCrmHttp } from './crmHttp.ts'
+import { CrmConnections, handleCrmConnectionsRequest } from './crmConnections.ts'
 import { createMemoryHttp, memoryOriginAllowed, sendMemoryJson } from './memoryHttp.ts'
 import { createQmdHttp } from './qmdHttp.ts'
 import { TelegramCapture, handleTelegramRequest, type TelegramOptions } from './telegramCapture.ts'
@@ -55,6 +57,8 @@ interface World {
   telegram: TelegramCapture
   articles: ArticleCapture
   drive: GoogleDriveConnection
+  crm: ReturnType<typeof createCrmHttp>
+  crmConnections: CrmConnections
 }
 
 type Handler = (req: IncomingMessage, res: ServerResponse, next?: () => void) => void
@@ -113,7 +117,8 @@ export function createHost(opts: HostOptions): Host {
     if (!w) {
       const db = openWorldDb(join(dir, 'world.sqlite'))
       const bus = new ChangeBus()
-      w = { db, bus, drive: new GoogleDriveConnection({ db, blobDir: join(dir, 'blobs'), bus, now: opts.now }), articles: new ArticleCapture({ db, blobDir: join(dir, 'blobs'), bus, now: opts.now }), handler: createApiHandler({ db, blobDir: join(dir, 'blobs'), refine: opts.refine, chat: opts.chat, bus, now: opts.now }), memory: createMemoryHttp(db, key, opts.now, { bus, directory: dir }), qmd: createQmdHttp({ db, directory: join(dir, 'qmd') }), telegram: new TelegramCapture({ db, blobDir: join(dir, 'blobs'), bus, now: opts.now, ...(key === 'local' ? opts.telegram : {}), transcribe: transcribeLocalMedia }) }
+      const crm = createCrmHttp(db, { store: db.crm, bus, now: opts.now, worldId: key, blobDir: join(dir, 'blobs') })
+      w = { db, bus, crm, crmConnections: new CrmConnections({ db, blobDir: join(dir, 'blobs'), stageBatch: (batch) => db.crm.stageBatch(batch) }), drive: new GoogleDriveConnection({ db, blobDir: join(dir, 'blobs'), bus, now: opts.now }), articles: new ArticleCapture({ db, blobDir: join(dir, 'blobs'), bus, now: opts.now, saveContactPhoto: input => crm.photos!.saveCapturedProfile(input), saveFolkPhotos: input => crm.photos!.saveFolkPhotos(input), saveProfileData: input => crm.capture!.stage(input, { authorize: input.current, captureMethod: 'browser-extension' }) }), handler: createApiHandler({ db, blobDir: join(dir, 'blobs'), refine: opts.refine, chat: opts.chat, bus, now: opts.now }), memory: createMemoryHttp(db, key, opts.now, { bus, directory: dir }), qmd: createQmdHttp({ db, directory: join(dir, 'qmd') }), telegram: new TelegramCapture({ db, blobDir: join(dir, 'blobs'), bus, now: opts.now, ...(key === 'local' ? opts.telegram : {}), transcribe: transcribeLocalMedia }) }
       worlds.set(key, w)
     }
     return w
@@ -213,6 +218,8 @@ export function createHost(opts: HostOptions): Host {
       if (seg[0] === 'connections' && seg[1] === 'assistant') return worldFor(user).memory.connections(req, res)
       if (seg[0] === 'connections' && seg[1] === 'desktop') { if (accounts) return sendJson(res, 403, { error: 'Desktop downloads are available from the local workspace.' }); return handleDesktopConnectionRequest(req, res) }
       if (seg[0] === 'connections' && seg[1] === 'drive') { if (accounts) return sendJson(res, 403, { error: 'Google Drive is available only in the local workspace.' }); return handleGoogleDriveRequest(worldFor(user).drive, req, res) }
+      if (seg[0] === 'crm' && seg[1] === 'connections') { if (accounts) return sendJson(res, 403, { error: 'People connectors are available only in the local workspace.' }); return handleCrmConnectionsRequest(worldFor(user).crmConnections, req, res) }
+      if (seg[0] === 'crm') { await worldFor(user).crm.handle(req, res); return }
       if (seg[0] === 'qmd') return worldFor(user).qmd.handle(req, res)
       if (seg[0] === 'capture' && seg[1] === 'telegram') return handleTelegramRequest(worldFor(user).telegram, req, res)
       if (seg[0] === 'memory' && seg[1] === 'mirror') return worldFor(user).memory.mirror(req, res)

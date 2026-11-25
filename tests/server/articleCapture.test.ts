@@ -34,6 +34,22 @@ async function fixture(mode: 'service' | 'host' | 'accounts' = 'service') {
 }
 
 describe('paired browser article capture over HTTP', () => {
+  it('retains profile references in originals and versions even when the visible text is unchanged', async () => {
+    const f = await fixture(), paired = await f.pair()
+    expect((await f.capture(paired.token, { ...article, sequence: 1 })).status).toBe(200)
+    const profileImages = [{ url: 'https://images.example/person.jpg', isProfile: true, label: 'Profile photo' }], profileLinks = [{ url: 'https://github.com/example' }]
+    expect((await f.capture(paired.token, { ...article, profileImages, profileLinks, sequence: 2 })).status).toBe(200)
+    const versions = f.corpus().versions
+    expect(versions).toHaveLength(2)
+    expect(versions[1].text).toBe(versions[0].text)
+    expect(versions[1].metadata?.profileImages).toMatchObject([{ url: profileImages[0].url, sourceUrl: article.url, isProfile: true }])
+    const original = JSON.parse(readFileSync(join(f.directory, 'blobs', versions[1].originalBlobId), 'utf8'))
+    expect(original.profileLinks).toEqual([{ url: 'https://github.com/example', rel: 'me' }])
+    expect((await f.capture(paired.token, { url: article.url, sequence: 3, profileLinks: [{ url: 'https://x.com/example' }] })).status).toBe(200)
+    expect(f.corpus().versions.at(-1)?.metadata?.profileImages).toEqual(versions[1].metadata?.profileImages)
+    expect((await f.capture(paired.token, { url: article.url, sequence: 4, progress: { fraction: .5, position: 120, activeMs: 5000, following: true } })).status).toBe(200)
+    expect(f.corpus().versions).toHaveLength(3)
+  })
   it('mounts through the actual host and downloads only the static companion files behind local management checks', async () => {
     const f = await fixture('host'), paired = await f.pair()
     expect((await f.capture(paired.token, { ...article, sequence: 1 })).status).toBe(200)
@@ -41,7 +57,8 @@ describe('paired browser article capture over HTTP', () => {
     const response = await fetch(`${f.base}/download`, { headers: f.management })
     expect(response.status).toBe(200); expect(response.headers.get('content-disposition')).toContain('WorldviewReader.zip')
     const files = unzipSync(new Uint8Array(await response.arrayBuffer()))
-    expect(Object.keys(files).sort()).toEqual(['README.md', 'background.js', 'content.js', 'extract.js', 'manifest.json', 'popup.css', 'popup.html', 'popup.js'].map((name) => `WorldviewReader/${name}`).sort())
+    expect(Object.keys(files).sort()).toEqual(['README.md', 'background.js', 'content.js', 'folk-content.js', 'extract.js', 'manifest.json', 'popup.css', 'popup.html', 'popup.js'].map((name) => `WorldviewReader/${name}`).sort())
+    expect(strFromU8(files['WorldviewReader/folk-content.js'])).toContain('MutationObserver')
     expect(JSON.parse(strFromU8(files['WorldviewReader/manifest.json'])).permissions).toEqual(['activeTab', 'scripting', 'storage'])
     expect(Object.keys(files).some((path) => /token|\.env|sqlite|blobs/.test(path))).toBe(false)
     const hosted = await fixture('accounts')

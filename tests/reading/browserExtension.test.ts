@@ -18,9 +18,9 @@ it('limits permissions to explicit tabs plus local service access and queues off
   const extensionId = 'a'.repeat(32), popup = `chrome-extension://${extensionId}/popup.html`
   const chrome = { storage: { local, session }, runtime: { id: extensionId, getURL: (path: string) => `chrome-extension://${extensionId}/${path}`, onMessage: { addListener: (callback: (...args: unknown[]) => unknown) => { listeners.message = callback } } }, action: { setBadgeText: vi.fn(async () => {}), setBadgeBackgroundColor: vi.fn(async () => {}) }, tabs: { get: async () => ({ active: true, url: article.url }), sendMessage: vi.fn(async () => ({ ok: true })), onRemoved: { addListener: (callback: (...args: unknown[]) => unknown) => { listeners.removed = callback } }, onUpdated: { addListener: (callback: (...args: unknown[]) => unknown) => { listeners.updated = callback } } }, scripting: { executeScript: vi.fn(async () => [{ result: article }]) } }
   const fetcher = vi.fn<typeof fetch>(async () => { throw new Error('Local service is offline') })
-  const script = readFileSync('extensions/worldview-reader/background.js', 'utf8').replace("import { extractArticle } from './extract.js'", 'const extractArticle = () => {}')
+  const script = readFileSync('extensions/worldview-reader/background.js', 'utf8').replace(/^import .*$/m, 'const extractArticle = () => {}; const extractFolkPhotos = () => {}; const extractProfile = () => {}')
   expect(script).not.toMatch(/^await /m)
-  new Script(script).runInContext(createContext({ chrome, fetch: fetcher, AbortSignal, crypto, URL, structuredClone, console }))
+  new Script(script).runInContext(createContext({ chrome, fetch: fetcher, AbortSignal, crypto, URL, TextEncoder, structuredClone, console }))
   const send = (message: Record<string, unknown>, sender: Record<string, unknown> = { id: extensionId, url: popup }) => new Promise<Record<string, unknown>>((resolve) => listeners.message(message, sender, resolve))
   expect(local.setAccessLevel).toHaveBeenCalledWith({ accessLevel: 'TRUSTED_CONTEXTS' })
   expect(await send({ type: 'reader-pair', token })).toMatchObject({ ok: true })
@@ -109,8 +109,8 @@ it('claims an approved connection without exposing its handoff secret or bearer 
     expect(options?.headers).toMatchObject({ authorization: `Bearer ${secret}` })
     expect(options?.method).toBe('POST'); expect(options?.headers).toMatchObject({ 'content-type': 'application/json' }); const body = JSON.parse(String(options?.body)); return body.action === 'acknowledge' ? Response.json({ connected: true }) : Response.json(approved ? { connected: true, token } : { connected: false })
   })
-  const script = readFileSync('extensions/worldview-reader/background.js', 'utf8').replace("import { extractArticle } from './extract.js'", 'const extractArticle = () => {}')
-  new Script(script).runInContext(createContext({ chrome, fetch: fetcher, AbortSignal, crypto, URL, structuredClone, console }))
+  const script = readFileSync('extensions/worldview-reader/background.js', 'utf8').replace(/^import .*$/m, 'const extractArticle = () => {}; const extractFolkPhotos = () => {}; const extractProfile = () => {}')
+  new Script(script).runInContext(createContext({ chrome, fetch: fetcher, AbortSignal, crypto, URL, TextEncoder, structuredClone, console }))
   const send = (message: Record<string, unknown>, sender = { id: extensionId, url: popup }) => new Promise<Record<string, unknown>>((resolve) => listener(message, sender, resolve))
   expect(await send({ type: 'reader-connect' })).toMatchObject({ ok: true, openUrl: 'http://127.0.0.1:5173/#/sources?connection=browser' })
   expect(local.values.pairing).toBeUndefined()

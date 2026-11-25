@@ -1,8 +1,9 @@
 import { getBookshelfOriginalReferences, validateShelfBook } from '../bookshelf/model.ts'
+import { crmAssetReferences } from '../crm/model.ts'
 import type { WorldSnapshot, WorldStore } from './WorldStore.ts'
 
 /** Device handles, credentials and recovery markers never enter a portable snapshot. */
-export const PORTABLE_WORLD_KEYS: readonly string[] = ['chat.v1', 'overlay.landauerPaid', 'ai.usage', 'knowledge.v1', 'knowledge.receipts.v1', 'workspace.v1', 'collections.v1', 'artifacts.v1', 'voiceInbox.v1', 'reading.v1', 'writing.v1', 'writingHistory.v1', 'bookshelves.v1', 'assistantEdits.v1']
+export const PORTABLE_WORLD_KEYS: readonly string[] = ['chat.v1', 'overlay.landauerPaid', 'ai.usage', 'knowledge.v1', 'knowledge.receipts.v1', 'workspace.v1', 'collections.v1', 'artifacts.v1', 'voiceInbox.v1', 'reading.v1', 'writing.v1', 'writingHistory.v1', 'bookshelves.v1', 'assistantEdits.v1', 'crm.v1']
 
 export async function readWorldSnapshot(store: WorldStore, keys: readonly string[] = PORTABLE_WORLD_KEYS): Promise<WorldSnapshot> {
   if (keys.some((key) => !PORTABLE_WORLD_KEYS.includes(key))) throw new Error('Only portable world state can be included in a backup snapshot.')
@@ -30,6 +31,7 @@ export function referencedWorldAssets(snapshot: WorldSnapshot): Set<string> {
   }
   for (const id of writingOriginalReferences(snapshot.kv)) ids.add(id)
   for (const id of bookshelfOriginalReferences(snapshot.kv)) ids.add(id)
+  for (const id of crmOriginalReferences(snapshot.kv)) ids.add(id)
   return ids
 }
 
@@ -98,3 +100,6 @@ export function bookshelfOriginalReferences(kv: Record<string, unknown>): Set<st
   }
   return ids
 }
+
+/** CRM originals include archived comments and merge history; account credentials never enter crm.v1. */
+export function crmOriginalReferences(kv: Record<string, unknown>): Set<string> { return crmAssetReferences(kv['crm.v1']) }

@@ -34,6 +34,7 @@ import { combineSyncs, createServerSync } from './serverSync.ts'
 import { assertRevisionMutation, WorldStateConflictError } from './worldState.ts'
 import { KNOWLEDGE_KEY, type KnowledgeCommitOptions, type KnowledgeDelta } from '../knowledge/storage.ts'
 import type { KnowledgeSnapshot } from '../knowledge/types.ts'
+import { crmAssetReferences } from '../crm/model.ts'
 import { DirectoryBundleError, exportDirectoryBundle, restoreDirectoryBundle } from './directoryBundle.ts'
 import type { BundleReader, BundleWriter, DirectoryBundleManifest, DirectoryBundleOptions, DirectoryRestoreOptions, DirectoryRestoreResult } from './directoryBundle.ts'
 
@@ -133,7 +134,8 @@ function emit(change: StoreChange, origin: 'local' | 'remote') {
       console.warn('[repo] listener failed', e)
     }
   }
-  if (origin === 'local' && change.type !== 'settings' && change.type !== 'wipe' && change.type !== 'import') {
+  const serviceCrmEdit = origin === 'remote' && change.type === 'kv' && change.keys.includes('crm.v1') && state?.raw.info.kind === 'sqlite' && useRepoStatus.getState().writer
+  if (serviceCrmEdit || origin === 'local' && change.type !== 'settings' && change.type !== 'wipe' && change.type !== 'import') {
     state?.autoBackup?.notifyChange()
   }
 }
@@ -901,7 +903,8 @@ async function purge(records: readonly NodeRecord[]): Promise<string[]> {
     await rehydrate().catch(() => {})
     throw e
   }
-  for (const b of blobIds) await store.deleteBlob(b).catch((e) => console.warn('[repo] blob delete failed', b, e))
+  const crmRetained = crmAssetReferences(await store.getKv('crm.v1'))
+  for (const b of blobIds) if (!crmRetained.has(b)) await store.deleteBlob(b).catch((e) => console.warn('[repo] blob delete failed', b, e))
 
   const w = useWorld.getState()
   for (const r of relinked) w.upsertLocal(r)

@@ -1,0 +1,9 @@
+.crm-social-links{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
+.crm-social-links>a{display:flex;align-items:center;gap:10px;min-width:0;padding:10px 11px;border:1px solid var(--kb-line,#dedcd5);border-radius:8px;background:var(--kb-panel,#f4f3ef);color:inherit;text-decoration:none;transition:transform .16s ease,background .16s ease,box-shadow .16s ease}
+.crm-social-links>a:hover{transform:translateY(-1px);background:var(--kb-hover,#efeee8);box-shadow:0 3px 8px #00000008;text-decoration:none}
+.crm-social-links>a>svg{flex-shrink:0;color:var(--social-color,var(--kb-muted,#7c7b73))}.crm-social-links>a>svg:last-child{margin-left:auto;color:var(--kb-muted,#7c7b73)}
+.crm-social-links>a>span{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.crm-social-links strong{display:block;font-size:10px;line-height:1.3;font-weight:550}.crm-social-links small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:8px;margin-top:3px}
+.crm-social-links.is-compact{display:flex;flex-wrap:wrap;gap:6px}.crm-social-links.is-compact>a{gap:6px;padding:6px 8px;border-radius:6px;background:transparent;font-size:9px}.crm-social-links.is-compact>a:hover{background:var(--kb-hover,#efeee8)}
+.crm-social-links [data-platform=linkedin]{--social-color:#286697}.crm-social-links [data-platform=instagram]{--social-color:#a34d75}.crm-social-links [data-platform=youtube]{--social-color:#b95347}.crm-social-links [data-platform=facebook]{--social-color:#3c72ad}.crm-social-links [data-platform=bluesky]{--social-color:#3f82b6}.crm-social-links [data-platform=pinterest]{--social-color:#ae554d}.crm-social-links [data-platform=mastodon]{--social-color:#76609b}
+@media(prefers-reduced-motion:reduce){.crm-social-links>a{transition:none}.crm-social-links>a:hover{transform:none}}

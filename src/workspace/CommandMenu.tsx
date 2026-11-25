@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react'
-import { ArrowDown, ArrowElbowDownLeft, ArrowUp, BookOpen, Books, CheckSquare, FileText, FolderOpen, MagnifyingGlass, PencilSimple, Planet, Plus, Stack, Sun, TreeStructure, X } from '@phosphor-icons/react'
+import { ArrowDown, ArrowElbowDownLeft, ArrowUp, BookOpen, Books, CheckSquare, FileText, FolderOpen, MagnifyingGlass, PencilSimple, Planet, Plus, Stack, Sun, TreeStructure, Users, X } from '@phosphor-icons/react'
 import { useApp, useWorld } from '../app/store.ts'
 import { useAuth } from '../data/auth.ts'
 import { useKnowledge } from '../knowledge/index.ts'
@@ -43,6 +43,7 @@ const commands: MenuEntry[] = [
   { id: 'write', title: 'Writing studio', detail: 'Documents, formatting and your own design', icon: PencilSimple, href: '#/write', keywords: 'write editor essay newsletter journal poem rich text' },
   { id: 'search', title: 'Search & ask', detail: 'Find words and passages', icon: MagnifyingGlass, href: '#/search', keywords: 'find evidence question' },
   { id: 'library', title: 'Library', detail: 'Read your original sources', icon: BookOpen, href: '#/library', keywords: 'records notes documents files' },
+  { id: 'people', title: 'People', detail: 'Contacts, groups, follow-ups and your network', icon: Users, href: '#/people', keywords: 'folk crm contacts calendar comments network relationships' },
   { id: 'graph', title: 'Knowledge graph', detail: 'Connect sources, ideas and topics', icon: TreeStructure, href: '#/graph', keywords: 'network connections links topics map' },
   { id: 'topics', title: 'Projects & topics', detail: 'Follow a subject or investigation', icon: FolderOpen, href: '#/topics', keywords: 'subjects investigations' },
   { id: 'knowledge', title: 'Knowledge pages', detail: 'Your connected understanding', icon: FileText, href: '#/knowledge', keywords: 'wiki pages' },

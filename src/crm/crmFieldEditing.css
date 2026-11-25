@@ -1,0 +1,47 @@
+.crm-field-manager { color: var(--kb-text); font: 13px/1.6 var(--font-sans, sans-serif); }
+.crm-field-manager-intro { color: var(--kb-muted); font-size: 12px; max-width: 670px; }
+.crm-field-manager-layout { display: grid; grid-template-columns: minmax(150px, 190px) minmax(0, 1fr); border-top: 1px solid var(--kb-line); margin-top: 20px; }
+.crm-field-manager-layout > aside { padding: 18px 16px 0 0; border-right: 1px solid var(--kb-line); }
+.crm-field-manager-layout > div { padding: 20px 0 0 24px; min-width: 0; }
+.crm-field-manager-layout > aside > .knowledge-button { width: 100%; margin-bottom: 12px; }
+.crm-field-list-item { display: grid; text-align: left; gap: 3px; width: 100%; padding: 11px 10px; border: 0; border-radius: 5px; margin-bottom: 3px; background: none; color: var(--kb-text); font: inherit; cursor: pointer; }
+.crm-field-list-item:hover, .crm-field-list-item.is-active { background: var(--kb-hover); }
+.crm-field-list-item strong { font-size: 12px; font-weight: 500; overflow-wrap: anywhere; }
+.crm-field-list-item small { color: var(--kb-muted); font-size: 10px; }
+.crm-field-manager label { display: grid; gap: 6px; color: var(--kb-muted); font-size: 11px; margin: 0 0 14px; }
+.crm-field-manager input:not([type=color]), .crm-field-manager textarea, .crm-field-manager select { min-width: 0; width: 100%; padding: 9px 11px; border: 1px solid var(--kb-line); border-radius: 6px; background: var(--kb-panel); color: var(--kb-text); font: 13px/1.6 var(--font-sans, sans-serif); }
+.crm-field-manager textarea { font-family: var(--font-mono, monospace); font-size: 11px; }
+.crm-field-manager :is(input, textarea, select, button):focus-visible { outline: 2px solid var(--kb-accent); outline-offset: 2px; }
+.crm-field-title-row, .crm-field-options > header, .crm-field-save { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.crm-field-title-row > span, .crm-field-save > span { color: var(--kb-muted); font-size: 10px; }
+.crm-field-title-row button { display: flex; align-items: center; gap: 5px; }
+.crm-field-options { margin: 22px 0; }
+.crm-field-options > header { font-size: 12px; }
+.crm-field-options p, .crm-field-manager details p { color: var(--kb-muted); font-size: 10px; }
+.crm-field-option-row { display: grid; grid-template-columns: 28px minmax(0, 1fr) 45px 24px 24px 24px; align-items: center; gap: 6px; margin-bottom: 8px; }
+.crm-field-option-row input[type=color] { width: 27px; height: 27px; padding: 1px; border: 0; background: none; cursor: pointer; }
+.crm-field-option-row > span { font-size: 9px; color: var(--kb-muted); text-align: right; }
+.crm-field-manager details { margin-block: 16px; }
+.crm-field-manager summary { font-size: 11px; cursor: pointer; margin-bottom: 10px; }
+.crm-field-manager pre { overflow: auto; max-height: 220px; font-size: 10px; background: var(--kb-panel); padding: 10px; border-radius: 5px; }
+.crm-field-save { padding-top: 17px; border-top: 1px solid var(--kb-line); margin-top: 24px; }
+.crm-field-empty { min-height: 300px; display: grid; align-content: center; justify-items: center; text-align: center; color: var(--kb-muted); }
+.crm-field-empty strong { color: var(--kb-text); font-size: 15px; font-weight: 500; }
+.crm-field-empty p { max-width: 260px; font-size: 12px; }
+.crm-field-notice { border-left: 2px solid var(--kb-accent); padding: 10px 13px; background: var(--kb-panel); font-size: 12px; }
+.crm-inline-value { width: 100%; min-height: 29px; border: 1px solid transparent; border-radius: 4px; padding: 4px 6px; background: none; color: inherit; font: inherit; text-align: left; cursor: text; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.crm-inline-value:hover:enabled { border-color: var(--kb-line); background: var(--kb-hover); }
+.crm-inline-value:disabled { cursor: default; opacity: 1; }
+.crm-inline-value.is-empty { color: var(--kb-muted); }
+.crm-inline-editor { position: fixed; z-index: 250; width: min(340px, calc(100vw - 24px)); max-height: min(420px, calc(100dvh - 24px)); overflow: auto; background: var(--kb-bg, var(--kb-panel)); color: var(--kb-text); border: 1px solid var(--kb-line); border-radius: 8px; box-shadow: 0 10px 45px rgb(0 0 0 / .2); padding: 15px; font: 12px/1.6 var(--font-sans, sans-serif); }
+.crm-inline-editor > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.crm-inline-editor header > strong { font-weight: 500; font-size: 12px; }
+.crm-inline-editor input:not([type=checkbox]), .crm-inline-editor textarea, .crm-inline-editor select { width: 100%; min-width: 0; border: 1px solid var(--kb-line); border-radius: 5px; background: var(--kb-panel); color: var(--kb-text); padding: 8px 9px; font: inherit; }
+.crm-inline-editor textarea { min-height: 95px; resize: vertical; }
+.crm-inline-editor :is(input, textarea, select, button):focus-visible { outline: 2px solid var(--kb-accent); outline-offset: 2px; }
+.crm-inline-editor > footer { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 13px; }
+.crm-inline-editor small { display: block; margin-top: 7px; font-size: 10px; color: var(--kb-muted); }
+.crm-inline-multiple { display: grid; gap: 9px; }
+.crm-inline-multiple > label { display: flex; align-items: center; gap: 8px; }
+.crm-inline-editor input[type=checkbox] { accent-color: var(--kb-accent); }
+@media (max-width: 600px) { .crm-field-manager-layout { grid-template-columns: minmax(0, 1fr); } .crm-field-manager-layout > aside { display: flex; overflow-x: auto; gap: 7px; padding-right: 0; border-right: 0; } .crm-field-manager-layout > aside > button { min-width: 145px; } .crm-field-manager-layout > div { padding-left: 0; } .crm-field-option-row { grid-template-columns: 24px minmax(0, 1fr) 24px 24px 24px; } .crm-field-option-row > span { display: none; } .crm-field-manager input:not([type=color]), .crm-field-manager select, .crm-field-manager textarea { font-size: 16px; } }

@@ -12,27 +12,40 @@ import type { KnowledgeSnapshot, ParsedSource } from '../src/knowledge/types.ts'
 import { splitPassages } from '../src/knowledge/parsers.ts'
 import { applyReadingHighlight, applyReadingItem, decodeReading } from '../src/reading/model.ts'
 import { articleIdentity } from '../src/reading/articleIdentity.ts'
+import { capturedProfileMetadata } from './articleProfile.ts'
+import { CrmError } from './crmStore.ts'
+import type { CrmProfileCaptureDraft } from '../src/crm/profileCaptureTypes.ts'
+import { assertUniqueFolkPhotoPeople, type CapturedPhotoRequest, type FolkPhotoInput, type SavedContactPhoto, type SavedFolkPhotos } from './crmPhotoCoverage.ts'
 
 const CLIENTS = 'reading.capture.clients.v1', RECEIPTS = 'reading.capture.receipts.v1'
+const PHOTO_RECEIPTS = 'reading.capture.photo.receipts.v1'
+const FOLK_PHOTO_RECEIPTS = 'reading.capture.folk-photo.receipts.v1'
+const PROFILE_DATA_RECEIPTS = 'reading.capture.profile-data.receipts.v1'
 const hash = (value: string | Uint8Array) => createHash('sha256').update(value).digest('hex')
 const extensionOrigin = (value: string) => /^chrome-extension:\/\/[a-p]{32}$/.test(value)
 const emptyCorpus = (): KnowledgeSnapshot => ({ schemaVersion: 1, revision: 0, sources: [], versions: [], passages: [], imports: [], jobs: [], proposals: [] })
 interface Client { id: string; origin: string; name: string; tokenHash: string; createdAt: number; expiresAt: number; revokedAt: number | null }
 interface Clients { schemaVersion: 1; revision: number; clients: Client[] }
 interface ConnectionRequest { id: string; origin: string; name: string; secretHash: string; createdAt: number; expiresAt: number; token?: string; clientId?: string }
-export interface ArticleCaptureResult { sourceId: string; versionId: string; highlightId?: string; sequence: number }
+export interface ArticleCaptureResult { sourceId: string; versionId: string; highlightId?: string; sequence: number; contactPhoto?: SavedContactPhoto }
+export interface FolkPhotoCaptureResult extends SavedFolkPhotos { sequence: number }
+export interface ProfileDataCaptureResult { sequence: number; profileDraft: CrmProfileCaptureDraft; reviewUrl: string }
+interface ProfileDataReceipts { schemaVersion: 1; revision: number; entries: Record<string, { hash: string; result?: ProfileDataCaptureResult }> }
 interface Receipts { schemaVersion: 1; revision: number; clients: Record<string, { sequence: number; hash: string; result: ArticleCaptureResult }> }
+interface PhotoReceipts { schemaVersion: 1; revision: number; entries: Record<string, { hash: string; capture: ArticleCaptureResult; result?: ArticleCaptureResult }> }
+interface FolkPhotoReceipts { schemaVersion: 1; revision: number; entries: Record<string, { hash: string; result?: FolkPhotoCaptureResult }> }
+interface ArticleCaptureOptions { db: WorldDb; blobDir: string; bus?: ChangeBus; now?: () => number; saveContactPhoto?: (input: CapturedPhotoRequest) => Promise<SavedContactPhoto>; saveFolkPhotos?: (input: FolkPhotoInput & { requestId: string; current: () => void }) => Promise<SavedFolkPhotos>; saveProfileData?: (input: Record<string, unknown> & { requestId: string; current: () => void }) => Promise<CrmProfileCaptureDraft> }
 export class ArticleCaptureError extends Error { readonly status: number; constructor(message: string, status = 400) { super(message); this.status = status } }
 function assert(condition: unknown, message: string, status = 400): asserts condition { if (!condition) throw new ArticleCaptureError(message, status) }
 
 /** Per-world pairing credentials never enter portable exports; only their hashes are stored. */
 export class ArticleCapture {
-  private readonly options: { db: WorldDb; blobDir: string; bus?: ChangeBus; now?: () => number }
+  private readonly options: ArticleCaptureOptions
   private queue: Promise<unknown> = Promise.resolve()
   // A five-minute, explicit approval handshake. Pending bearer tokens are memory-only,
   // never written to the world, portable backups, logs, or a webpage response.
   private readonly connections = new Map<string, ConnectionRequest>()
-  constructor(options: { db: WorldDb; blobDir: string; bus?: ChangeBus; now?: () => number }) { this.options = options }
+  constructor(options: ArticleCaptureOptions) { this.options = options }
   private now() { return this.options.now?.() ?? Date.now() }
   private clients(): Clients { return this.options.db.getKv<Clients>(CLIENTS) ?? { schemaVersion: 1, revision: 0, clients: [] } }
   private expireConnections() { for (const [id, request] of this.connections) if (request.expiresAt <= this.now()) this.connections.delete(id) }
@@ -64,7 +77,7 @@ export class ArticleCapture {
     return request.token ? { connected: true, token: request.token, clientId: request.clientId } : { connected: false, expiresAt: request.expiresAt }
   }
   async download(): Promise<Uint8Array> {
-    const files = ['manifest.json', 'background.js', 'content.js', 'extract.js', 'popup.html', 'popup.js', 'popup.css', 'README.md']
+    const files = ['manifest.json', 'background.js', 'content.js', 'folk-content.js', 'extract.js', 'popup.html', 'popup.js', 'popup.css', 'README.md']
     const entries = await Promise.all(files.map(async (name) => [`WorldviewReader/${name}`, await readFile(resolve('extensions/worldview-reader', name))] as const))
     return zipSync(Object.fromEntries(entries), { level: 6 })
   }
@@ -95,15 +108,88 @@ export class ArticleCapture {
     assert(client, 'This browser pairing is unavailable, expired or revoked.', 401)
     return client
   }
-  capture(input: Record<string, unknown>, origin: string, token: string): Promise<ArticleCaptureResult> {
-    const run = this.queue.catch(() => {}).then(() => this.save(input, origin, token))
+  capture(input: Record<string, unknown> & { saveFolkPhotos: true }, origin: string, token: string): Promise<FolkPhotoCaptureResult>
+  capture(input: Record<string, unknown> & { saveProfileData: true }, origin: string, token: string): Promise<ProfileDataCaptureResult>
+  capture(input: Record<string, unknown>, origin: string, token: string): Promise<ArticleCaptureResult>
+  capture(input: Record<string, unknown>, origin: string, token: string): Promise<ArticleCaptureResult | FolkPhotoCaptureResult | ProfileDataCaptureResult> {
+    const run = this.queue.catch(() => {}).then(async (): Promise<ArticleCaptureResult | FolkPhotoCaptureResult | ProfileDataCaptureResult> => {
+      assert(input.saveFolkPhotos === undefined || typeof input.saveFolkPhotos === 'boolean', 'Choose an explicit Folk photo action.')
+      assert(input.saveFolkSearchPhotos === undefined || typeof input.saveFolkSearchPhotos === 'boolean', 'Choose an explicit matched Search photo action.')
+      assert(input.saveFolkSearchPhotos !== true || input.saveFolkPhotos === true, 'Matched Search photos require the private Folk capture action.')
+      assert(input.saveProfileData === undefined || typeof input.saveProfileData === 'boolean', 'Choose an explicit profile or company capture action.')
+      assert(input.saveProfileData !== true || input.saveFolkPhotos !== true && input.saveContactPhoto !== true && input.intent === undefined && input.progress === undefined && input.selection === undefined && input.remark === undefined, 'Profile data capture is a separate CRM action, without article tracking or photo-only intent.')
+      return input.saveProfileData === true ? this.saveProfileData(input, origin, token) : input.saveFolkPhotos === true ? this.saveFolkPhotos(input, origin, token) : this.saveWithPhoto(input, origin, token)
+    })
     this.queue = run
     return run
+  }
+  private async saveProfileData(input: Record<string, unknown>, origin: string, token: string): Promise<ProfileDataCaptureResult> {
+    const client = this.authenticate(origin, token), db = this.options.db, generation = db.getReplacementGeneration(), sequence = Number(input.sequence)
+    assert(Number.isSafeInteger(sequence) && sequence > 0, 'A positive capture sequence is required.')
+    assert(articleIdentity(String(input.url ?? '')).host.replace(/\.$/, '').toLowerCase() !== 'app.folk.app', 'Folk pages use the dedicated private photo import, not profile data capture.', 403)
+    const current = () => { this.authenticate(origin, token); assert(generation === db.getReplacementGeneration() && !db.getKv('importInProgress') && db.getSettings()?.firstRunComplete, 'The workspace changed before this profile could be captured. Capture it again.', 409) }
+    current(); const key = `${client.id}:${sequence}`, fingerprint = hash(JSON.stringify(input)), prior = db.getKv<ProfileDataReceipts>(PROFILE_DATA_RECEIPTS)?.entries[key]
+    if (prior) { assert(prior.hash === fingerprint, 'This profile capture sequence was already used for different data.', 409); if (prior.result) return prior.result }
+    const writeReceipt = (result?: ProfileDataCaptureResult) => {
+      current(); const before = db.getKv<ProfileDataReceipts>(PROFILE_DATA_RECEIPTS) ?? { schemaVersion: 1, revision: 0, entries: {} }, entries = { ...before.entries, [key]: { hash: fingerprint, ...(result ? { result } : {}) } }
+      const keys = Object.keys(entries); for (const old of keys.slice(0, Math.max(0, keys.length - 2048))) if (old !== key) delete entries[old]
+      assert(db.compareAndSwapKv(PROFILE_DATA_RECEIPTS, { schemaVersion: 1, revision: before.revision + 1, entries }, before.revision), 'The profile capture receipt changed. Retry this retained capture.', 409)
+    }
+    assert(this.options.saveProfileData, 'Profile data capture is unavailable in this workspace.', 503)
+    if (!prior) writeReceipt()
+    try {
+      const profileDraft = await this.options.saveProfileData({ ...input, requestId: `reader-profile:${client.id}:${sequence}`, current }); current()
+      const result: ProfileDataCaptureResult = { sequence, profileDraft, reviewUrl: `http://127.0.0.1:5173/#/people?capture=${encodeURIComponent(profileDraft.id)}` }
+      writeReceipt(result); return result
+    } catch (error) { current(); if (error instanceof ArticleCaptureError) throw error; throw new ArticleCaptureError(`The profile is not confirmed. Retry the retained capture. ${error instanceof Error ? error.message : ''}`.trim(), error instanceof CrmError && [400, 401, 403, 404, 409, 413, 422].includes(error.status) ? error.status : 503) }
+  }
+  private async saveFolkPhotos(input: Record<string, unknown>, origin: string, token: string): Promise<FolkPhotoCaptureResult> {
+    const client = this.authenticate(origin, token), db = this.options.db, generation = db.getReplacementGeneration(), sequence = Number(input.sequence)
+    assert(Number.isSafeInteger(sequence) && sequence > 0, 'A positive capture sequence is required.')
+    assert(input.text === undefined && input.progress === undefined && input.remark === undefined && input.selection === undefined && input.saveContactPhoto !== true && input.intent === undefined, 'Folk photos use a private CRM-only capture, without article text or reading activity.')
+    try { assertUniqueFolkPhotoPeople(input.folkPhotos) } catch (error) { throw new ArticleCaptureError(error instanceof Error ? error.message : 'This Folk batch has ambiguous person IDs.') }
+    const current = () => { this.authenticate(origin, token); assert(generation === db.getReplacementGeneration() && !db.getKv('importInProgress') && db.getSettings()?.firstRunComplete, 'The workspace changed before these Folk photos could be saved. Capture them again.', 409) }
+    current(); const key = `${client.id}:${sequence}`, fingerprint = hash(JSON.stringify(input)), prior = db.getKv<FolkPhotoReceipts>(FOLK_PHOTO_RECEIPTS)?.entries[key]
+    if (prior) { assert(prior.hash === fingerprint, 'This Folk photo sequence was already used for different data.', 409); if (prior.result) return prior.result }
+    const writeReceipt = (result?: FolkPhotoCaptureResult) => {
+      current(); const before = db.getKv<FolkPhotoReceipts>(FOLK_PHOTO_RECEIPTS) ?? { schemaVersion: 1, revision: 0, entries: {} }, entries = { ...before.entries, [key]: { hash: fingerprint, ...(result ? { result } : {}) } }
+      const keys = Object.keys(entries); for (const old of keys.slice(0, Math.max(0, keys.length - 2048))) if (old !== key) delete entries[old]
+      assert(db.compareAndSwapKv(FOLK_PHOTO_RECEIPTS, { schemaVersion: 1, revision: before.revision + 1, entries }, before.revision), 'The private Folk photo receipt changed. Retry this capture.', 409)
+    }
+    assert(this.options.saveFolkPhotos, 'Private Folk photo import is unavailable in this workspace.', 503)
+    if (!prior) writeReceipt()
+    try { const saved = await this.options.saveFolkPhotos({ url: input.url, title: input.title, folkPhotos: input.folkPhotos, folkPhotoRows: input.folkPhotoRows, saveFolkSearchPhotos: input.saveFolkSearchPhotos, requestId: `reader-folk:${client.id}:${sequence}`, current }); current(); const result = { ...saved, sequence }; writeReceipt(result); return result }
+    catch (error) { current(); if (error instanceof ArticleCaptureError) throw error; throw new ArticleCaptureError(`Folk photos are not confirmed. Retry the retained capture. ${error instanceof Error ? error.message : ''}`.trim(), error instanceof CrmError && [400, 401, 403, 404, 409, 413].includes(error.status) ? error.status : 503) }
+  }
+  private async saveWithPhoto(input: Record<string, unknown>, origin: string, token: string): Promise<ArticleCaptureResult> {
+    assert(input.saveContactPhoto === undefined || typeof input.saveContactPhoto === 'boolean', 'Choose an explicit contact photo action.')
+    assert(input.intent === undefined || input.intent === 'contact-photo', 'Choose a supported Reader action.')
+    assert(articleIdentity(String(input.url ?? '')).host.replace(/\.$/, '').toLowerCase() !== 'app.folk.app', 'Folk pages contain private CRM data. Use Import visible Folk photos; article capture is disabled for Folk.', 403)
+    if (input.saveContactPhoto !== true && input.intent !== 'contact-photo') return this.save(input, origin, token)
+    const client = this.authenticate(origin, token), db = this.options.db, generation = db.getReplacementGeneration(), sequence = Number(input.sequence)
+    assert(Number.isSafeInteger(sequence) && sequence > 0, 'A positive capture sequence is required.')
+    const current = () => { this.authenticate(origin, token); assert(generation === db.getReplacementGeneration() && !db.getKv('importInProgress') && db.getSettings()?.firstRunComplete, 'The workspace changed before this contact photo could be saved. Capture it again.', 409) }
+    current(); const key = `${client.id}:${sequence}`, fingerprint = hash(JSON.stringify(input)), prior = db.getKv<PhotoReceipts>(PHOTO_RECEIPTS)?.entries[key]
+    if (prior) { assert(prior.hash === fingerprint, 'This photo capture sequence was already used for different data.', 409); if (prior.result) return prior.result }
+    // Source capture commits independently. A failed image download can retry this same
+    // sequence even after a later ordinary progress event advanced the capture receipt.
+    const captured = prior?.capture ?? await this.save(input, origin, token); current()
+    const writeReceipt = (result?: ArticleCaptureResult) => {
+      current(); const before = db.getKv<PhotoReceipts>(PHOTO_RECEIPTS) ?? { schemaVersion: 1, revision: 0, entries: {} }, entries = { ...before.entries, [key]: { hash: fingerprint, capture: captured, ...(result ? { result } : {}) } }
+      const keys = Object.keys(entries); for (const old of keys.slice(0, Math.max(0, keys.length - 2048))) if (old !== key) delete entries[old]
+      assert(db.compareAndSwapKv(PHOTO_RECEIPTS, { schemaVersion: 1, revision: before.revision + 1, entries }, before.revision), 'The photo receipt changed. Retry the retained capture.', 409)
+    }
+    if (!prior) writeReceipt()
+    let contactPhoto: SavedContactPhoto
+    try { contactPhoto = this.options.saveContactPhoto ? await this.options.saveContactPhoto({ sourceId: captured.sourceId, versionId: captured.versionId, requestId: `reader-photo:${client.id}:${sequence}`, current }) : { status: 'unavailable', message: 'The profile was captured, but contact photo saving is unavailable in this workspace.' }; current() }
+    catch (error) { current(); if (error instanceof ArticleCaptureError) throw error; throw new ArticleCaptureError(`The profile capture is retained. Its photo has not been confirmed; retry this capture. ${error instanceof Error ? error.message : ''}`.trim(), error instanceof CrmError && [401, 403, 409].includes(error.status) ? error.status : 503) }
+    const result: ArticleCaptureResult = { ...captured, contactPhoto }; writeReceipt(result); return result
   }
   private async save(input: Record<string, unknown>, origin: string, token: string): Promise<ArticleCaptureResult> {
     const client = this.authenticate(origin, token), db = this.options.db
     assert(!db.getKv('importInProgress') && db.getSettings()?.firstRunComplete, 'Finish workspace setup or recovery before capturing.', 409)
     const identity = articleIdentity(String(input.url ?? '')), sequence = Number(input.sequence)
+    assert(identity.host.replace(/\.$/, '').toLowerCase() !== 'app.folk.app', 'Folk pages contain private CRM data. Use Import visible Folk photos; article capture is disabled for Folk.', 403)
     assert(Number.isSafeInteger(sequence) && sequence > 0, 'A positive capture sequence is required.')
     const receipts = db.getKv<Receipts>(RECEIPTS) ?? { schemaVersion: 1, revision: 0, clients: {} }
     const fingerprint = hash(JSON.stringify(input)), prior = receipts.clients[client.id]
@@ -119,16 +205,18 @@ export class ArticleCapture {
     assert(title.length > 0 && title.length <= 300, 'Provide a title up to 300 characters.')
     if (!source) { source = { id: randomUUID(), externalId: identity.externalId, title, kind: 'document', currentVersionId: '', createdAt: now, updatedAt: now, excluded: false, aiAllowed: true, tags: [] }; next.sources.push(source) }
     const currentVersion = next.versions.find((entry) => entry.id === source!.currentVersionId)
+    const profile = capturedProfileMetadata({ ...currentVersion?.metadata, ...input }, identity.url)
+    const previousProfile = capturedProfileMetadata(currentVersion?.metadata ?? {}, identity.url)
     let version = currentVersion, asset: { id: string; kind: 'file'; mime: string; bytes: number; createdAt: number; nodeId: null } | undefined
-    if (!version || version.text !== text) {
-      const original = Buffer.from(JSON.stringify({ format: 'worldview-article-capture.v1', url: identity.url, title, text }), 'utf8')
+    if (!version || version.text !== text || JSON.stringify(profile) !== JSON.stringify(previousProfile)) {
+      const original = Buffer.from(JSON.stringify({ format: 'worldview-article-capture.v1', url: identity.url, title, text, ...profile }), 'utf8')
       const id = `knowledge-${hash(original)}`, path = join(this.options.blobDir, id)
       await mkdir(this.options.blobDir, { recursive: true })
       if (!existsSync(path)) { const temporary = `${path}.${randomUUID()}.tmp`; try { await writeFile(temporary, original, { mode: 0o600 }); await rename(temporary, path) } finally { await rm(temporary, { force: true }) } }
       this.authenticate(origin, token)
       assert(!db.getKv('importInProgress') && db.getKnowledgeRevision() === before.revision, 'The workspace changed before the article was saved. Retry the retained capture.', 409)
       asset = { id, kind: 'file', mime: 'application/json', bytes: original.byteLength, createdAt: now, nodeId: null }
-      version = { id: randomUUID(), sourceId: source.id, contentHash: hash(text), originalBlobId: id, originalName: 'article-capture.json', text, createdAt: now, authoredAt: null, origin: 'capture', ...(currentVersion ? { previousVersionId: currentVersion.id } : {}), metadata: { url: identity.url, canonicalUrl: identity.canonicalUrl, host: identity.host, format: 'article', captureMethod: 'browser-extension' } }
+      version = { id: randomUUID(), sourceId: source.id, contentHash: hash(text), originalBlobId: id, originalName: 'article-capture.json', text, createdAt: now, authoredAt: null, origin: 'capture', ...(currentVersion ? { previousVersionId: currentVersion.id } : {}), metadata: { url: identity.url, canonicalUrl: identity.canonicalUrl, host: identity.host, format: 'article', captureMethod: 'browser-extension', ...profile } }
       next.versions.push(version); source.currentVersionId = version.id; source.updatedAt = now
       const parsed: ParsedSource = { externalId: source.externalId, title, kind: 'document', text, authoredAt: null, messages: [{ text, role: 'third-party', authoredAt: null, start: 0, end: text.length }] }
       next.passages.push(...splitPassages(parsed).map((part) => ({ id: randomUUID(), sourceId: source!.id, versionId: version!.id, title, text: part.text, start: part.start, end: part.end, role: part.role, authoredAt: part.authoredAt })))
