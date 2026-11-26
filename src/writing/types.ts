@@ -23,8 +23,12 @@ export interface WritingDocument {
   content: WritingNode; appearance: WritingAppearance; createdAt: number; updatedAt: number
   sourceId?: string; basedOnSourceId?: string; baseVersionId?: string; archivedAt: number | null
   publishedUpdatedAt?: number; publishedFingerprint?: string; lastPublishedAt?: number
+  applicationId?:string
+  chapter?:string
+  bookEditionId?: string | null
   topicIds?: string[]
 }
-export interface WritingSnapshot { schemaVersion: 1; revision: number; docs: WritingDocument[] }
-export type WritingDocumentPatch = Partial<Pick<WritingDocument, 'title' | 'subtitle' | 'byline' | 'format' | 'content' | 'topicIds'>> & { appearance?: Partial<WritingAppearance> }
-export type CreateWritingInput = Partial<Pick<WritingDocument, 'title' | 'subtitle' | 'byline' | 'format' | 'content' | 'basedOnSourceId' | 'topicIds'>> & { appearance?: Partial<WritingAppearance> }
+export interface WritingEdit { documentId: string; at: number; fields: string[] }
+export interface WritingSnapshot { schemaVersion: 1; revision: number; docs: WritingDocument[]; edits?: WritingEdit[] }
+export type WritingDocumentPatch = Partial<Pick<WritingDocument, 'title' | 'subtitle' | 'byline' | 'format' | 'content' | 'applicationId' | 'chapter' | 'bookEditionId' | 'topicIds'>> & { appearance?: Partial<WritingAppearance> }
+export type CreateWritingInput = Partial<Pick<WritingDocument, 'title' | 'subtitle' | 'byline' | 'format' | 'content' | 'basedOnSourceId' | 'applicationId' | 'chapter' | 'bookEditionId' | 'topicIds'>> & { appearance?: Partial<WritingAppearance> }

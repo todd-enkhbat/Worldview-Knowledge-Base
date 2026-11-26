@@ -7,7 +7,9 @@ import { getSourceOriginal, initializeKnowledge, resetKnowledge } from '../../sr
 import * as knowledge from '../../src/knowledge/index.ts'
 import type { KnowledgeSnapshot } from '../../src/knowledge/types.ts'
 import { captureArticle } from '../../src/reading/captureArticle.ts'
-import { addHighlight, resetReading, useReading } from '../../src/reading/store.ts'
+import { createBook } from '../../src/bookshelf/store.ts'
+import { openConceptNote, restoreWritingPublishedVersion } from '../../src/writing/store.ts'
+import { addHighlight, createTopic, initializeReading, resetReading, updateTopic, useReading } from '../../src/reading/store.ts'
 import { archiveWritingDocument, createWritingDocument, createWritingFromSource, decodeWriting, defaultWritingAppearance, duplicateWritingDocument, emptyWriting, initializeWriting, plainTextFromWriting, publishWritingDocument, refreshWriting, resetWriting, updateWritingDocument, useWriting, validateWritingContent, writingFromPlainText, WRITING_KV, type WritingSnapshot } from '../../src/writing/store.ts'
 
 beforeEach(() => { resetWriting(); resetKnowledge(); vi.stubGlobal('Blob', NodeBlob); vi.stubGlobal('fetch', vi.fn(() => { throw new Error('No cloud or remote calls are allowed') })) })
@@ -17,6 +19,32 @@ const content = () => writingFromPlainText('The copper orchard grows.\nA second 
 const corpus = async () => (await getStore().getKv<KnowledgeSnapshot>('knowledge.v1'))!
 
 describe('durable writing studio', () => {
+  it('retains one synthesis note per concept across simultaneous opens, renamed concepts, and an explicit restore', async () => {
+    await open()
+    const topic = await createTopic('Virtù')
+    expect(useWriting.getState().docs).toHaveLength(0)
+    const [first, second] = await Promise.all([openConceptNote(topic.id), openConceptNote(topic.id)])
+    expect(first.id).toBe(second.id)
+    expect(first).toMatchObject({ title: 'Virtù', topicIds: [topic.id] })
+    await updateWritingDocument(first.id, { title: 'My understanding', content: content() })
+    await updateTopic(topic.id, { name: 'Virtù and fortune', aliases: ['Virtù'] })
+    expect(await openConceptNote(topic.id)).toMatchObject({ id: first.id, title: 'My understanding', content: content() })
+    await archiveWritingDocument(first.id)
+    await expect(openConceptNote(topic.id)).rejects.toThrow(/Trash/)
+    expect((await openConceptNote(topic.id, true)).archivedAt).toBeNull()
+    expect(useWriting.getState().docs).toHaveLength(1)
+    await expect(openConceptNote('unknown')).rejects.toThrow(/no longer available/)
+  })
+  it('timestamps each changed autosave even within a single history checkpoint', async () => {
+    const store = await open()
+    const doc = await createWritingDocument({ title: 'Notes' })
+    const first = await updateWritingDocument(doc.id, { title: 'Discourses' })
+    const second = await updateWritingDocument(doc.id, { content: writingFromPlainText('A thought.') })
+    await updateWritingDocument(doc.id, { title: 'Discourses' })
+    const saved = decodeWriting(await store.getKv(WRITING_KV))
+    expect(saved.edits).toEqual([{ documentId: doc.id, at: first.updatedAt, fields: ['title'] }, { documentId: doc.id, at: second.updatedAt, fields: ['content'] }])
+    expect(second.updatedAt).toBeGreaterThan(first.updatedAt)
+  })
   it('serializes drafts and preserves full rich content, appearance, archives and independent duplicates without publishing', async () => {
     const store = await open()
     const [one, two] = await Promise.all([createWritingDocument({ title: 'Essay draft', format: 'essay', content: content() }), createWritingDocument({ title: 'Poem draft', format: 'poem' })])
@@ -184,5 +212,34 @@ describe('durable writing studio', () => {
     await closeRepo(); await initRepo({ store: restored }); await initializeKnowledge(); await initializeWriting()
     expect(useWriting.getState().docs[0].id).toBe(doc.id)
     expect(JSON.parse(await (await getSourceOriginal(saved.sourceId, saved.versionId))!.blob.text()).document.content).toEqual(doc.content)
+  })
+})
+
+describe('edition and concept identity', () => {
+  it('keeps independent editions in separate drafts and allows detaching without losing content', async () => {
+    await open()
+    const first = await createBook({ title: 'Discourses', year: 1996 })
+    const second = await createBook({ title: 'Discourses', year: 2008 })
+    const doc = await createWritingDocument({ title: 'Notes', bookEditionId: first.id, content: content() })
+    await expect(createWritingDocument({ bookEditionId: 'missing-edition' })).rejects.toThrow(/edition/)
+    await expect(updateWritingDocument(doc.id, { bookEditionId: 'missing-edition' })).rejects.toThrow(/edition/)
+    const rebased = await updateWritingDocument(doc.id, { bookEditionId: second.id })
+    const publication = await publishWritingDocument(doc.id)
+    expect((await corpus()).versions.find(version => version.id === publication.versionId)?.metadata?.bookEditionId).toBe(second.id)
+    const detached = await updateWritingDocument(doc.id, { bookEditionId: null }, { expectedUpdatedAt: rebased.updatedAt })
+    expect(detached).toMatchObject({ content: doc.content, bookEditionId: null })
+    const restored = await restoreWritingPublishedVersion(doc.id, publication.versionId, detached.updatedAt)
+    expect(restored.bookEditionId).toBe(second.id)
+  })
+  it('reuses an alias and rejects a name collision before linking wording to the wrong concept', async () => {
+    await open()
+    const concept = await createTopic('Virtù')
+    const saved = await updateTopic(concept.id, { name: 'Virtù', aliases: ['Virtu', 'Virtue'] })
+    expect(saved.updatedAt).toBeGreaterThanOrEqual(saved.createdAt)
+    expect((await createTopic(' VIRTU ')).id).toBe(concept.id)
+    const other = await createTopic('Prudence')
+    await expect(updateTopic(other.id, { name: 'Prudence', aliases: ['virtue'] })).rejects.toThrow(/already uses/)
+    resetReading(); await initializeReading()
+    expect(useReading.getState().topics.find(topic => topic.id === concept.id)?.aliases).toEqual(['Virtu','Virtue'])
   })
 })

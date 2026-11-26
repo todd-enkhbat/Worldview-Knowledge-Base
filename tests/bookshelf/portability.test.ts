@@ -14,3 +14,11 @@ it('reports invalid rows and malformed CSV explicitly instead of silently changi
   expect(() => parseBookshelfCsv('Author,Notes\nSomeone,Text')).toThrow(/Title column/)
   expect(() => parseBookshelfCsv('Title\n"An unfinished cell')).toThrow(/quoted cell/)
 })
+
+it('keeps Goodreads edition identity, coauthors, binding, personal notes, and individual shelves', () => {
+  const csv = 'Book Id,Title,Author,Additional Authors,ISBN13,ISBN,Exclusive Shelf,My Rating,My Review,Private Notes,Bookshelves,Binding,Year Published,Original Publication Year,Date Read\n12345,One Book,Main Author,"A Writer, B Writer",="",="0802134211",to-read,4,My review,My notes,"research, favorites",ebook,2005,1999,2020/01/15'
+  const result = parseBookshelfCsv(csv)
+  expect(result.errors).toEqual([])
+  expect(result.books[0]).toMatchObject({ goodreadsId: '12345', status: 'wish', isbn: '0802134211', authors: ['Main Author','A Writer','B Writer'], notes: 'My review', collectionNames: ['research','favorites'], format: 'digital', year: 2005, finishedAt: '2020-01-15' })
+  expect(result.books[0].fields).toContainEqual(expect.objectContaining({ label: 'Private notes', value: 'My notes' }))
+})

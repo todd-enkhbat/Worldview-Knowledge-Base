@@ -6,6 +6,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { createCrmRecord, emptyCrm } from '../../src/crm/model.ts'
 import type { CrmCollection, CrmSnapshot } from '../../src/crm/types.ts'
 import PeopleWorkspace from '../../src/crm/PeopleWorkspace.tsx'
+import PeoplePlaces from '../../src/crm/PeoplePlaces.tsx'
 import PeopleNetwork from '../../src/crm/PeopleNetwork.tsx'
 import CrmReview from '../../src/crm/CrmReview.tsx'
 import { readCrmPresentation, writeCrmPresentation } from '../../src/crm/presentation.ts'
@@ -51,6 +52,7 @@ const fetcher = vi.fn(async (input: string | URL | Request, init?: RequestInit) 
     receipts.set(String(command.requestId), result); return response(result)
   }
   if (path === 'status') return response({ available: true, workspaceFingerprint: fingerprint, revision: state.revision, schemaVersion: 1, counts: Object.fromEntries(Object.entries(state).filter(([, rows]) => Array.isArray(rows)).map(([key, rows]) => [key, { active: (rows as unknown[]).length, total: (rows as unknown[]).length }])), pendingCandidates: state.candidates.length, pendingProposals: state.proposals.filter(row => row.status === 'pending').length, dueTasks: 0, cloudEnrichment: false, sendingEnabled: false })
+  if (path === 'profile-capture') return response({ drafts: [], total: 0, nextOffset: null })
   if (path === 'duplicates') return response({ revision: state.revision, duplicates: [{ firstId: 'per_1', secondId: 'per_2', reasons: ['matching-profile-url'] }] })
   const [collection, id] = path.split('/') as [CrmCollection, string | undefined]
   if (id) return response(detail(collection, decodeURIComponent(id)))
@@ -92,8 +94,18 @@ it('prevents write controls in the read-only table while keeping the saved recor
   scope.writer = false
   await act(async () => root.render(<PeopleWorkspace hash="#/people" />)); await until(() => host.textContent!.includes('Ada Example'))
   expect(button('Add person').disabled).toBe(true)
+  expect(button('Capture profile').disabled).toBe(true)
+  expect(button('Review captures').disabled).toBe(false)
   expect(button('Save view').disabled).toBe(true)
   expect(button('Create group').disabled).toBe(true)
+  expect(requests).toHaveLength(0)
+})
+
+it('opens the company saved by Reader directly from its confirmation link', async () => {
+  state.companies.push(record('companies', { id: 'company_one', name: 'Example Company' }))
+  await act(async () => root.render(<PeopleWorkspace hash="#/people?tab=companies&company=company_one" />))
+  await until(() => !!host.querySelector('.crm-entity-inspector form'))
+  expect(host.querySelector('.crm-entity-inspector')?.textContent).toContain('Example Company')
   expect(requests).toHaveLength(0)
 })
 
@@ -157,6 +169,7 @@ it('shows actual proposed fields and evidence before approving one revision-boun
   expect(host.textContent).toContain('Researcher')
   expect(requests).toHaveLength(0)
   await click('Approve change')
+  await until(() => requests.some(request => request.operation === 'review_proposal'))
   expect(requests[0]).toMatchObject({ operation: 'review_proposal', id: 'proposal_1', expectedRecordRevision: 1, approve: true })
 })
 
@@ -202,7 +215,9 @@ it('preselects a unique exact-signal person only for comparison and approves wit
   expect(host.querySelector('.crm-source-identity')!.textContent).toContain('ada@example.test')
   expect(host.querySelector('.crm-diff')!.textContent).toContain('Ada Example')
   expect(requests).toHaveLength(0)
+  await until(() => !button('Add source details').disabled)
   await click('Add source details')
+  await until(() => requests.some(request => request.operation === 'review_candidate'))
   expect(requests[0]).toMatchObject({ operation: 'review_candidate', id: 'identity_1', expectedRecordRevision: 1, targetId: 'per_1', expectedTargetRevision: 7, accept: true })
   expect(requests[0]).not.toHaveProperty('createSeparate')
 })
@@ -219,7 +234,9 @@ it('requires an explicit ambiguous identity decision and compares the selected c
   state.people[1].jobTitle = 'Edited while reviewing'
   await act(async () => host.querySelector<HTMLInputElement>('[aria-label="Use existing person: Basil Example"]')!.click())
   await until(() => !!host.querySelector('.crm-diff')!.textContent?.includes('Edited while reviewing'))
+  await until(() => !button('Add source details').disabled)
   await click('Add source details')
+  await until(() => requests.some(request => request.operation === 'review_candidate'))
   expect(requests[0]).toMatchObject({ operation: 'review_candidate', targetId: 'per_2', expectedTargetRevision: 9, accept: true })
 })
 
@@ -229,6 +246,7 @@ it('lets a suggested match be explicitly kept separate without sending the sugge
   await act(async () => host.querySelector<HTMLInputElement>('.crm-identity-separate input')!.click())
   expect(host.querySelector('.crm-diff')!.textContent).not.toContain('Ada Example')
   await click('Create separate person')
+  await until(() => requests.some(request => request.operation === 'review_candidate'))
   expect(requests[0]).toMatchObject({ operation: 'review_candidate', id: 'identity_1', createSeparate: true, accept: true })
   expect(requests[0]).not.toHaveProperty('targetId')
   expect(requests[0]).not.toHaveProperty('expectedTargetRevision')
@@ -239,7 +257,9 @@ it('keeps an established provider identity attached to its existing person and h
   await openIdentityReview()
   expect(host.textContent).toContain('This source already belongs to a person')
   expect(host.querySelector('.crm-identity-separate')).toBeNull()
+  await until(() => !button('Add source details').disabled)
   await click('Add source details')
+  await until(() => requests.some(request => request.operation === 'review_candidate'))
   expect(requests[0]).toMatchObject({ targetId: 'per_1', expectedTargetRevision: 1, accept: true })
   expect(requests[0]).not.toHaveProperty('createSeparate')
 })
@@ -251,6 +271,7 @@ it('never invents an identity match from a shared display name', async () => {
   await click('Compare')
   expect(host.querySelector('.crm-source-identity')).toBeNull()
   await click('Add to People')
+  await until(() => requests.some(request => request.operation === 'review_candidate'))
   expect(requests[0]).toMatchObject({ createSeparate: true, accept: true })
   expect(requests[0]).not.toHaveProperty('targetId')
   expect(fetcher.mock.calls.some(call => String(call[0]).includes('/people/per_1'))).toBe(false)
@@ -304,4 +325,93 @@ it('honors an explicit Connections deep link over cached group navigation and ne
 it('opens a contact deep link after presentation restoration instead of clearing the fetched selection', async () => {
   await act(async () => root.render(<PeopleWorkspace hash="#/people?person=per_1" />)); await until(() => host.textContent!.includes('Opened contact: Ada Example'))
   await remountPeople('#/people?person=per_1'); await until(() => host.textContent!.includes('Opened contact: Ada Example')); expect(requests).toHaveLength(0)
+})
+
+it('opens a direct school or current-employer roster with its exact filter', async () => {
+  for (const [query, field, name, label] of [
+    ['school', 'almaMater', 'Columbia University', 'Studied at Columbia University'],
+    ['currentEmployer', 'currentEmployers', 'Example Labs', 'Working at Example Labs'],
+  ]) {
+    await act(async () => root.render(<PeopleWorkspace hash={'#/people?tab=people&' + query + '=' + encodeURIComponent(name)} />))
+    await until(() => host.querySelector('.crm-people-heading h2')?.textContent?.includes(label) === true)
+    await until(() => fetcher.mock.calls.some(([input]) => {
+      const url = new URL(String(input), 'http://worldview.local')
+      return url.pathname === '/api/crm/people' && url.searchParams.get('filter') === JSON.stringify({ field, operator: 'eq', value: name })
+    }))
+  }
+})
+
+
+it('opens floating capture from the People heading on desktop and keeps the URL and review workflow available', async () => {
+  const openFloatingCapture = vi.fn().mockResolvedValue(true)
+  vi.stubGlobal('worldviewDesktop', { openFloatingCapture })
+  await act(async () => root.render(<PeopleWorkspace hash="#/people" />))
+  await until(() => host.textContent!.includes('Ada Example'))
+  expect(button('Capture profile').closest('.crm-people-heading')).toBeTruthy()
+  await click('Capture profile')
+  expect(openFloatingCapture).toHaveBeenCalledTimes(1)
+  expect(host.querySelector('dialog[open]')).toBeNull()
+
+  await click('Review captures')
+  expect(host.querySelector('dialog[aria-label="Collect profiles"][open]')).toBeTruthy()
+  expect(host.querySelector('[aria-label="Capture archive status"]')).toBeTruthy()
+  await click('Public URL')
+  expect(host.querySelector('[aria-label="Public profile URL"]')).toBeTruthy()
+  expect(openFloatingCapture).toHaveBeenCalledTimes(1)
+})
+
+it('opens the existing collection flow from the same People action in a browser', async () => {
+  await act(async () => root.render(<PeopleWorkspace hash="#/people" />))
+  await until(() => host.textContent!.includes('Ada Example'))
+  await click('Capture profile')
+  expect(host.querySelector('dialog[aria-label="Collect profiles"][open]')).toBeTruthy()
+  expect(button('From Dia')).toBeTruthy()
+  await click('Public URL')
+  expect(host.querySelector('[aria-label="Public profile URL"]')).toBeTruthy()
+})
+
+it('exposes capture on other People tabs and reports a native launch failure with access to review', async () => {
+  vi.stubGlobal('worldviewDesktop', { openFloatingCapture: vi.fn().mockRejectedValue(new Error('Window unavailable.')) })
+  await act(async () => root.render(<PeopleWorkspace hash="#/people?tab=connections" />))
+  await until(() => host.textContent!.includes('Connection setup'))
+  await click('Capture profile')
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain('Window unavailable.')
+  await click('Review captures')
+  expect(host.querySelector('dialog[aria-label="Collect profiles"][open]')).toBeTruthy()
+})
+
+it('shows a bounded network, reaches a far-away contact by search and lists their confirmed neighbors', async()=>{
+  state.people.push(...Array.from({length:300},(_,i)=>record('people',{id:'dense-'+i,fullName:'Very long person name '+i})))
+  state.relationships.push(record('relationships',{id:'known',from:{type:'person',id:'dense-299'},to:{type:'person',id:'per_1'},relation:'Mentors',confirmed:true}))
+  await act(async()=>root.render(<PeopleNetwork onSelectPerson={selectPerson}/>))
+  await until(()=>host.querySelectorAll('.crm-graph-person').length>0)
+  expect(host.querySelectorAll('.crm-graph-person')).toHaveLength(18)
+  expect(host.querySelector('[aria-label="Explore a network group"]')).not.toBeNull()
+  expect(host.querySelectorAll('.crm-graph-person[tabindex="0"]')).toHaveLength(18)
+  expect(host.querySelector('[aria-label="Network pages"]')).not.toBeNull()
+  const field=host.querySelector<HTMLInputElement>('[aria-label="Find someone on the map"]')!
+  await act(async()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(field,'Very long person name 299');field.dispatchEvent(new Event('input',{bubbles:true}))})
+  expect(host.querySelectorAll('.crm-graph-person')).toHaveLength(1)
+  await act(async()=>host.querySelector('.crm-graph-person')!.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true})))
+  expect(host.querySelectorAll('.crm-graph-person')).toHaveLength(2)
+  expect(host.querySelector('.crm-graph-edges')?.textContent).toContain('Mentors')
+  expect(host.querySelector('.crm-network-focus')?.textContent).toContain('Very long person name 299')
+  expect(requests).toHaveLength(0)
+})
+
+it('opens an overlapping city cluster and selects the exact city to filter the contact list', async()=>{
+  state.people = ['Oakland, CA','Berkeley, CA','San Francisco, CA','Boston, MA'].map((location,i)=>record('people',{id:'map-'+i,fullName:'Map contact '+i,location}))
+  await act(async()=>root.render(<PeoplePlaces collection="people" initialCity="" groupId="" filter={null} search="" onSelect={selectPerson}/>))
+  await until(()=>!!host.querySelector('.crm-places-map button'))
+  const cluster=host.querySelector<HTMLButtonElement>('.crm-places-map [aria-label^="3 cities"]')!
+  expect(host.querySelectorAll('.crm-places-map button')).toHaveLength(2)
+  await act(async()=>cluster.click())
+  expect(host.querySelectorAll('.crm-location-cluster>div button')).toHaveLength(3)
+  const city=[...host.querySelectorAll<HTMLButtonElement>('.crm-location-cluster>div button')].find(b=>b.textContent?.startsWith('Oakland'))!
+  await act(async()=>city.click())
+  expect(host.querySelector<HTMLInputElement>('[list="crm-known-cities"]')!.value).toContain('Oakland')
+  expect(host.querySelectorAll('.crm-place-contact')).toHaveLength(3)
+  await act(async()=>host.querySelector<HTMLButtonElement>('.crm-place-contact')!.click())
+  expect(selectPerson).toHaveBeenCalledWith(expect.objectContaining({id:'map-0'}))
+  expect(requests).toHaveLength(0)
 })

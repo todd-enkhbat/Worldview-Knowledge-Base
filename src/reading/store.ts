@@ -3,7 +3,8 @@ import { compareAndSwapWorldState, getStore, getWorldGeneration, isRepoReady, su
 import type { WorldStore } from '../data/WorldStore.ts'
 import type { KnowledgeSnapshot } from '../knowledge/types.ts'
 import { applyReadingHighlight, applyReadingItem, decodeReading, emptyReading, pdfHighlightSchema, readingName, validateReadingHighlightPatch } from './model.ts'
-import { READING_KV, type HighlightInput, type ReadingConnection, type ReadingEndpoint, type ReadingHighlight, type ReadingItemPatch, type ReadingPdfHighlight, type ReadingRelation, type ReadingSavedView, type ReadingSnapshot } from './types.ts'
+import { READING_KV, type HighlightInput, type ReadingConnection, type ReadingEndpoint, type ReadingHighlight, type ReadingItemPatch, type ReadingPdfHighlight, type ReadingRelation, type ReadingSavedView, type ReadingSnapshot, type ReadingTopic } from './types.ts'
+import { useBookshelf } from '../bookshelf/store.ts'
 import { useWriting } from '../writing/store.ts'
 export * from './types.ts'
 export * from './model.ts'
@@ -117,6 +118,7 @@ export function bulkUpdateReadingItems(sourceIds: string[], patch: ReadingItemPa
     if (!ids.length || ids.length > 500) throw new Error('Choose between 1 and 500 files for one filing action.')
     for (const id of ids) {
       if (id.startsWith('writing:')) { if (!useWriting.getState().docs.some((doc) => `writing:${doc.id}` === id && !doc.archivedAt)) throw new Error('A selected writing document is no longer available.') }
+      else if (id.startsWith('book:')) { if (!useBookshelf.getState().books.some(book => 'book:' + book.id === id && !book.archivedAt)) throw new Error('A selected edition is no longer on the bookshelf.') }
       else sourceOf(corpus, id)
     }
     if (options.addTopicId) topicOf(snapshot, options.addTopicId)
@@ -164,11 +166,41 @@ export function addReadingNote(sourceId: string, text: string) {
 }
 export function updateReadingNote(id: string, text: string) { return mutate((snapshot) => { const note = snapshot.notes.find((entry) => entry.id === id); if (!note) throw new Error('This reading note is no longer available.'); note.text = noteText(text); note.updatedAt = Date.now(); return note }) }
 export function removeReadingNote(id: string): Promise<void> { return mutate((snapshot) => { snapshot.notes = snapshot.notes.filter((entry) => entry.id !== id) }) }
-export function createTopic(name: string) {
-  return mutate((snapshot) => { const clean = readingName(name), existing = snapshot.topics.find((entry) => normalized(entry.name) === normalized(clean)); if (existing) return existing; const topic = { id: crypto.randomUUID(), name: clean, createdAt: Date.now() }; snapshot.topics.push(topic); return topic })
+const topicTerms = (topic: ReadingTopic) => [topic.name, ...(topic.aliases ?? [])].map(normalized)
+function resolveReadingTopic(snapshot: ReadingSnapshot, name: string) {
+  const clean = readingName(name), existing = snapshot.topics.find(topic => topicTerms(topic).includes(normalized(clean)))
+  if (existing) return existing
+  const topic = { id: crypto.randomUUID(), name: clean, createdAt: Date.now() }
+  snapshot.topics.push(topic)
+  return topic
 }
-export function updateTopic(id: string, patch: string | { name: string }) {
-  return mutate((snapshot) => { const item = topicOf(snapshot, id), clean = readingName(typeof patch === 'string' ? patch : patch.name); if (snapshot.topics.some((entry) => entry.id !== id && normalized(entry.name) === normalized(clean))) throw new Error('A topic with this name already exists.'); item.name = clean; return item })
+export function createTopic(name: string) {
+  return mutate(snapshot => resolveReadingTopic(snapshot, name))
+}
+export function linkHighlightedTerm(input: HighlightInput) {
+  return mutate((snapshot, corpus) => {
+    sourceOf(corpus, input.sourceId)
+    const highlight = applyReadingHighlight(snapshot, input, corpus.versions)
+    if (highlight.topicId) return topicOf(snapshot, highlight.topicId)
+    const topic = resolveReadingTopic(snapshot, input.quote)
+    highlight.topicId = topic.id
+    highlight.updatedAt = Math.max(Date.now(), highlight.createdAt)
+    const topics = snapshot.items.find(item => item.sourceId === input.sourceId)?.topicIds ?? []
+    if (!topics.includes(topic.id)) applyReadingItem(snapshot, input.sourceId, { topicIds: [...topics, topic.id] })
+    return topic
+  })
+}
+export function updateTopic(id: string, patch: string | { name: string; aliases?: string[] }) {
+  return mutate(snapshot => {
+    const item = topicOf(snapshot, id), name = readingName(typeof patch === 'string' ? patch : patch.name)
+    const values = typeof patch === 'string' || patch.aliases === undefined ? item.aliases ?? [] : patch.aliases
+    const aliases = [...new Map(values.map(value => { const label = readingName(value); return [normalized(label), label] })).values()].filter(label => normalized(label) !== normalized(name))
+    if (aliases.length > 50) throw new Error('A concept can have up to 50 aliases.')
+    const terms = [name, ...aliases].map(normalized)
+    if (snapshot.topics.some(topic => topic.id !== id && topicTerms(topic).some(term => terms.includes(term)))) throw new Error('Another topic already uses this name or alias.')
+    Object.assign(item, { name, aliases, updatedAt: Date.now() })
+    return item
+  })
 }
 export function assignTopics(sourceId: string, topicIds: string[]) { return updateReadingItem(sourceId, { topicIds: [...new Set(topicIds)] }) }
 export function connectReading(input: { from: ReadingEndpoint; to: ReadingEndpoint; relation: ReadingRelation }) {

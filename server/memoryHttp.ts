@@ -22,9 +22,9 @@ const tools = Object.entries(memoryToolNames).map(([name, operation]) => ({ name
   annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } }))
 
 export const sendMemoryJson = (res: ServerResponse, status: number, body: unknown) => { res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end(JSON.stringify(body)) }
-export async function readMemoryBody(req: IncomingMessage): Promise<Record<string, unknown>> {
+export async function readMemoryBody(req: IncomingMessage, limit = 128 * 1024): Promise<Record<string, unknown>> {
   let size = 0; const chunks: Buffer[] = []
-  for await (const chunk of req as AsyncIterable<Buffer>) { size += chunk.length; if (size > 128 * 1024) throw new Error('Memory request exceeds 128 KiB.'); chunks.push(chunk) }
+  for await (const chunk of req as AsyncIterable<Buffer>) { size += chunk.length; if (size > limit) throw new Error('Request exceeds '+Math.round(limit/1024)+' KiB.'); chunks.push(chunk) }
   const value: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8'))
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Memory request must be an object.')
   return value as Record<string, unknown>

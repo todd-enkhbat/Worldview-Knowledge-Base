@@ -66,7 +66,7 @@ export function resolveVaultLink(fromPath: string, rawTarget: string, candidates
 }
 
 /** References inside code fences, inline code and Obsidian comments are literal text. */
-export function extractVaultLinks(text: string): VaultReference[] {
+export function vaultLiteralRanges(text: string): [number, number][] {
   const excluded: [number, number][] = []
   const fences = /^( {0,3})(`{3,}|~{3,})[^\r\n]*(?:\r?\n|$)/gm
   let open: { char: string; length: number; start: number } | null = null
@@ -77,6 +77,10 @@ export function extractVaultLinks(text: string): VaultReference[] {
   }
   if (open) excluded.push([open.start, text.length])
   for (const match of text.matchAll(/%%[\s\S]*?(?:%%|$)|(`+)[^\r\n]*?\1/g)) excluded.push([match.index, match.index + match[0].length])
+  return excluded
+}
+
+export function extractVaultLinks(text: string, excluded = vaultLiteralRanges(text)): VaultReference[] {
   const out: VaultReference[] = []
   for (const match of text.matchAll(/(!?)\[\[([^\]\r\n]+)\]\]/g)) {
     if (excluded.some(([start, end]) => match.index >= start && match.index < end)) continue

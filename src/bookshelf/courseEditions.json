@@ -1,0 +1,112 @@
+[
+  {
+    "isbn": "9780198245971",
+    "editionId": "OL7398180M",
+    "workId": "OL16947849W",
+    "publisher": "Oxford University Press, USA",
+    "translator": "A. V. Miller",
+    "year": 1979,
+    "pages": 640,
+    "coverId": 129857,
+    "format": ""
+  },
+  {
+    "isbn": "9780872201361",
+    "editionId": "OL1718781M",
+    "workId": "OL51831W",
+    "publisher": "Hackett Pub. Co.",
+    "translator": "G. M. A. Grube, revised by C. D. C. Reeve",
+    "year": 1992,
+    "pages": 300,
+    "coverId": 14409270,
+    "format": ""
+  },
+  {
+    "isbn": "9780199555550",
+    "editionId": "OL23181469M",
+    "workId": "OL1089260W",
+    "publisher": "Oxford University Press",
+    "translator": "Julia Conaway Bondanella and Peter Bondanella",
+    "year": 2008,
+    "pages": 414,
+    "coverId": 12939896,
+    "format": ""
+  },
+  {
+    "isbn": "9780199535699",
+    "editionId": "OL24535230M",
+    "workId": "OL1089297W",
+    "publisher": "Oxford University Press",
+    "translator": "Peter Bondanella",
+    "year": 2008,
+    "pages": 192,
+    "coverId": 15283552,
+    "format": "Paperback"
+  },
+  {
+    "isbn": "9780226470498",
+    "editionId": "OL24809573M",
+    "workId": "OL61981W",
+    "publisher": "University of Chicago Press",
+    "translator": "Richmond Lattimore",
+    "year": 2011,
+    "pages": 608,
+    "coverId": 7083790,
+    "format": ""
+  },
+  {
+    "isbn": "9780393089059",
+    "editionId": "OL26397286M",
+    "workId": "OL61982W",
+    "publisher": "W. W. Norton & Company",
+    "translator": "Emily Wilson",
+    "year": 2017,
+    "pages": 592,
+    "coverId": 8094194,
+    "format": "Hardcover"
+  },
+  {
+    "isbn": "9780872202573",
+    "editionId": "OL998280M",
+    "workId": "OL99844W",
+    "publisher": "Hackett Pub. Co.",
+    "translator": "Werner S. Pluhar",
+    "year": 1996,
+    "pages": 1030,
+    "coverId": 662241,
+    "format": ""
+  },
+  {
+    "isbn": "9780872206175",
+    "editionId": "OL8374344M",
+    "workId": "OL99700W",
+    "publisher": "Hackett Publishing Company",
+    "translator": "Werner S. Pluhar",
+    "year": 2002,
+    "pages": 224,
+    "coverId": 662408,
+    "format": "Paperback"
+  },
+  {
+    "isbn": "9780199213610",
+    "editionId": "OL23059262M",
+    "workId": "OL8273964W",
+    "publisher": "Oxford University Press",
+    "translator": "W. D. Ross, revised by Lesley Brown",
+    "year": 2009,
+    "pages": 336,
+    "coverId": 9825708,
+    "format": ""
+  },
+  {
+    "isbn": "9780199538737",
+    "editionId": "OL23726216M",
+    "workId": "OL16247898W",
+    "publisher": "Oxford University Press",
+    "translator": "Ernest Barker, revised by R. F. Stalley",
+    "year": 2009,
+    "pages": 423,
+    "coverId": 12181246,
+    "format": ""
+  }
+]

@@ -1,9 +1,13 @@
 import { createHash, randomUUID } from 'node:crypto'
+import { institutionGroup, reconcileAffiliationGroups } from './crmAffiliationGroups.ts'
+import { googleContactDetails } from './crmGoogleContact.ts'
+import { CrmOrganizations, organizationUrlKey } from './crmOrganizations.ts'
+import { retainedCompanyDomain } from './crmCompanySourceEvidence.ts'
 import type { SQLInputValue } from 'node:sqlite'
 import type { WorldDb } from './worldDb.ts'
 import type { ChangeBus } from './changes.ts'
-import { createCrmRecord, crmFieldValue, decodeCrm, duplicatePeople, emptyCrm, isCrmCollection, matchCrmFilter, normalizeEmail, normalizeProfileUrl, renderCrmTemplate, validateCrmFilter, validateCrmRow, validEntityRef } from '../src/crm/model.ts'
-import { CRM_COLLECTIONS, type CrmCollection, type CrmCollectionMap, type CrmCommand, type CrmCommandResult, type CrmEntityRef, type CrmEntityType, type CrmField, type CrmFieldValue, type CrmFilter, type CrmInteraction, type CrmListQuery, type CrmPage, type CrmPerson, type CrmProposal, type CrmRow, type CrmSnapshot, type CrmSourceRef } from '../src/crm/types.ts'
+import { createCrmRecord, displayPerson, crmFieldValue, decodeCrm, duplicatePeople, emptyCrm, isCrmCollection, matchCrmFilter, normalizeEmail, normalizeProfileUrl, renderCrmTemplate, validateCrmFilter, validateCrmRow, validEntityRef } from '../src/crm/model.ts'
+import { CRM_COLLECTIONS, type CrmCollection, type CrmCollectionMap, type CrmCommand, type CrmCommandResult, type CrmEntityRef, type CrmIntroductionPath, type CrmEntityType, type CrmField, type CrmFieldValue, type CrmFilter, type CrmInteraction, type CrmListQuery, type CrmPage, type CrmPerson, type CrmProposal, type CrmRow, type CrmSnapshot, type CrmSourceRef } from '../src/crm/types.ts'
 
 type SqlRow = Record<string, SQLInputValue>
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value)
@@ -27,6 +31,7 @@ export class SqliteCrmStore {
   readonly world: WorldDb
   private readonly options: CrmStoreOptions
   private proposalAuthorizer: ((proposal: CrmProposal) => void) | undefined
+  private onCompanyForEnrichment?: (id: string, requestId: string) => void
   constructor(world: WorldDb, options: CrmStoreOptions = {}) {
     this.world = world; this.options = options; this.proposalAuthorizer = options.authorizeProposal
     world.db.exec(`CREATE TABLE IF NOT EXISTS crm_state (key TEXT PRIMARY KEY, body TEXT NOT NULL);
@@ -35,10 +40,13 @@ export class SqliteCrmStore {
       CREATE INDEX IF NOT EXISTS crm_rows_group ON crm_rows(collection,group_id,entity_id,archived);
       CREATE TABLE IF NOT EXISTS crm_sources (collection TEXT NOT NULL, provider TEXT NOT NULL, account_id TEXT NOT NULL, external_id TEXT NOT NULL, record_id TEXT NOT NULL, PRIMARY KEY(collection,provider,account_id,external_id,record_id));
       CREATE INDEX IF NOT EXISTS crm_source_lookup ON crm_sources(collection,provider,account_id,external_id);
-      CREATE TABLE IF NOT EXISTS crm_command_receipts (id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, revision INTEGER NOT NULL, body TEXT NOT NULL);`)
+      CREATE TABLE IF NOT EXISTS crm_command_receipts (id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, revision INTEGER NOT NULL, body TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS crm_organization_work (company_id TEXT PRIMARY KEY, job_id TEXT NOT NULL, run_id TEXT, state TEXT NOT NULL, priority INTEGER NOT NULL, complete INTEGER NOT NULL DEFAULT 0, failed INTEGER NOT NULL DEFAULT 0, lease TEXT, expires_at INTEGER NOT NULL DEFAULT 0);
+      CREATE INDEX IF NOT EXISTS crm_organization_pending ON crm_organization_work(state,priority,expires_at);`)
     world.db.prepare("INSERT OR IGNORE INTO crm_state VALUES('device',?)").run(JSON.stringify({ id: randomUUID() }))
   }
   setProposalAuthorizer(authorize: (proposal: CrmProposal) => void) { this.proposalAuthorizer = authorize }
+  setCompanyEnrichmentHook(hook?: (id: string, requestId: string) => void) { this.onCompanyForEnrichment = hook }
   setChangeBus(bus: ChangeBus) { this.options.bus = bus }
   getSnapshot(): CrmSnapshot | undefined { return this.portableSnapshot() }
   restoreSnapshot(value: unknown): void { this.replaceSnapshot(value) }
@@ -62,10 +70,24 @@ export class SqliteCrmStore {
   importSnapshot(value: unknown): void { this.replaceSnapshot(value) }
   portableSnapshot(): CrmSnapshot | undefined { if (!this.hasData()) return undefined; const snapshot = emptyCrm(); snapshot.revision = this.revision(); for (const collection of CRM_COLLECTIONS) (snapshot[collection] as CrmRow[]) = this.rows(collection); return snapshot }
   exportSnapshot(): CrmSnapshot | undefined { return this.portableSnapshot() }
-  clear(): void { this.world.db.exec('DELETE FROM crm_rows; DELETE FROM crm_sources; DELETE FROM crm_command_receipts; DELETE FROM crm_state;'); this.world.db.prepare("INSERT INTO crm_state VALUES('device',?)").run(JSON.stringify({ id: randomUUID() })) }
+  clear(): void { this.world.db.exec('DELETE FROM crm_organization_work; DELETE FROM crm_rows; DELETE FROM crm_sources; DELETE FROM crm_command_receipts; DELETE FROM crm_state;'); this.world.db.prepare("INSERT INTO crm_state VALUES('device',?)").run(JSON.stringify({ id: randomUUID() })) }
   /** Safe compatibility migration. Caller performs this in one encompassing transaction. */
   migrateLegacy(): boolean { if (this.hasData()) return false; const value = this.world.db.prepare("SELECT value FROM kv WHERE key='crm.v1'").get() as SqlRow | undefined; if (!value) return false; const snapshot = decodeCrm(JSON.parse(String(value.value))); this.replaceSnapshot(snapshot); check(stable(this.portableSnapshot()) === stable(snapshot), 'CRM migration verification failed.'); this.world.db.prepare("DELETE FROM kv WHERE key='crm.v1'").run(); return true }
-  status() { const counts = Object.fromEntries(CRM_COLLECTIONS.map((collection) => [collection, { active: Number((this.world.db.prepare('SELECT COUNT(*) AS n FROM crm_rows WHERE collection=? AND archived=0').get(collection) as SqlRow).n), total: Number((this.world.db.prepare('SELECT COUNT(*) AS n FROM crm_rows WHERE collection=?').get(collection) as SqlRow).n) }])); return { available: true, schemaVersion: 1, workspaceFingerprint: hash({ device: this.world.db.prepare("SELECT body FROM crm_state WHERE key='device'").get(), generation: this.world.getReplacementGeneration() }), revision: this.revision(), counts, cloudEnrichment: false, sendingEnabled: false, pendingCandidates: this.rows('candidates', false).filter((row) => row.status === 'pending').length, pendingProposals: this.rows('proposals', false).filter((row) => row.status === 'pending').length, dueTasks: this.rows('tasks', false).filter((row) => row.completedAt === null && row.dueAt !== null && row.dueAt <= this.now()).length } }
+  workspaceFingerprint() { return hash({ device: this.world.db.prepare("SELECT body FROM crm_state WHERE key='device'").get(), generation: this.world.getReplacementGeneration() }) }
+  rememberBrowserSave(kind: 'person' | 'company', id: string) {
+    this.world.db.prepare("INSERT OR REPLACE INTO crm_state VALUES('browser-save',?)").run(JSON.stringify({ kind, id }))
+  }
+  private lastBrowserSave() {
+    const marker = readBody<{ kind: 'person' | 'company'; id: string }>(this.world.db.prepare("SELECT body FROM crm_state WHERE key='browser-save'").get() as SqlRow | undefined)
+    if (!marker) return null
+    if (marker.kind === 'person') {
+      const person = this.get('people', marker.id)
+      return person && person.archivedAt === null && !person.mergedIntoId ? { ...marker, name: displayPerson(person) } : null
+    }
+    const company = this.get('companies', marker.id)
+    return company && company.archivedAt === null ? { ...marker, name: company.name } : null
+  }
+  status() { const counts = Object.fromEntries(CRM_COLLECTIONS.map((collection) => [collection, { active: Number((this.world.db.prepare('SELECT COUNT(*) AS n FROM crm_rows WHERE collection=? AND archived=0').get(collection) as SqlRow).n), total: Number((this.world.db.prepare('SELECT COUNT(*) AS n FROM crm_rows WHERE collection=?').get(collection) as SqlRow).n) }])); return { available: true, schemaVersion: 1, workspaceFingerprint: this.workspaceFingerprint(), lastBrowserSave: this.lastBrowserSave(), revision: this.revision(), counts, cloudEnrichment: false, sendingEnabled: false, pendingCandidates: this.rows('candidates', false).filter((row) => row.status === 'pending').length, pendingProposals: this.rows('proposals', false).filter((row) => row.status === 'pending').length, dueTasks: this.rows('tasks', false).filter((row) => row.completedAt === null && row.dueAt !== null && row.dueAt <= this.now()).length } }
   list<K extends CrmCollection>(collection: K, query: CrmListQuery = {}): CrmPage<K> {
     check(isCrmCollection(collection), 'Unknown CRM collection.'); const offset = query.offset ?? 0, limit = query.limit ?? 50
     check(Number.isSafeInteger(offset) && offset >= 0 && Number.isSafeInteger(limit) && limit >= 1 && limit <= 500, 'Choose a valid CRM page of at most 500 records.')
@@ -98,13 +120,45 @@ export class SqliteCrmStore {
     const total = records.length, rows = records.slice(offset, offset + limit); return { revision: this.revision(), collection, rows: rows.map(({ raw: _raw, extra: _extra, ...row }) => row) as CrmCollectionMap[K][], total, nextOffset: offset + rows.length < total ? offset + rows.length : null }
   }
   resolvePerson(id: string): CrmPerson | undefined { const seen = new Set<string>(); let person = this.get('people', id); while (person?.mergedIntoId) { if (seen.has(person.id)) return undefined; seen.add(person.id); person = this.get('people', person.mergedIntoId) } return person }
+  private companyConnections(id: string, organizations: CrmOrganizations) {
+    const people = this.world.db.prepare(`SELECT json_remove(body,'$.raw','$.extra') AS body FROM crm_rows
+      WHERE collection='people' AND archived=0 AND json_extract(body,'$.mergedIntoId') IS NULL ORDER BY ord,id`).all()
+      .map(row => readBody<CrmPerson>(row)!)
+    const companyRoster = organizations.roster(id, people)
+    const employees = new Set(companyRoster.current.map(person => person.id))
+    const introductionPaths: CrmIntroductionPath[] = []
+    if (employees.size) {
+      const active = new Map(people.map(person => [person.id, person]))
+      const pairs = new Set<string>()
+      const edges = this.world.db.prepare(`SELECT body FROM crm_rows WHERE collection='relationships' AND archived=0
+        AND json_extract(body,'$.confirmed')=1 AND json_extract(body,'$.from.type')='person'
+        AND json_extract(body,'$.to.type')='person' ORDER BY ord,id`).iterate()
+      for (const value of edges) {
+        const edge = readBody<CrmCollectionMap['relationships']>(value)!
+        const from = active.get(edge.from.id), to = active.get(edge.to.id)
+        if (!from || !to || employees.has(from.id) === employees.has(to.id)) continue
+        const [via, employee] = employees.has(from.id) ? [to, from] : [from, to]
+        const key = JSON.stringify([via.id, employee.id])
+        if (pairs.has(key)) continue
+        pairs.add(key)
+        introductionPaths.push({ id: edge.id, via: { id: via.id, name: displayPerson(via) }, employee: { id: employee.id, name: displayPerson(employee) },
+          fromId: from.id, relation: edge.relation, context: edge.context })
+        if (introductionPaths.length >= 20) break
+      }
+    }
+    return { companyRoster, introductionPaths }
+  }
   detail(collection: CrmCollection, id: string) {
-    const record = this.get(collection, id); check(record, 'This CRM record is unavailable.', 404)
+    const stored = this.get(collection, id); check(stored, 'This CRM record is unavailable.', 404)
+    const organizations = ['people', 'companies'].includes(collection) ? new CrmOrganizations(this.rows('companies', false)) : undefined
+    const person = collection === 'people' ? organizations!.person(stored as CrmPerson) : undefined
+    const record = person ?? stored
+    const associated = (ids: string[]) => [...new Set(ids)].flatMap(companyId => organizations?.byId.get(companyId) ?? [])
     const entityType: CrmEntityType = collection === 'people' ? 'person' : collection === 'companies' ? 'company' : 'object', aliases = new Set([id])
     if (collection === 'people') for (const person of this.rows('people')) if (person.mergedIntoId && this.resolvePerson(person.id)?.id === id) aliases.add(person.id)
     const related = <K extends CrmCollection>(part: K): CrmCollectionMap[K][] => unique([...aliases].flatMap((alias) => this.list(part, { entityId: alias, entityType, limit: 200 }).rows))
     const memberships = related('memberships'), groupIds = new Set(memberships.map((row) => 'groupId' in row ? row.groupId : ''))
-    const relatedRecords = { memberships, groups: this.rows('groups').filter((row) => groupIds.has(row.id)), fields: this.rows('fields').filter((row) => groupIds.has(row.groupId)), fieldValues: related('fieldValues'), notes: related('notes'), interactions: related('interactions'), tasks: related('tasks'), relationships: related('relationships'), history: this.rows('history').filter((row) => row.collection === collection && aliases.has(row.recordId)).slice(-100).reverse(), companies: collection === 'people' ? (record as CrmPerson).companyIds.flatMap((companyId) => { const company = this.get('companies', companyId); return company ? [company] : [] }) : [] }
+    const relatedRecords = { memberships, groups: this.rows('groups').filter((row) => groupIds.has(row.id)), fields: this.rows('fields').filter((row) => groupIds.has(row.groupId)), fieldValues: related('fieldValues'), notes: related('notes'), interactions: related('interactions'), tasks: related('tasks'), relationships: related('relationships'), history: this.rows('history').filter((row) => row.collection === collection && aliases.has(row.recordId)).slice(-100).reverse(), companies: associated(person?.companyIds ?? []), affiliationOrganizations: associated(person?.affiliations?.flatMap(role => role.organizationId ?? []) ?? []), ...(collection === 'companies' ? this.companyConnections(id, organizations!) : {}) }
     const relatedPagination = Object.fromEntries((['memberships', 'fieldValues', 'notes', 'interactions', 'tasks', 'relationships'] as const).map((part) => { const total = [...aliases].reduce((sum, alias) => sum + this.list(part, { entityId: alias, entityType, limit: 1 }).total, 0), returned = relatedRecords[part].length; return [part, { total, returned, hasMore: total > returned, limit: 200, nextOffset: total > returned ? returned : null }] }))
     return { revision: this.revision(), collection, record, related: relatedRecords, relatedPagination, ...relatedRecords, ...(collection === 'people' ? { canonicalId: this.resolvePerson(id)?.id ?? id } : {}) }
   }
@@ -151,11 +205,38 @@ export class SqliteCrmStore {
         if (validate) this.references(collection, row)
         const saved = this.put(collection, row); changes.push({ collection, id: saved.id, before: previous ?? null, after: saved }); return saved
       }
+      const linkCapturedOrganizations = (overrides: Record<string, unknown>) => {
+        const organizations = new CrmOrganizations(this.rows('companies', false))
+        const roles = organizations.consolidateHeaders(overrides.affiliations as NonNullable<CrmPerson['affiliations']>)
+        overrides.affiliations = roles.map(role => {
+          let company = organizations.match(role)
+          const evidence = role.evidence.findLast(entry => entry.sourceRef?.provider === 'profile-capture')
+          const source = evidence?.sourceRef ? { ...evidence.sourceRef, provider: 'profile-affiliation', externalId: hash([evidence.sourceRef.externalId, role.id]) } : null
+          if (!company && !role.organizationId && !organizations.candidates(role).length && source) {
+            const key = organizationUrlKey(role.organizationUrl ?? '')
+            company = put('companies', { name: role.organization, organizationType: role.kind === 'education' || key.startsWith('linkedin.com/school/') ? 'school' : 'company',
+              urls: role.organizationUrl ? [role.organizationUrl] : [], domain: key && !/[/?]/.test(key) ? key : '',
+              ...(role.organizationLogoUrl ? { logoUrl: role.organizationLogoUrl } : {}),
+              sourceRefs: [source] })
+            organizations.add(company)
+          } else if (company && source) {
+            const additionalUrl = role.organizationUrl && !company.urls.some(url => organizationUrlKey(url) === organizationUrlKey(role.organizationUrl!))
+            const school = !company.organizationType && [role.organizationUrl || '', ...company.urls].some(url => organizationUrlKey(url).startsWith('linkedin.com/school/'))
+            const additionalLogo = !company.logoAssetId && !company.logoUrl && role.organizationLogoUrl
+            if (additionalUrl || additionalLogo || school) {
+              company = put('companies', { sourceRefs: unique([...company.sourceRefs, source], sourceKey), ...(school ? { organizationType: 'school' } : {}), ...(additionalUrl ? { urls: [...company.urls, role.organizationUrl] } : {}), ...(additionalLogo ? { logoUrl: role.organizationLogoUrl } : {}) }, company)
+              organizations.add(company)
+            }
+          }
+          return company ? { ...role, organizationId: company.id } : role
+        })
+        overrides.companyIds = organizations.person({ affiliations: overrides.affiliations, companyIds: overrides.companyIds ?? [] } as CrmPerson).companyIds
+      }
       const required = <K extends CrmCollection>(collection: K, id: unknown, expected: unknown = input.expectedRecordRevision): CrmCollectionMap[K] => { check(typeof id === 'string', 'Choose a CRM record.'); const record = this.get(collection, String(id)); check(record, 'This CRM record is unavailable.', 404); check(Number.isSafeInteger(expected) && record!.revision === expected, 'This CRM record changed. Refresh its latest saved version before applying your edit.', 409); return record! }
       const collection = input.collection; let output: Omit<CrmCommandResult, 'ok' | 'revision' | 'operation'> = {}
       if (input.operation === 'create') { check(isCrmCollection(collection) && !['history'].includes(String(collection)) && object(input.record), 'Choose a supported CRM collection and record.'); check(!input.record!.id || !this.get(collection!, String(input.record!.id)), 'That CRM identity already exists.', 409); output.record = put(collection!, input.record!) }
       else if (input.operation === 'update') { check(isCrmCollection(collection) && collection !== 'history' && object(input.patch), 'Choose a record and a patch.'); check(!Object.keys(input.patch!).some((key) => ['id', 'createdAt', 'updatedAt', 'revision', 'archivedAt', 'mergedIntoId'].includes(key)), 'Use the dedicated archive or merge action for protected CRM fields.'); const before = required(collection!, input.id); check(!before.archivedAt, 'Restore the CRM record before editing it.'); output.record = put(collection!, input.patch!, before) }
-      else if (input.operation === 'archive' || input.operation === 'restore') { check(isCrmCollection(collection) && collection !== 'history', 'Choose a CRM record to move.'); const before = required(collection!, input.id); check(!(collection === 'people' && input.operation === 'restore' && (before as CrmPerson).mergedIntoId), 'Undo the merge to restore this merged contact.'); output.record = put(collection!, { archivedAt: input.operation === 'archive' ? now : null }, before, input.operation === 'restore') }
+      else if (input.operation === 'archive' || input.operation === 'restore') { check(isCrmCollection(collection) && collection !== 'history', 'Choose a CRM record to move.'); const before = required(collection!, input.id); check(!(collection === 'people' && input.operation === 'restore' && (before as CrmPerson).mergedIntoId), 'Undo the merge to restore this merged contact.'); output.record = put(collection!, { archivedAt: input.operation === 'archive' ? now : null, ...(collection === 'memberships' && before.affiliationRule ? input.operation === 'archive' ? { ruleExcluded: true } : { ruleExcluded: false, affiliationRule: null } : {}) }, before, input.operation === 'restore') }
       else if (input.operation === 'comment') { check(object(input.record), 'Write a comment.'); check(typeof input.record!.body === 'string' && !!input.record!.body.trim(), 'Write a comment before saving.'); output.record = put('notes', input.record!) }
       else if (input.operation === 'complete_task') {
         const before = required('tasks', input.id); check(!before.archivedAt, 'Restore this task before completing it.')
@@ -175,9 +256,33 @@ export class SqliteCrmStore {
           }
         }
       }
-      else if (input.operation === 'membership') { check(typeof input.groupId === 'string' && validEntityRef(input.entity), 'Choose a contact and group.'); const entity = input.entity as CrmEntityRef, existing = this.rows('memberships', false).find((row) => row.groupId === input.groupId && row.entityId === entity.id && row.entityType === entity.type); if (input.remove === true) { check(existing, 'This record is not in that group.'); const before = required('memberships', existing!.id); output.record = put('memberships', { archivedAt: now }, before) } else if (existing) output.record = existing; else output.record = put('memberships', { groupId: input.groupId, entityType: entity.type, entityId: entity.id }) }
+      else if (input.operation === 'membership') {
+        check(typeof input.groupId === 'string' && validEntityRef(input.entity), 'Choose a contact and group.')
+        const entity = input.entity as CrmEntityRef, existing = this.rows('memberships', false).find(row => row.groupId === input.groupId && row.entityId === entity.id && row.entityType === entity.type)
+        if (input.remove === true) {
+          check(existing, 'This record is not in that group.')
+          const before = required('memberships', existing!.id)
+          output.record = put('memberships', { archivedAt: now, ...(before.affiliationRule ? { ruleExcluded: true } : {}) }, before)
+        } else if (existing) output.record = existing.affiliationRule ? put('memberships', { affiliationRule: null }, existing) : existing
+        else output.record = put('memberships', { groupId: input.groupId, entityType: entity.type, entityId: entity.id })
+      }
       else if (input.operation === 'set_field' || input.operation === 'pipeline_move') { check(typeof input.fieldId === 'string' && validEntityRef(input.entity) && input.value !== undefined, 'Choose a custom field, record and value.'); const field = this.get('fields', String(input.fieldId)); check(field && !field.archivedAt, 'This custom field is unavailable.'); const entity = input.entity as CrmEntityRef, existing = this.rows('fieldValues', false).find((row) => row.fieldId === field!.id && row.entityId === entity.id && row.entityType === entity.type); const before = existing ? required('fieldValues', existing.id) : undefined; if (!existing) check(input.expectedRecordRevision === undefined || input.expectedRecordRevision === 0, 'The custom field value changed.', 409); output.record = put('fieldValues', { fieldId: field!.id, groupId: field!.groupId, entityType: entity.type, entityId: entity.id, value: input.value }, before) }
-      else if (input.operation === 'log_calendar') { check(object(input.record), 'Select a calendar event.'); const record = input.record!, refs = Array.isArray(record.sourceRefs) ? record.sourceRefs as CrmSourceRef[] : []; check(refs.some((ref) => /calendar|ics|luma|partiful/.test(ref.provider)), 'A calendar interaction needs retained event provenance.'); const existing = unique(refs.flatMap((ref) => this.findBySource('interactions', ref))); check(existing.length <= 1, 'This event has multiple local matches. Review it before logging.', 409); if (existing.length) { if (input.confirmAttendance === true) { const before = required('interactions', existing[0].id); check(before.status !== 'cancelled' && before.startAt !== null && before.startAt <= now, 'Only a past, uncancelled event can be confirmed attended.'); output.record = put('interactions', { status: 'logged', attendanceConfirmed: true, occurredAt: before.startAt }, before) } else output.record = existing[0] } else output.record = put('interactions', { ...record, status: record.status === 'cancelled' ? 'cancelled' : input.confirmAttendance === true && typeof record.startAt === 'number' && record.startAt <= now ? 'logged' : 'scheduled', attendanceConfirmed: input.confirmAttendance === true && typeof record.startAt === 'number' && record.startAt <= now && record.status !== 'cancelled', occurredAt: input.confirmAttendance === true && typeof record.startAt === 'number' && record.startAt <= now && record.status !== 'cancelled' ? record.startAt : null }) }
+      else if (input.operation === 'log_calendar') { check(object(input.record), 'Select a calendar event.'); const record = input.record!, refs = Array.isArray(record.sourceRefs) ? record.sourceRefs as CrmSourceRef[] : []; check(refs.some((ref) => /calendar|ics|luma|partiful/.test(ref.provider)), 'A calendar interaction needs retained event provenance.'); const existing = unique(refs.flatMap((ref) => this.findBySource('interactions', ref))); check(existing.length <= 1, 'This event has multiple local matches. Review it before logging.', 409); if (existing.length) { if (input.confirmAttendance === true) { const before = required('interactions', existing[0].id); check(before.status !== 'cancelled' && before.startAt !== null && before.startAt <= now, 'Only a past, uncancelled event can be confirmed attended.'); output.record = put('interactions', { status: 'logged', attendanceConfirmed: true, confirmedPersonIds: before.personIds, occurredAt: before.startAt }, before) } else {
+          const saved = existing[0]
+          check(saved.archivedAt === null, 'Restore the saved calendar interaction before adding it to another contact.', 409)
+          const personIds = firstUnique([...saved.personIds, ...(Array.isArray(record.personIds) ? record.personIds : [])], stable)
+          const companyIds = firstUnique([...saved.companyIds, ...(Array.isArray(record.companyIds) ? record.companyIds : [])], stable)
+          output.record = personIds.length === saved.personIds.length && companyIds.length === saved.companyIds.length ? saved : put('interactions', { personIds, companyIds, ...(saved.attendanceConfirmed ? { confirmedPersonIds: saved.confirmedPersonIds ?? saved.personIds } : {}) }, saved)
+        } } else output.record = put('interactions', { ...record, status: record.status === 'cancelled' ? 'cancelled' : input.confirmAttendance === true && typeof record.startAt === 'number' && record.startAt <= now ? 'logged' : 'scheduled', attendanceConfirmed: input.confirmAttendance === true && typeof record.startAt === 'number' && record.startAt <= now && record.status !== 'cancelled', occurredAt: input.confirmAttendance === true && typeof record.startAt === 'number' && record.startAt <= now && record.status !== 'cancelled' ? record.startAt : null }) }
+      else if (input.operation === 'link_profile_organizations') {
+        check(actor === 'profile-capture', 'Use profile enrichment to reconcile saved affiliations.', 403)
+        const person = required('people', input.id)
+        check(person.archivedAt === null && !person.mergedIntoId, 'Choose an active contact.', 409)
+        const patch = { affiliations: person.affiliations ?? [], companyIds: person.companyIds }
+        const before = stable(patch)
+        linkCapturedOrganizations(patch)
+        output.record = stable(patch) !== before ? put('people', patch, person) : person
+      }
       else if (input.operation === 'review_candidate') {
         const candidate = required('candidates', input.id); check(candidate.status === 'pending', 'This discovery has already been reviewed.', 409)
         if (candidate.provider === 'profile-capture') check(actor === 'profile-capture', 'Use the profile capture review to choose the fields before saving.', 403)
@@ -187,7 +292,11 @@ export class SqliteCrmStore {
           const protectedKeys = new Set(['id', 'revision', 'createdAt', 'updatedAt', 'archivedAt', 'mergedIntoId'])
           const original = candidate.kind === 'update' && object(candidate.payload.patch) ? candidate.payload.patch : candidate.payload
           const patch = Object.fromEntries(Object.entries(original).filter(([key]) => !protectedKeys.has(key)))
-          const overrides = object(input.patch) ? input.patch : {}
+          if (candidate.kind === 'person' && candidate.provider === 'google-contacts' && object(candidate.raw) && candidate.sourceRefs[0]) {
+            Object.assign(patch, googleContactDetails(candidate.raw, candidate.sourceRefs[0]))
+          }
+          const overrides = object(input.patch) ? { ...input.patch } : {}
+          if (actor === 'profile-capture' && targetCollection === 'people' && Array.isArray(overrides.affiliations)) linkCapturedOrganizations(overrides)
           check(!Object.keys(overrides).some((key) => protectedKeys.has(key)), 'Use the dedicated archive or merge action for protected CRM fields.')
           const previousAcceptance = candidate.kind === 'person' ? this.rows('candidates').findLast(row => row.id !== candidate.id && row.status === 'accepted' && row.provider === candidate.provider && row.accountId === candidate.accountId && row.externalId === candidate.externalId) : undefined
           const continuityTarget = previousAcceptance?.targetId ? this.resolvePerson(previousAcceptance.targetId) : undefined
@@ -198,14 +307,26 @@ export class SqliteCrmStore {
             const target = required(targetCollection, targetId, input.expectedTargetRevision), additive: Record<string, unknown> = {}; check(target.archivedAt === null && !(targetCollection === 'people' && (target as CrmPerson).mergedIntoId), 'The selected record is archived or merged. Refresh and choose an active canonical record.', 409)
             for (const [key, value] of Object.entries(patch)) {
               if (['emails', 'phones', 'urls', 'companyIds', 'tags'].includes(key) && Array.isArray(value)) additive[key] = firstUnique([...(Array.isArray(target[key]) ? target[key] : []), ...value], item => typeof item === 'string' && key === 'emails' ? normalizeEmail(item) : typeof item === 'string' && key === 'urls' ? normalizeProfileUrl(item) || item : stable(item))
+              else if (key === 'affiliations' && candidate.provider === 'google-contacts' && Array.isArray(value)) {
+                const roles = Array.isArray(target.affiliations) ? target.affiliations : []
+                additive.affiliations = unique([...roles, ...value], role => role.id)
+              }
               else if (key === 'raw') additive.raw = value
               else if (target[key] === undefined || target[key] === null || target[key] === '' || Array.isArray(target[key]) && !target[key].length) additive[key] = value
             }
             output.record = put(targetCollection, { ...additive, ...overrides, sourceRefs: unique([...target.sourceRefs, ...candidate.sourceRefs], sourceKey) }, target)
           } else {
             const sourceRefs = unique([...candidate.sourceRefs, ...(Array.isArray(patch.sourceRefs) ? patch.sourceRefs as CrmSourceRef[] : [])], sourceKey)
-            output.record = put(targetCollection, { ...patch, ...overrides, ...(targetCollection === 'interactions' ? { status: patch.status === 'cancelled' ? 'cancelled' : input.confirmAttendance === true && typeof patch.startAt === 'number' && patch.startAt <= now ? 'logged' : 'scheduled', attendanceConfirmed: input.confirmAttendance === true && typeof patch.startAt === 'number' && patch.startAt <= now && patch.status !== 'cancelled', occurredAt: input.confirmAttendance === true && typeof patch.startAt === 'number' && patch.startAt <= now && patch.status !== 'cancelled' ? patch.startAt : null } : {}), sourceRefs, ...(candidate.raw === undefined ? {} : { raw: candidate.raw }) })
+            const observedFolkActivity = candidate.provider === 'folk' && patch.status === 'logged' && !['calendar', 'event'].includes(String(patch.type)) && typeof patch.occurredAt === 'number' && patch.occurredAt <= now
+            output.record = put(targetCollection, { ...patch, ...overrides, ...(targetCollection === 'interactions' && !observedFolkActivity ? { status: patch.status === 'cancelled' ? 'cancelled' : input.confirmAttendance === true && typeof patch.startAt === 'number' && patch.startAt <= now ? 'logged' : 'scheduled', attendanceConfirmed: input.confirmAttendance === true && typeof patch.startAt === 'number' && patch.startAt <= now && patch.status !== 'cancelled', occurredAt: input.confirmAttendance === true && typeof patch.startAt === 'number' && patch.startAt <= now && patch.status !== 'cancelled' ? patch.startAt : null } : {}), sourceRefs, ...(candidate.raw === undefined ? {} : { raw: candidate.raw }) })
           }
+        }
+        if (actor === 'profile-capture' && input.accept !== false && input.groupId !== undefined) {
+          check(typeof input.groupId === 'string' && !!input.groupId, 'Choose an available group.')
+          const entityId = (output.record as CrmRow).id, entityType = candidate.kind
+          const existing = this.rows('memberships', false).find(row => row.groupId === input.groupId && row.entityId === entityId && row.entityType === entityType)
+          if (!existing) put('memberships', { groupId: input.groupId, entityId, entityType })
+          else if (existing.affiliationRule) put('memberships', { affiliationRule: null }, existing)
         }
         output.candidate = put('candidates', { status: input.accept === false ? 'dismissed' : 'accepted', ...(input.accept !== false && output.record ? { targetId: (output.record as CrmRow).id } : {}) }, candidate)
       }
@@ -215,8 +336,48 @@ export class SqliteCrmStore {
       else if (input.operation === 'undo_merge') output = this.undoMerge(input, put)
       else if (input.operation === 'restore_version') { check(typeof input.historyId === 'string', 'Choose a retained CRM version.'); const entry = this.get('history', String(input.historyId)); check(entry && entry.before && entry.collection !== 'history' && entry.before.id === entry.recordId, 'That CRM version is unavailable or has an invalid identity.'); const before = required(entry!.collection, entry!.recordId); check(!(entry!.collection === 'people' && (before as CrmPerson).mergedIntoId), 'Undo the merge before restoring an earlier contact version.'); output.record = put(entry!.collection, entry!.before as CrmRow, before) }
       else if (input.operation === 'prepare_campaign') { const campaign = required('campaigns', input.id); check(campaign.status === 'draft', 'Restore this campaign draft before preparing it.'); output.drafts = campaign.personIds.flatMap((id) => { const person = this.get('people', id); if (!person || person.archivedAt) return []; const company = person.companyIds.map((id) => this.get('companies', id)).find(Boolean); return [{ personId: person.id, to: person.emails[0] ?? '', subject: renderCrmTemplate(campaign.subject, person, company?.name), body: renderCrmTemplate(campaign.body, person, company?.name) }] }); output.sendingEnabled = false }
-      else throw new CrmError('Unknown CRM command.')
+      else if (input.operation === 'recover_company_domains') {
+        const counts = { examined: 0, recovered: 0 }
+        for (const company of this.rows('companies', false)) {
+          if (company.domain) continue
+          counts.examined++
+          const fields = retainedCompanyDomain(company)
+          if (fields) { put('companies', fields, company); counts.recovered++ }
+        }
+        output.counts = counts
+      }
+      else if (input.operation !== 'sync_affiliation_groups') throw new CrmError('Unknown CRM command.')
+      const schoolChanges = new Set<string>()
+      for (const change of changes) {
+        if (change.collection !== 'companies' || change.before && change.before.name === change.after.name && change.before.domain === change.after.domain &&
+          change.before.organizationType === change.after.organizationType && change.before.archivedAt === change.after.archivedAt) continue
+        for (const row of [change.before, change.after]) if (row) {
+          const label = institutionGroup({ name: String(row.name) })
+          if (label) schoolChanges.add(label)
+          const domain = String(row.domain || '').toLowerCase()
+          if (domain === 'columbia.edu' || domain.endsWith('.columbia.edu')) schoolChanges.add('columbia university')
+          if (domain === 'mit.edu' || domain.endsWith('.mit.edu')) schoolChanges.add('massachusetts institute of technology')
+        }
+      }
+      const affectedSchool = schoolChanges.size > 0 && this.rows('groups', false).some(group => schoolChanges.has(institutionGroup(group)))
+      const allAffiliations = affectedSchool || input.operation === 'sync_affiliation_groups' || changes.some(change => change.collection === 'groups' &&
+        (institutionGroup(change.before as CrmCollectionMap['groups'] | null) || institutionGroup(change.after as CrmCollectionMap['groups'])))
+      const affectedPeople = allAffiliations ? this.rows('people') : [...new Set(changes.filter(change => change.collection === 'people' &&
+        (change.after.affiliations || change.before?.affiliations)).map(change => change.id))].map(id => this.get('people', id)!)
+      if (affectedPeople.length) {
+        reconcileAffiliationGroups(this, affectedPeople, (values, previous) => { put('memberships', values, previous, !values.archivedAt) }, now)
+      }
       if (changes.length) {
+        if (this.onCompanyForEnrichment) for (const change of changes) {
+          if (change.collection !== 'companies' || change.after.archivedAt !== null) continue
+          // Employers created by a person's capture already use the initiating
+          // Reader's authorization and enrich from that role's retained evidence.
+          if (!change.before && change.after.sourceRefs.some(ref => ref.provider === 'profile-affiliation') &&
+            (input.operation === 'link_profile_organizations' || actor === 'profile-capture')) continue
+          const newSource = actor === 'local' && input.operation === 'update' && change.before &&
+            (change.before.name !== change.after.name || change.before.domain !== change.after.domain || stable(change.before.urls) !== stable(change.after.urls))
+          if (!change.before || newSource) this.onCompanyForEnrichment(change.id, input.requestId)
+        }
         if (input.operation !== 'import') for (const change of changes.filter((change) => change.collection !== 'history')) this.put('history', createCrmRecord('history', { operation: input.operation, collection: change.collection, recordId: change.id, before: change.before, after: change.after, actor, undoOf: input.operation === 'undo_merge' ? String(input.historyId) : null }, now, randomUUID))
         const revision = this.revision() + 1; this.world.db.prepare("INSERT OR REPLACE INTO crm_state VALUES('head',?)").run(JSON.stringify({ schemaVersion: 1, revision }))
       }
@@ -241,6 +402,7 @@ export class SqliteCrmStore {
       if ((collection === 'memberships' || collection === 'fieldValues') && next.entityType === 'person' && typeof next.entityId === 'string' && losers.has(next.entityId)) { next.entityId = saved.id; changed = true; if (collection === 'memberships' && this.rows('memberships', false).some((member) => member.id !== row.id && member.entityId === saved.id && member.entityType === 'person' && member.groupId === next.groupId)) next.archivedAt = this.now() }
       if (Array.isArray(next.entityRefs)) { const values = refs(next.entityRefs as CrmEntityRef[]); changed ||= stable(values) !== stable(next.entityRefs); next.entityRefs = values }
       if (Array.isArray(next.personIds)) { const values = unique((next.personIds as string[]).map(replace)); changed ||= stable(values) !== stable(next.personIds); next.personIds = values }
+      if (Array.isArray(next.confirmedPersonIds)) { const values = unique((next.confirmedPersonIds as string[]).map(replace)); changed ||= stable(values) !== stable(next.confirmedPersonIds); next.confirmedPersonIds = values }
       if (Array.isArray(next.mentionIds)) { const values = unique((next.mentionIds as string[]).map(replace)); changed ||= stable(values) !== stable(next.mentionIds); next.mentionIds = values }
       if (collection === 'relationships') { for (const key of ['from', 'to']) { const ref = next[key] as CrmEntityRef; if (ref.type === 'person' && losers.has(ref.id)) { next[key] = { ...ref, id: saved.id }; changed = true } } if (stable(next.from) === stable(next.to)) { next.archivedAt = this.now(); next.from = row.from; next.to = row.to } }
       if (changed) put(collection, next, row, false)

@@ -1,3 +1,7 @@
+import { decodeBookshelf } from '../bookshelf/model.ts'
+import { BOOKSHELF_KV } from '../bookshelf/types.ts'
+import { decodeReading } from '../reading/model.ts'
+import { READING_KV } from '../reading/types.ts'
 import { create } from 'zustand'
 import { compareAndSwapWorldState, getStore, getWorldGeneration, isRepoReady, retainWorldBlob, subscribeRepo, useRepoStatus } from '../data/repo.ts'
 import type { WorldStore } from '../data/WorldStore.ts'
@@ -65,23 +69,55 @@ function mutate<T>(change: (snapshot: WritingSnapshot, corpus: KnowledgeSnapshot
   queue = task; return task
 }
 const documentOf = (snapshot: WritingSnapshot, id: string) => { const doc = snapshot.docs.find((entry) => entry.id === id); if (!doc) throw new Error('This writing is no longer available.'); return doc }
-function createDoc(input: CreateWritingInput, now = Date.now()): WritingDocument {
-  return validateWritingDocument({ id: crypto.randomUUID(), title: input.title ?? 'Untitled writing', subtitle: input.subtitle ?? '', byline: input.byline ?? '', format: input.format ?? 'note', content: input.content ?? emptyWritingContent(), appearance: { ...defaultWritingAppearance(), ...input.appearance }, createdAt: now, updatedAt: now, ...(input.basedOnSourceId ? { basedOnSourceId: input.basedOnSourceId } : {}), ...(input.topicIds ? { topicIds: input.topicIds } : {}), archivedAt: null })
+export function newWritingDraft(input: CreateWritingInput = {}, id: string = crypto.randomUUID()): WritingDocument {
+  const now = Date.now()
+  return validateWritingDocument({ id, title: input.title ?? 'Untitled writing', subtitle: input.subtitle ?? '', byline: input.byline ?? '', format: input.format ?? 'note', content: input.content ?? emptyWritingContent(), appearance: { ...defaultWritingAppearance(), ...input.appearance }, createdAt: now, updatedAt: now, ...(input.basedOnSourceId ? { basedOnSourceId: input.basedOnSourceId } : {}), ...(input.applicationId?{applicationId:input.applicationId}:{}), ...(input.chapter ? {chapter:input.chapter}:{}), ...(input.bookEditionId ? { bookEditionId: input.bookEditionId } : {}), ...(input.topicIds ? { topicIds: input.topicIds } : {}), archivedAt: null })
 }
-export function createWritingDocument(input: CreateWritingInput = {}): Promise<WritingDocument> {
-  return mutate((snapshot, corpus) => {
-    const doc = createDoc(input)
+async function ensureBook(scope: Scope, id: string) {
+  const shelf = decodeBookshelf(await scope.store.getKv(BOOKSHELF_KV))
+  if (!shelf.books.some(book => book.id === id && book.archivedAt === null)) throw new Error('This bookshelf edition is unavailable.')
+}
+export function createWritingDocument(input: CreateWritingInput = {}, draftId?: string): Promise<WritingDocument> {
+  return mutate(async (snapshot, corpus, scope) => {
+    const doc = newWritingDraft(input, draftId)
+    if (snapshot.docs.some(entry => entry.id === doc.id)) throw new Error('This note already exists. Reopen its saved version.')
+    if (doc.bookEditionId) await ensureBook(scope, doc.bookEditionId)
     if (doc.basedOnSourceId) { const source = corpus.sources.find((entry) => entry.id === doc.basedOnSourceId && !entry.deleted); if (!source) throw new Error('This source is no longer available to copy.'); doc.baseVersionId = source.currentVersionId }
     snapshot.docs.push(doc); return doc
   })
 }
+export const conceptNoteId = (topicId: string) => 'concept-note:' + topicId
+
+/** The concept's permanent ID keeps its editable note stable through renames and restores. */
+export function openConceptNote(topicId: string, restoreArchived = false): Promise<WritingDocument> {
+  return mutate(async (snapshot, _corpus, scope) => {
+    const reading = decodeReading(await scope.store.getKv(READING_KV))
+    const topic = reading.topics.find(entry => entry.id === topicId)
+    if (!topic) throw new Error('This concept is no longer available.')
+    const id = conceptNoteId(topic.id), existing = snapshot.docs.find(entry => entry.id === id)
+    if (existing) {
+      if (existing.archivedAt !== null && !restoreArchived) throw new Error('Your concept note is in Trash. Restore it to continue writing.')
+      existing.archivedAt = null
+      return existing
+    }
+    const note = newWritingDraft({ title: topic.name, topicIds: [topic.id] }, id)
+    snapshot.docs.push(note)
+    return note
+  })
+}
 export function updateWritingDocument(id: string, patch: WritingDocumentPatch, options: { expectedUpdatedAt?: number } = {}): Promise<WritingDocument> {
   return mutate(async (snapshot, _corpus, scope) => {
-    if (!patch || Object.keys(patch).some((key) => !['title', 'subtitle', 'byline', 'format', 'content', 'appearance', 'topicIds'].includes(key))) throw new Error('This writing update includes unsupported fields.')
+    if (!patch || Object.keys(patch).some((key) => !['title', 'subtitle', 'byline', 'format', 'content', 'appearance', 'topicIds', 'applicationId', 'chapter', 'bookEditionId'].includes(key))) throw new Error('This writing update includes unsupported fields.')
     const original = documentOf(snapshot, id)
     if (options.expectedUpdatedAt !== undefined && options.expectedUpdatedAt !== original.updatedAt) throw new Error('This writing changed elsewhere. Your current draft was not overwritten; compare it with the saved revision.')
     const next = validateWritingDocument({ ...original, ...patch, appearance: { ...original.appearance, ...patch.appearance } })
-    if (JSON.stringify(writingPublicationValue(next)) !== JSON.stringify(writingPublicationValue(original))) { await retainWritingRevision(original, { ...scope, kind: 'automatic' }); next.updatedAt = Math.max(Date.now(), original.updatedAt + 1) }
+    if (next.bookEditionId && next.bookEditionId !== original.bookEditionId) await ensureBook(scope, next.bookEditionId)
+    if (JSON.stringify(writingPublicationValue(next)) !== JSON.stringify(writingPublicationValue(original))) {
+      await retainWritingRevision(original, { ...scope, kind: 'automatic' })
+      next.updatedAt = Math.max(Date.now(), original.updatedAt + 1)
+      const fields = (Object.keys(patch) as (keyof WritingDocumentPatch)[]).filter(field => JSON.stringify(next[field]) !== JSON.stringify(original[field]))
+      if (fields.length) (snapshot.edits ??= []).push({ documentId: id, at: next.updatedAt, fields })
+    }
     Object.assign(original, next); return original
   })
 }
@@ -94,7 +130,7 @@ export function restoreWritingRevision(id: string, revisionId: string, expectedU
     const history = await readWritingHistory(scope.store), revision = history.entries.find((entry) => entry.id === revisionId && entry.documentId === id)
     if (!revision) throw new Error('This snapshot is no longer available.')
     await retainWritingRevision(doc, { ...scope, kind: 'restore' })
-    Object.assign(doc, writingPublicationValue(revision.document), { topicIds: revision.document.topicIds ?? [], updatedAt: Math.max(Date.now(), doc.updatedAt + 1) })
+    Object.assign(doc, writingPublicationValue(revision.document), {applicationId:revision.document.applicationId,chapter:revision.document.chapter, bookEditionId: revision.document.bookEditionId ?? null, topicIds: revision.document.topicIds ?? [], updatedAt: Math.max(Date.now(), doc.updatedAt + 1) })
     return doc
   })
 }
@@ -104,16 +140,16 @@ export function restoreWritingPublishedVersion(id: string, versionId: string, ex
     if (doc.updatedAt !== expectedUpdatedAt) throw new Error('This draft changed before restoration. Reopen history and compare the latest draft.')
     if (!version || version.metadata?.writingDocumentId !== id) throw new Error('This retained writing version is unavailable.')
     const metadata = version.metadata
-    const restored = validateWritingDocument({ ...doc, title: metadata.title ?? doc.title, subtitle: metadata.subtitle ?? '', byline: metadata.byline ?? '', format: metadata.writingFormat ?? doc.format, content: metadata.content, appearance: metadata.appearance, topicIds: metadata.topicIds ?? [] })
+    const restored = validateWritingDocument({ ...doc, title: metadata.title ?? doc.title, subtitle: metadata.subtitle ?? '', byline: metadata.byline ?? '', format: metadata.writingFormat ?? doc.format, content: metadata.content, appearance: metadata.appearance, chapter:metadata.chapter,applicationId:metadata.applicationId,topicIds: metadata.topicIds ?? [], bookEditionId: metadata.bookEditionId ?? null })
     await retainWritingRevision(doc, { ...scope, kind: 'restore' })
-    Object.assign(doc, writingPublicationValue(restored), { updatedAt: Math.max(Date.now(), doc.updatedAt + 1) })
+    Object.assign(doc, writingPublicationValue(restored), { topicIds: restored.topicIds ?? [], updatedAt: Math.max(Date.now(), doc.updatedAt + 1) })
     return doc
   })
 }
 export function duplicateWritingDocument(id: string): Promise<WritingDocument> {
   return mutate((snapshot, corpus) => {
     const original = documentOf(snapshot, id), sourceId = original.sourceId ?? original.basedOnSourceId
-    const doc = createDoc({ ...writingPublicationValue(original), title: `${original.title || 'Untitled writing'} (copy)`.slice(0, 300), ...(sourceId ? { basedOnSourceId: sourceId } : {}) })
+    const doc = newWritingDraft({ ...writingPublicationValue(original), title: `${original.title || 'Untitled writing'} (copy)`.slice(0, 300), ...(sourceId ? { basedOnSourceId: sourceId } : {}) })
     if (sourceId) doc.baseVersionId = corpus.sources.find((entry) => entry.id === sourceId)?.currentVersionId ?? original.baseVersionId
     snapshot.docs.push(doc); return doc
   })
@@ -124,12 +160,15 @@ export function createWritingFromSource(sourceId: string): Promise<WritingDocume
     if (!source || !version) throw new Error('This source is no longer available to copy.')
     const existing = snapshot.docs.find((entry) => entry.sourceId === sourceId || version.metadata?.format === 'writing' && version.metadata.writingDocumentId === entry.id)
     if (existing) return existing
-    const doc = createDoc({ title: source.title, content: writingFromPlainText(version.text), basedOnSourceId: source.id })
+    const doc = newWritingDraft({ title: source.title, content: writingFromPlainText(version.text), basedOnSourceId: source.id })
     doc.baseVersionId = version.id; snapshot.docs.push(doc); return doc
   })
 }
 function canonical(value: unknown): unknown { if (Array.isArray(value)) return value.map(canonical); if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([key, entry]) => [key, canonical(entry)])); return value }
-export function writingPublicationFingerprint(doc: WritingDocument): Promise<string> { return knowledgeHash(JSON.stringify(canonical(writingPublicationValue(doc)))) }
+export function writingPublicationFingerprint(doc: WritingDocument): Promise<string> {
+  const { bookEditionId, ...value } = writingPublicationValue(doc)
+  return knowledgeHash(JSON.stringify(canonical(bookEditionId ? { ...value, bookEditionId } : value)))
+}
 /** An explicit publication retains rich originals before adding an immutable human source version. */
 export function publishWritingDocument(id: string): Promise<{ sourceId: string; versionId: string }> {
   return mutate(async (snapshot, corpus, scope) => {
@@ -153,7 +192,7 @@ export function publishWritingDocument(id: string): Promise<{ sourceId: string; 
       if (latestDraft.revision !== snapshot.revision) throw new Error('This writing changed while its original was being retained. Your newer draft and retained original are safe; review the saved version before publishing.')
       await initializeKnowledge()
       if (!current(scope)) throw changed()
-      source = await ingestRetainedSource({ externalId: `writing:${doc.id}`, title: doc.title.trim() || 'Untitled writing', kind: 'document', text, authoredAt: doc.updatedAt, messages: writingAuthorshipMessages(doc.content, doc.updatedAt), metadata: { format: 'writing', writingDocumentId: doc.id, writingFingerprint: fingerprint, writingAssetIds: writingAssetIds(doc), title: doc.title, subtitle: doc.subtitle, byline: doc.byline, writingFormat: doc.format, content: doc.content, appearance: doc.appearance, ...(doc.topicIds ? { topicIds: doc.topicIds } : {}), ...(doc.basedOnSourceId ? { basedOnSourceId: doc.basedOnSourceId, baseVersionId: doc.baseVersionId } : {}) } }, { originalBlobId: blobId, originalName: `${doc.title || 'Untitled writing'}.writing.json`, project: false, shouldWrite: () => current(scope) && useWriting.getState().revision === snapshot.revision })
+      source = await ingestRetainedSource({ externalId: `writing:${doc.id}`, title: doc.title.trim() || 'Untitled writing', kind: 'document', text, authoredAt: doc.updatedAt, messages: writingAuthorshipMessages(doc.content, doc.updatedAt), metadata: { format: 'writing', writingDocumentId: doc.id, writingFingerprint: fingerprint, writingAssetIds: writingAssetIds(doc), title: doc.title, subtitle: doc.subtitle, byline: doc.byline, writingFormat: doc.format, content: doc.content, appearance: doc.appearance, ...(doc.chapter?{chapter:doc.chapter}:{}),...(doc.applicationId?{applicationId:doc.applicationId}:{}),...(doc.bookEditionId ? { bookEditionId: doc.bookEditionId } : {}), ...(doc.topicIds ? { topicIds: doc.topicIds } : {}), ...(doc.basedOnSourceId ? { basedOnSourceId: doc.basedOnSourceId, baseVersionId: doc.baseVersionId } : {}) } }, { originalBlobId: blobId, originalName: `${doc.title || 'Untitled writing'}.writing.json`, project: false, shouldWrite: () => current(scope) && useWriting.getState().revision === snapshot.revision })
       if (!current(scope)) throw changed()
       const latest = await scope.store.getKv<KnowledgeSnapshot>('knowledge.v1')
       if (!current(scope)) throw changed()

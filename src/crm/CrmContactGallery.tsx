@@ -17,8 +17,8 @@ export function CrmContactGallery({ people, companies, groups, memberships, sele
   return <div className="crm-contact-gallery" aria-label="Contact gallery">{people.map(person => {
     const name = personName(person), company = person.companyIds.map(id => companyMap.get(id)).filter(Boolean).slice(0, 2).join(', '), badges = linkedGroups.get(person.id) ?? []
     return <article className="crm-contact-card" key={person.id} data-selected={selectedIds.has(person.id)}>
-      <div className="crm-card-top"><label className="crm-card-select"><input type="checkbox" aria-label={`Select ${name}`} checked={selectedIds.has(person.id)} onChange={() => onToggle(person.id)} /></label><span className="crm-card-status">{person.avatarAssetId ? 'Photo saved' : 'In your circle'}</span><ArrowUpRight size={16} aria-hidden="true" /></div>
-      <button className="crm-card-open" onClick={() => onSelect(person)} aria-label={`Open ${name}`}><CrmAvatar name={name} assetId={person.avatarAssetId} size={72} /><strong>{name}</strong><span>{person.jobTitle || 'Add a little context'}</span></button>
+      <div className="crm-card-top"><label className="crm-card-select"><input type="checkbox" aria-label={`Select ${name}`} checked={selectedIds.has(person.id)} onChange={() => onToggle(person.id)} /></label><ArrowUpRight size={16} aria-hidden="true" /></div>
+      <button className="crm-card-open" onClick={() => onSelect(person)} aria-label={`Open ${name}`}><CrmAvatar name={name} assetId={person.avatarAssetId} size={72} /><strong>{name}</strong>{person.jobTitle && <span>{person.jobTitle}</span>}</button>
       <div className="crm-card-context">{company && <span><Buildings size={13} />{company}</span>}{person.location && <span><MapPin size={13} />{person.location}</span>}</div>
       <SocialProfileLinks urls={person.urls} compact />
       <div className="crm-card-groups">{badges.slice(0, 2).map(group => <span key={group.id}>{group.emoji && <i aria-hidden="true">{group.emoji}</i>}{group.name}</span>)}{badges.length > 2 && <span>+{badges.length - 2}</span>}</div>

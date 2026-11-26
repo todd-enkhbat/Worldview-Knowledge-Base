@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { popupScript } from './popupRuntime.ts'
 import { readFileSync } from 'node:fs'
 import { createContext, Script } from 'node:vm'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -9,7 +10,7 @@ async function popup() {
   let release: (value: unknown) => void = () => {}
   const sendMessage = vi.fn(async (message: { type: string }) => message.type === 'reader-status' ? { paired: true, extensionId: 'a'.repeat(32), queued: 0, tracked: {} } : new Promise((resolve) => { release = resolve }))
   const chrome = { tabs: { query: async () => [{ id: 7 }] }, runtime: { sendMessage } }
-  await new Script(`(async () => { ${readFileSync('extensions/worldview-reader/popup.js', 'utf8')}\n})()`).runInContext(createContext({ chrome, document, confirm: () => true }))
+  await new Script(`(async () => { ${popupScript()}\n})()`).runInContext(createContext({ chrome, document, confirm: () => true }))
   return { complete: (value: unknown) => release(value), note: document.getElementById('note') as HTMLTextAreaElement, save: document.getElementById('highlight') as HTMLButtonElement }
 }
 
@@ -24,6 +25,6 @@ it('retains a newer popup comment typed while its previous highlight save is pen
 it('keeps the popup comment editable until an offline queued capture is confirmed by the local workspace', async () => {
   const p = await popup(); p.note.value = 'Keep this exact comment if delivery fails.'; p.save.click()
   p.complete({ ok: true, result: { queued: true } })
-  await vi.waitFor(() => expect(document.getElementById('notice')?.textContent).toContain('has not confirmed'))
+  await vi.waitFor(() => expect(document.getElementById('notice')?.textContent).toContain('Queued on this browser'))
   expect(p.note.value).toBe('Keep this exact comment if delivery fails.')
 })

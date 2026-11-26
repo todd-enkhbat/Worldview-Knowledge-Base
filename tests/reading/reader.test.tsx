@@ -202,3 +202,40 @@ it('supports roving tab focus with Arrow keys, Home and End', async () => {
     expect(host.querySelector('[role="tabpanel"]')?.getAttribute('aria-labelledby')).toBe(tabs[expected].id)
   }
 })
+
+it('files the selected occurrence as a quotation linked to the original retained version', async () => {
+  const { source, version } = await article(), start = body.lastIndexOf('repeated quote')
+  await render(source, version)
+  await act(async () => {
+    select(host.querySelector('.reading-article-text')!, start, start + 14)
+    host.querySelector('.reading-article-text')!.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
+  })
+  await act(async () => button('Save quote').click())
+  const dialog = host.querySelector('dialog')!
+  expect(dialog.querySelector('textarea')?.value).toBe('repeated quote')
+  expect(dialog.textContent).toContain('Exact text match')
+  await act(async () => dialog.querySelector<HTMLButtonElement>('button[type=submit]')!.click())
+  const saved = await getStore().getKv<import('../../src/quotes/model.ts').QuoteLibrary>('quotes.v1')
+  expect(saved?.quotes[0]).toMatchObject({
+    text: 'repeated quote', origin: { id: source.id, kind: 'article' },
+    history: [{ source: { versionId: version.id, sourceId: source.id }, verification: { status: 'exact', start, end: start + 14 } }],
+  })
+  expect(host.querySelector('dialog')).toBeNull()
+  expect(useReading.getState().highlights).toHaveLength(0)
+})
+
+it('returns from a concept backlink to the exact imported words or margin note', async () => {
+  const { source, version } = await article('Virtù is one thing. Virtù appears again.')
+  const note = await readingStore.addReadingNote(source.id, 'A margin note on Virtù')
+  const original = location.hash, start = version.text.lastIndexOf('Virtù')
+  try {
+    history.replaceState(null, '', '#/library?source=' + source.id + '&version=' + version.id + '&from=' + start + '&term=Virt%C3%B9')
+    await render(source, version)
+    expect(host.querySelector('[data-concept-target]')?.textContent).toBe('Virtù')
+    expect(host.querySelector('[data-concept-target]')?.previousElementSibling?.textContent).toBe(version.text.slice(0, start))
+    history.replaceState(null, '', '#/library?source=' + source.id + '&note=' + note.id)
+    await render(source, version)
+    expect(host.querySelector('[role=tab][aria-selected=true]')?.textContent).toContain('Notes')
+    expect(host.querySelector('[id="annotation-' + note.id + '"]')?.textContent).toContain('A margin note on Virtù')
+  } finally { history.replaceState(null, '', original || '#') }
+})

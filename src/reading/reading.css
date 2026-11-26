@@ -230,3 +230,5 @@
 .knowledge-workbench .reading-files--list .reading-file-select { top:12px; right:10px; }
 .knowledge-workbench .reading-files--list .reading-file-caption { padding-right:34px; }
 @media (max-width:760px) { .knowledge-workbench .reading-saved-views { margin-top:14px; }.knowledge-workbench .reading-bulk-bar { gap:7px; }.knowledge-workbench .reading-bulk-bar strong { flex-basis:100%; }.knowledge-workbench .reading-bulk-bar select { max-width:145px; } }
+
+.reading-concept-target { color:inherit; background:color-mix(in srgb, var(--kb-accent) 28%, transparent); border-bottom:2px solid var(--kb-accent); }

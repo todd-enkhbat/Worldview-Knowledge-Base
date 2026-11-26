@@ -7,11 +7,11 @@ import type { CrmDetail } from '../../src/crm/client.ts'
 import type { CrmCalendarEvent } from '../../src/crm/connectionTypes.ts'
 import PersonInspector from '../../src/crm/PersonInspector.tsx'
 
-const mocks = vi.hoisted(() => ({ command: vi.fn(), get: vi.fn(), all: vi.fn(), download: vi.fn(), refresh: vi.fn(), upload: vi.fn(), portrait: vi.fn(), writer: true, details: new Map<string, unknown>() }))
+const mocks = vi.hoisted(() => ({ command: vi.fn(), enrich: vi.fn(), get: vi.fn(), all: vi.fn(), download: vi.fn(), refresh: vi.fn(), upload: vi.fn(), portrait: vi.fn(), writer: true, details: new Map<string, unknown>() }))
 vi.mock('../../src/crm/commentMedia.ts', () => ({ retainCrmCommentFiles: mocks.upload, retainCrmPortrait: mocks.portrait }))
 vi.mock('../../src/data/repo.ts', async importOriginal => ({ ...await importOriginal<Record<string, unknown>>(), useRepoStatus: (select: (state: { writer: boolean }) => unknown) => select({ writer: mocks.writer }) }))
 vi.mock('../../src/crm/client.ts', () => ({
-  crmCommand: mocks.command, crmGet: mocks.get, crmAll: mocks.all, downloadCrm: mocks.download,
+  crmCommand: mocks.command, enrichPersonOrganizations: mocks.enrich, crmGet: mocks.get, crmAll: mocks.all, downloadCrm: mocks.download,
   crmMessage: (cause: unknown) => cause instanceof Error ? cause.message : String(cause),
   personName: (person: { fullName: string; emails: string[] }) => person.fullName || person.emails[0] || 'Unnamed contact',
   useCrmQuery: (path: string) => ({ data: mocks.details.get(path) ?? null, loading: false, error: '', refresh: mocks.refresh }),
@@ -24,7 +24,7 @@ let root: Root, host: HTMLDivElement
 const changed = vi.fn(), closed = vi.fn()
 const makeDetail = (id = 'per_1'): CrmDetail => ({ revision: 4, collection: 'people', record: createCrmRecord('people', { id, revision: 3, fullName: id === 'per_1' ? 'Test Person' : 'Another Person', emails: ['reader@example.test'] }, 1000), related: { companies: [], memberships: [], groups: [], fields: [], fieldValues: [], notes: [createCrmRecord('notes', { id: 'note_1', body: '<p>Kept observation</p><img src=x onerror=alert(1)>', visibility: 'private', authorName: '', entityRefs: [{ type: 'person', id }] }, 1000)], tasks: [], interactions: [], relationships: [], history: [] } })
 beforeEach(() => {
-  mocks.writer = true; mocks.command.mockReset().mockResolvedValue({ ok: true, revision: 5, operation: 'comment' }); mocks.get.mockReset().mockResolvedValue({ rows: [] }); mocks.all.mockReset().mockResolvedValue([]); mocks.upload.mockReset().mockResolvedValue([{ assetId: `crm-file-${'a'.repeat(64)}`, name: 'research.pdf', mime: 'application/pdf', bytes: 800 }]); mocks.download.mockClear(); mocks.refresh.mockClear(); mocks.details.clear(); changed.mockClear(); closed.mockClear()
+  mocks.writer = true; mocks.enrich.mockReset(); mocks.command.mockReset().mockResolvedValue({ ok: true, revision: 5, operation: 'comment' }); mocks.get.mockReset().mockResolvedValue({ rows: [] }); mocks.all.mockReset().mockResolvedValue([]); mocks.upload.mockReset().mockResolvedValue([{ assetId: `crm-file-${'a'.repeat(64)}`, name: 'research.pdf', mime: 'application/pdf', bytes: 800 }]); mocks.download.mockClear(); mocks.refresh.mockClear(); mocks.details.clear(); changed.mockClear(); closed.mockClear()
   mocks.details.set('people/per_1', makeDetail()); mocks.details.set('people/per_2', makeDetail('per_2'))
   mocks.portrait.mockReset().mockResolvedValue({ assetId: `crm-avatar-${'b'.repeat(64)}`, name: 'portrait.png', mime: 'image/png', bytes: 1000 })
   host = document.createElement('div'); document.body.append(host); root = createRoot(host)
@@ -170,4 +170,71 @@ it('retains a chosen portrait before a revision-bound update and keeps profile i
   expect(host.textContent).toContain('Profile changed elsewhere')
   expect(button('Save details')).toBeDefined()
   expect(host.querySelector<HTMLInputElement>('.crm-person-profile-form input:not([type=file])')!.value).toBe('Test Person')
+})
+
+it('shows sourced relationship history and schedules a follow-up against the open contact', async () => {
+  const touch = { id: 'msg1', title: 'Next design review', source: 'Work mailbox', at: 1770000000000, direction: 'received', url: 'https://mail.google.com/mail/u/?authuser=owner%40example.test#all/msg1' }
+  mocks.details.set('connections/relationship?personId=per_1&offset=0', { first: touch, last: touch, timeline: [touch], total: 1, recentCount: 1, sent: 0, received: 1, ambiguousEmails: 0, unavailableSources: 0, introductions: [{ personId: 'per_2', name: 'Sam', source: 'Folk relationship field' }] })
+  await render()
+  expect(host.textContent).toContain('Introduced by Sam')
+  expect(host.querySelector('.crm-relationship-summary a')?.getAttribute('href')).toBe(touch.url)
+  await click('Follow up in a week')
+  expect(mocks.command.mock.calls[0][0]).toMatchObject({ operation: 'create', collection: 'tasks', record: { title: 'Follow up with Test Person', entityRefs: [{ type: 'person', id: 'per_1' }] } })
+  await click('Add how we met')
+  const context = host.querySelector<HTMLTextAreaElement>('.crm-relationship-summary textarea')!
+  await act(async () => { Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(context, 'At demo day'); context.dispatchEvent(new Event('input', { bubbles: true })) })
+  await click('Save context')
+  expect(mocks.command.mock.calls[1][0]).toMatchObject({ operation: 'update', collection: 'people', id: 'per_1', patch: { connectionContext: 'At demo day' } })
+})
+
+it('opens a captured work profile on Details and keeps About and dated roles ahead of enrichment tools', async () => {
+  const detail = makeDetail()
+  detail.record.description = 'Architect and writer.'
+  detail.record.affiliations = [{ id: 'one', kind: 'employment', role: 'Partner', organization: 'North Studio', startDate: '2021', current: true, description: 'Led design for the publishing team.', evidence: [] }]
+  mocks.details.set('people/per_1', detail)
+  await render()
+  expect(host.querySelector('[data-person-tab="details"]')?.getAttribute('aria-selected')).toBe('true')
+  expect(host.querySelector('.crm-person-heading')?.textContent).toContain('Partner at North Studio')
+  const panel = host.querySelector('[role="tabpanel"]')!.textContent!
+  expect(panel.indexOf('Architect and writer.')).toBeLessThan(panel.indexOf('Experience'))
+  expect(panel.indexOf('Led design for the publishing team.')).toBeLessThan(panel.indexOf('Website enrichment'))
+  await click('Activity')
+  expect(host.textContent).toContain('Kept observation')
+})
+
+it('resumes organization lookup after a failed page for a legacy linked employer', async () => {
+  const detail = makeDetail()
+  detail.record.companyIds = ['north']
+  detail.related.companies = [createCrmRecord('companies', { id: 'north', name: 'North Studio' })]
+  mocks.details.set('people/per_1', detail)
+  mocks.enrich.mockResolvedValueOnce({ results: [{ id: 'north', name: 'North Studio', status: 'updated' }], total: 2, nextOffset: 1 })
+    .mockRejectedValueOnce(new Error('Offline'))
+    .mockResolvedValueOnce({ results: [{ id: 'school', name: 'Example School', status: 'unresolved' }], total: 2, nextOffset: null })
+  await render()
+  await click('Fill missing organization details')
+  expect(host.textContent).toContain('Retry to continue')
+  await click('Fill missing organization details')
+  const id = mocks.enrich.mock.calls[0][1]
+  expect(mocks.enrich.mock.calls).toEqual([['per_1', id, 0], ['per_1', id, 1], ['per_1', id, 1]])
+  expect(host.textContent).toContain('Checked 2 organizations. 1 updated. No new details found for Example School.')
+  expect(changed).toHaveBeenCalledOnce()
+})
+
+it('opens saved school records and their sites in a read-only window while blocking enrichment', async () => {
+  mocks.writer = false
+  const detail = makeDetail(), openCompany = vi.fn()
+  const school = createCrmRecord('companies', { id: 'mit', name: 'MIT', domain: 'mit.edu' })
+  detail.record.affiliations = [{ id: 'edu', kind: 'education', organization: 'MIT', organizationId: 'mit', evidence: [] }]
+  detail.related.affiliationOrganizations = [school]
+  mocks.details.set('people/per_1', detail)
+  await act(async () => root.render(<PersonInspector person={detail.record} onChanged={changed} onClose={closed} onOpenCompany={openCompany} />))
+  await click('Fill missing organization details')
+  expect(mocks.enrich).not.toHaveBeenCalled()
+  const org = host.querySelector<HTMLAnchorElement>('.crm-career-org h5 a')!
+  await act(async () => org.click())
+  expect(org.getAttribute('href')).toBe('#/people?tab=companies&company=mit')
+  expect(openCompany).toHaveBeenCalledWith(school)
+  const site = host.querySelector<HTMLAnchorElement>('.crm-career-links a')!
+  expect(site.getAttribute('href')).toBe('https://mit.edu/')
+  expect(site.target).toBe('_blank')
 })

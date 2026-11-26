@@ -1,3 +1,5 @@
+import { ApplicationDiscovery } from './applicationDiscovery.ts'
+import { studyHttp } from './studyHttp.ts'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { join, resolve } from 'node:path'
 import { Accounts, AccountError, RateLimit, type User } from './accounts.ts'
@@ -16,6 +18,8 @@ import { handleWhisperModelRequest } from './whisperModels.ts'
 import type { AiRuntime } from './ai.ts'
 import { ArticleCapture, handleArticleCaptureRequest } from './articleCapture.ts'
 import { GoogleDriveConnection, handleGoogleDriveRequest } from './connections/googleDrive.ts'
+import { handleBookCatalog } from './bookCatalog.ts'
+import { NotebookConnection, handleNotebooks } from './connections/notebooks.ts'
 import { handleDesktopConnectionRequest } from './connections/desktop.ts'
 
 // The /api surface for either way of running the app:
@@ -56,7 +60,9 @@ interface World {
   qmd: ReturnType<typeof createQmdHttp>
   telegram: TelegramCapture
   articles: ArticleCapture
+  discovery: ApplicationDiscovery
   drive: GoogleDriveConnection
+  notebooks: NotebookConnection
   crm: ReturnType<typeof createCrmHttp>
   crmConnections: CrmConnections
 }
@@ -117,8 +123,8 @@ export function createHost(opts: HostOptions): Host {
     if (!w) {
       const db = openWorldDb(join(dir, 'world.sqlite'))
       const bus = new ChangeBus()
-      const crm = createCrmHttp(db, { store: db.crm, bus, now: opts.now, worldId: key, blobDir: join(dir, 'blobs') })
-      w = { db, bus, crm, crmConnections: new CrmConnections({ db, blobDir: join(dir, 'blobs'), stageBatch: (batch) => db.crm.stageBatch(batch) }), drive: new GoogleDriveConnection({ db, blobDir: join(dir, 'blobs'), bus, now: opts.now }), articles: new ArticleCapture({ db, blobDir: join(dir, 'blobs'), bus, now: opts.now, saveContactPhoto: input => crm.photos!.saveCapturedProfile(input), saveFolkPhotos: input => crm.photos!.saveFolkPhotos(input), saveProfileData: input => crm.capture!.stage(input, { authorize: input.current, captureMethod: 'browser-extension' }) }), handler: createApiHandler({ db, blobDir: join(dir, 'blobs'), refine: opts.refine, chat: opts.chat, bus, now: opts.now }), memory: createMemoryHttp(db, key, opts.now, { bus, directory: dir }), qmd: createQmdHttp({ db, directory: join(dir, 'qmd') }), telegram: new TelegramCapture({ db, blobDir: join(dir, 'blobs'), bus, now: opts.now, ...(key === 'local' ? opts.telegram : {}), transcribe: transcribeLocalMedia }) }
+      const crm = createCrmHttp(db, { store: db.crm, bus, now: opts.now, worldId: key, workspaceDirectory: dir, blobDir: join(dir, 'blobs') })
+      w = { db, bus, crm, discovery:new ApplicationDiscovery(), notebooks: new NotebookConnection(dir), crmConnections: new CrmConnections({ db, blobDir: join(dir, 'blobs'), stageBatch: (batch) => db.crm.stageBatch(batch) }), drive: new GoogleDriveConnection({ db, blobDir: join(dir, 'blobs'), bus, now: opts.now }), articles: new ArticleCapture({ db, blobDir: join(dir, 'blobs'), bus, now: opts.now, saveContactPhoto: input => crm.photos!.saveCapturedProfile(input), saveFolkPhotos: input => crm.photos!.saveFolkPhotos(input), quickAddProfile: crm.quickAdd, saveProfileData: input => crm.capture!.stage(input, { authorize: input.current, captureMethod: 'browser-extension' }) }), handler: createApiHandler({ db, blobDir: join(dir, 'blobs'), refine: opts.refine, chat: opts.chat, bus, now: opts.now }), memory: createMemoryHttp(db, key, opts.now, { bus, directory: dir }), qmd: createQmdHttp({ db, directory: join(dir, 'qmd') }), telegram: new TelegramCapture({ db, blobDir: join(dir, 'blobs'), bus, now: opts.now, ...(key === 'local' ? opts.telegram : {}), transcribe: transcribeLocalMedia }) }
       worlds.set(key, w)
     }
     return w
@@ -215,6 +221,13 @@ export function createHost(opts: HostOptions): Host {
         if (method === 'POST') return sendJson(res, 200, await opts.ai?.probe() ?? { provider: null, model: null, configured: false, ok: false, message: 'No AI provider is configured.' })
         return sendJson(res, 405, { error: 'Method not allowed.' })
       }
+      if (seg[0] === 'study-google') { if(accounts)return sendJson(res,403,{error:'Use the local desktop workspace.'}); const w=worldFor(null);return w.discovery.handle(req,res,seg[1]??'',w.drive,w.db) }
+      if (seg[0] === 'study') { if(accounts && seg[1]==='explain-local')return sendJson(res,403,{error:'Open the local desktop workspace.'}); const w=worldFor(user); return studyHttp(req,res,seg[1]??'',w.db,w.bus,user?join(dataDir,'users',user.id):dataDir) }
+      if (seg[0] === 'book-catalog') return handleBookCatalog(req, res, new URL(url, 'http://localhost'))
+      if (seg[0] === 'connections' && seg[1] === 'notebooks') {
+        if (accounts) return sendJson(res, 403, { error: 'Notebook connections are available in the local workspace.' })
+        return handleNotebooks(worldFor(null).notebooks, req, res)
+      }
       if (seg[0] === 'connections' && seg[1] === 'assistant') return worldFor(user).memory.connections(req, res)
       if (seg[0] === 'connections' && seg[1] === 'desktop') { if (accounts) return sendJson(res, 403, { error: 'Desktop downloads are available from the local workspace.' }); return handleDesktopConnectionRequest(req, res) }
       if (seg[0] === 'connections' && seg[1] === 'drive') { if (accounts) return sendJson(res, 403, { error: 'Google Drive is available only in the local workspace.' }); return handleGoogleDriveRequest(worldFor(user).drive, req, res) }
@@ -241,6 +254,7 @@ export function createHost(opts: HostOptions): Host {
     close() {
       capture?.close()
       for (const w of worlds.values()) {
+        w.crm.companyJobs?.close()
         w.qmd.close()
         w.telegram.close()
         w.bus.close()

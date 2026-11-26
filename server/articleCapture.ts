@@ -1,3 +1,4 @@
+import { entityUrl } from './crmProfileCapture.ts'
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
@@ -14,6 +15,7 @@ import { applyReadingHighlight, applyReadingItem, decodeReading } from '../src/r
 import { articleIdentity } from '../src/reading/articleIdentity.ts'
 import { capturedProfileMetadata } from './articleProfile.ts'
 import { CrmError } from './crmStore.ts'
+import type { QuickAddResult } from './crmProfileQuickAdd.ts'
 import type { CrmProfileCaptureDraft } from '../src/crm/profileCaptureTypes.ts'
 import { assertUniqueFolkPhotoPeople, type CapturedPhotoRequest, type FolkPhotoInput, type SavedContactPhoto, type SavedFolkPhotos } from './crmPhotoCoverage.ts'
 
@@ -29,12 +31,12 @@ interface Clients { schemaVersion: 1; revision: number; clients: Client[] }
 interface ConnectionRequest { id: string; origin: string; name: string; secretHash: string; createdAt: number; expiresAt: number; token?: string; clientId?: string }
 export interface ArticleCaptureResult { sourceId: string; versionId: string; highlightId?: string; sequence: number; contactPhoto?: SavedContactPhoto }
 export interface FolkPhotoCaptureResult extends SavedFolkPhotos { sequence: number }
-export interface ProfileDataCaptureResult { sequence: number; profileDraft: CrmProfileCaptureDraft; reviewUrl: string }
+export interface ProfileDataCaptureResult { sequence: number; profileDraft: CrmProfileCaptureDraft; reviewUrl: string; quickAdd?: QuickAddResult; workspaceFingerprint?: string }
 interface ProfileDataReceipts { schemaVersion: 1; revision: number; entries: Record<string, { hash: string; result?: ProfileDataCaptureResult }> }
 interface Receipts { schemaVersion: 1; revision: number; clients: Record<string, { sequence: number; hash: string; result: ArticleCaptureResult }> }
 interface PhotoReceipts { schemaVersion: 1; revision: number; entries: Record<string, { hash: string; capture: ArticleCaptureResult; result?: ArticleCaptureResult }> }
 interface FolkPhotoReceipts { schemaVersion: 1; revision: number; entries: Record<string, { hash: string; result?: FolkPhotoCaptureResult }> }
-interface ArticleCaptureOptions { db: WorldDb; blobDir: string; bus?: ChangeBus; now?: () => number; saveContactPhoto?: (input: CapturedPhotoRequest) => Promise<SavedContactPhoto>; saveFolkPhotos?: (input: FolkPhotoInput & { requestId: string; current: () => void }) => Promise<SavedFolkPhotos>; saveProfileData?: (input: Record<string, unknown> & { requestId: string; current: () => void }) => Promise<CrmProfileCaptureDraft> }
+interface ArticleCaptureOptions { quickAddProfile?: (draft: CrmProfileCaptureDraft, requestId: string, groupId?: string, authorize?: () => void) => Promise<QuickAddResult>; db: WorldDb; blobDir: string; bus?: ChangeBus; now?: () => number; saveContactPhoto?: (input: CapturedPhotoRequest) => Promise<SavedContactPhoto>; saveFolkPhotos?: (input: FolkPhotoInput & { requestId: string; current: () => void }) => Promise<SavedFolkPhotos>; saveProfileData?: (input: Record<string, unknown> & { requestId: string; current: () => void }) => Promise<CrmProfileCaptureDraft> }
 export class ArticleCaptureError extends Error { readonly status: number; constructor(message: string, status = 400) { super(message); this.status = status } }
 function assert(condition: unknown, message: string, status = 400): asserts condition { if (!condition) throw new ArticleCaptureError(message, status) }
 
@@ -77,7 +79,7 @@ export class ArticleCapture {
     return request.token ? { connected: true, token: request.token, clientId: request.clientId } : { connected: false, expiresAt: request.expiresAt }
   }
   async download(): Promise<Uint8Array> {
-    const files = ['manifest.json', 'background.js', 'content.js', 'folk-content.js', 'extract.js', 'popup.html', 'popup.js', 'popup.css', 'README.md']
+    const files = ['manifest.json', 'background.js', 'content.js', 'folk-content.js', 'extract.js', 'popup.html', 'popup.js', 'group-icon.js', 'worldview-128.png', 'popup.css', 'README.md']
     const entries = await Promise.all(files.map(async (name) => [`WorldviewReader/${name}`, await readFile(resolve('extensions/worldview-reader', name))] as const))
     return zipSync(Object.fromEntries(entries), { level: 6 })
   }
@@ -101,6 +103,19 @@ export class ArticleCapture {
     return this.status()
   }
   originAllowed(origin: string) { return extensionOrigin(origin) && this.clients().clients.some((client) => client.origin === origin && !client.revokedAt && client.expiresAt > this.now()) }
+  profileGroups(type: unknown, origin: string, token: string, url?: unknown) {
+    this.authenticate(origin, token)
+    assert(type === 'person' || type === 'company', 'Choose a person or company profile.')
+    const store = this.options.db.crm
+    const key = typeof url === 'string' && entityUrl(url, type)
+    const matches = key ? store.rows(type === 'person' ? 'people' : 'companies', false).filter(row =>
+      !row.mergedIntoId && (row.urls.some(link => entityUrl(link, type) === key) ||
+        row.sourceRefs.some(ref => ref.provider === 'profile-capture' && entityUrl(ref.url ?? ref.externalId, type) === key))) : []
+    const record = matches.length === 1 ? matches[0] : null
+    const existing = record && { recordId: record.id, groupIds: store.rows('memberships', false)
+      .filter(m => m.entityType === type && m.entityId === record.id).map(m => m.groupId) }
+    return { ...(key ? { existing, workspaceFingerprint: store.workspaceFingerprint() } : {}), groups: store.rows('groups', false).filter(group => store.groupSupports(group, type)).map(({ id, name, emoji, icon }) => ({ id, name, emoji: emoji ?? '', ...(icon ? { icon } : {}) })).sort((a, b) => a.name.localeCompare(b.name)) }
+  }
   private authenticate(origin: string, token: string): Client {
     assert(extensionOrigin(origin) && /^wvread_[A-Za-z0-9_-]{43}$/.test(token), 'A paired browser token is required.', 401)
     const digest = Buffer.from(hash(token), 'hex')
@@ -136,11 +151,22 @@ export class ArticleCapture {
       assert(db.compareAndSwapKv(PROFILE_DATA_RECEIPTS, { schemaVersion: 1, revision: before.revision + 1, entries }, before.revision), 'The profile capture receipt changed. Retry this retained capture.', 409)
     }
     assert(this.options.saveProfileData, 'Profile data capture is unavailable in this workspace.', 503)
+    if (input.quickAdd === true) {
+      assert(this.options.quickAddProfile, 'Update Worldview to save directly to the CRM.', 503)
+      assert(input.groupId === undefined || typeof input.groupId === 'string' && input.groupId.length > 0 && input.groupId.length <= 1000, 'Choose a valid CRM group.')
+    }
     if (!prior) writeReceipt()
     try {
       const profileDraft = await this.options.saveProfileData({ ...input, requestId: `reader-profile:${client.id}:${sequence}`, current }); current()
       const result: ProfileDataCaptureResult = { sequence, profileDraft, reviewUrl: `http://127.0.0.1:5173/#/people?capture=${encodeURIComponent(profileDraft.id)}` }
-      writeReceipt(result); return result
+      if (input.quickAdd === true) result.quickAdd = await this.options.quickAddProfile!(profileDraft, `reader-add:${key}`, input.groupId as string | undefined, current)
+      current()
+      result.workspaceFingerprint = db.crm.workspaceFingerprint()
+      const saved = result.quickAdd
+      if (saved?.status === 'saved' && saved.recordId) db.crm.rememberBrowserSave(profileDraft.profile.entityType, saved.recordId)
+      writeReceipt(result)
+      if (saved?.status === 'saved') this.options.bus?.publish({ v: 1, from: 'reader-profile', change: { type: 'kv', keys: ['crm.v1'] } })
+      return result
     } catch (error) { current(); if (error instanceof ArticleCaptureError) throw error; throw new ArticleCaptureError(`The profile is not confirmed. Retry the retained capture. ${error instanceof Error ? error.message : ''}`.trim(), error instanceof CrmError && [400, 401, 403, 404, 409, 413, 422].includes(error.status) ? error.status : 503) }
   }
   private async saveFolkPhotos(input: Record<string, unknown>, origin: string, token: string): Promise<FolkPhotoCaptureResult> {
@@ -285,13 +311,19 @@ export async function handleArticleCaptureRequest(service: ArticleCapture, req: 
       assert(input.action === 'check' || input.action === 'acknowledge', 'Choose a connection check or acknowledgement.')
       return sendMemoryJson(res, 200, service.connectionStatus(decodeURIComponent(path.split('/').at(-1)!), origin, secret, input.action === 'acknowledge'))
     }
-    if (path === '/api/reading-capture/capture') {
+    if (path === '/api/reading-capture/capture' || path === '/api/reading-capture/profile-groups') {
       assert(service.originAllowed(origin), 'Pair this extension in the local workspace first.', 403)
       res.setHeader('access-control-allow-origin', origin); res.setHeader('vary', 'Origin'); res.setHeader('access-control-allow-private-network', 'true')
       if (req.method === 'OPTIONS') { res.writeHead(204, { 'access-control-allow-methods': 'POST', 'access-control-allow-headers': 'authorization,content-type', 'access-control-max-age': '300' }); res.end(); return }
       assert(req.method === 'POST', 'Use POST for explicit article captures.', 405)
       const token = /^Bearer (\S+)$/.exec(String(req.headers.authorization ?? ''))?.[1] ?? ''
-      return sendMemoryJson(res, 200, await service.capture(await body(req), origin, token))
+      const input = await body(req)
+      if (path.endsWith('/profile-groups')) return sendMemoryJson(res, 200, service.profileGroups(input.entityType, origin, token, input.url))
+      if (input.saveProfileData === true && req.socket.localPort) {
+        const receipt = await service.capture({ ...input, saveProfileData: true }, origin, token)
+        return sendMemoryJson(res, 200, { ...receipt, reviewUrl: `http://127.0.0.1:${req.socket.localPort}/#/people?capture=${encodeURIComponent(receipt.profileDraft.id)}` })
+      }
+      return sendMemoryJson(res, 200, await service.capture(input, origin, token))
     }
     assert(memoryOriginAllowed(req) && !!req.headers['x-wv-client'], 'Open the local workspace to manage browser pairing.', 403)
     if (/^\/api\/reading-capture\/connect\/[^/]+\/approve$/.test(path) && req.method === 'POST') return sendMemoryJson(res, 200, service.approveConnection(decodeURIComponent(path.split('/').at(-2)!)))

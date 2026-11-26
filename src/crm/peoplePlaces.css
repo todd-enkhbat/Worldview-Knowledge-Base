@@ -1,0 +1,23 @@
+.crm-places {display:grid;gap:.7rem;padding:1rem;overflow:auto}
+.crm-places-controls,.crm-place-contact {display:flex;align-items:center;gap:1rem;flex-wrap:wrap}
+.crm-places-controls label,.crm-place-contact span {display:grid;gap:.25rem}
+.crm-places-controls input,.crm-places-controls select {padding:.4rem;border:1px solid #abb9af;border-radius:4px}
+.crm-places-map {width:100%;position:relative;background:#eff4f5;border-radius:6px;overflow:hidden}
+.crm-places-map img {display:block;width:100%}
+.crm-places-map button {padding:0;position:absolute;transform:translate(-50%,-50%);min-width:18px;height:18px;border-radius:50%;border:1px solid white;background:#285745;color:white;font-size:10px;cursor:pointer}
+.crm-places-map button:is(:focus,:hover) {z-index:1;outline:2px solid #233f37}
+.crm-place-contact {width:100%;text-align:left;background:none;border:0;border-bottom:1px solid #dbe3de;padding:.55rem;cursor:pointer;color:inherit}
+.crm-places small,.crm-place-contact small {color:#52675a}
+.crm-places { min-width:0; color:var(--kb-text); }
+.crm-places-controls { align-items:flex-end; gap:10px; }
+.crm-places-controls label { color:var(--kb-muted); font-size:11px; }
+.crm-places-controls :is(input,select) { color:var(--kb-text); background:var(--kb-panel); border-color:var(--kb-line); padding:7px 9px; }
+.crm-places-map button { display:grid; place-items:center; width:28px; height:28px; font-size:10px; font-weight:600; font-variant-numeric:tabular-nums; }
+.crm-location-cluster { border:1px solid var(--kb-line); padding:10px; border-radius:8px; min-width:0; }
+.crm-location-cluster header,.crm-location-cluster>div { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+.crm-location-cluster header { justify-content:space-between; margin-bottom:8px; }
+.crm-location-cluster>div { max-height:170px; overflow:auto; }
+.crm-location-cluster>div button { color:var(--kb-text); background:var(--kb-panel); border:1px solid var(--kb-line); padding:5px 9px; border-radius:5px; }
+.crm-places .crm-place-contact { display:grid; grid-template-columns:auto minmax(0,1fr) auto; gap:10px; border-color:var(--kb-line); min-width:0; }
+.crm-place-contact>span:not(.crm-avatar){ overflow-wrap:anywhere; }
+.crm-places small { color:var(--kb-muted); }

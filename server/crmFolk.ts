@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { crmRecordLocation } from '../src/crm/recordLocation.ts'
 import { CRM_COLLECTIONS } from '../src/crm/types.ts'
 import type { CrmBase, CrmEntityRef, CrmEntityType, CrmField, CrmJson, CrmSnapshot, CrmSourceRef } from '../src/crm/types.ts'
 
@@ -159,7 +160,7 @@ export function normalizeFolkExport(value: unknown): FolkNormalizationResult {
     snapshot.people.push({
       ...base(row, id, 'person'), firstName: string(row.firstName), lastName: string(row.lastName), fullName: string(row.fullName),
       emails: strings(row.emails), phones: strings(row.phones), urls: strings(row.urls), jobTitle: string(row.jobTitle), description: string(row.description),
-      location: strings(row.addresses)[0] || string(row.location), companyIds: ids(row.companies), tags: strings(row.tags), avatarAssetId: null, mergedIntoId: null,
+      location: crmRecordLocation(row), companyIds: ids(row.companies), tags: strings(row.tags), avatarAssetId: null, mergedIntoId: null,
       birthday: json(row.birthday), gender: json(row.gender), addresses: json(row.addresses), createdBy: json(row.createdBy), interactionMetadata: json(row.interactionMetadata), strongestConnection: json(row.strongestConnection),
     })
     addEntityDetails(row, 'person', id)
@@ -172,7 +173,7 @@ export function normalizeFolkExport(value: unknown): FolkNormalizationResult {
   }
   for (const row of deduplicate('companies', input.companies)) {
     const id = string(row.id)
-    snapshot.companies.push({ ...base(row, id, 'company'), name: string(row.name), description: string(row.description), domain: string(row.domain), emails: strings(row.emails), phones: strings(row.phones), urls: strings(row.urls), industry: string(row.industry), tags: strings(row.tags), logoAssetId: null, addresses: json(row.addresses), foundationYear: json(row.foundationYear), fundingRaised: json(row.fundingRaised), lastFundingDate: json(row.lastFundingDate), employeeRange: json(row.employeeRange), createdBy: json(row.createdBy) })
+    snapshot.companies.push({ ...base(row, id, 'company'), name: string(row.name), description: string(row.description), domain: string(row.domain), emails: strings(row.emails), phones: strings(row.phones), urls: strings(row.urls), industry: string(row.industry), tags: strings(row.tags), logoAssetId: null, location: crmRecordLocation(row), addresses: json(row.addresses), foundationYear: json(row.foundationYear), fundingRaised: json(row.fundingRaised), lastFundingDate: json(row.lastFundingDate), employeeRange: json(row.employeeRange), createdBy: json(row.createdBy) })
     addEntityDetails(row, 'company', id)
   }
   for (const row of deduplicate('objects', input.objects)) {

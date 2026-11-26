@@ -129,3 +129,17 @@ describe('readable knowledge workspace', () => {
     expect(host.querySelector('.knowledge-prose')?.textContent).not.toContain('revised decision adds')
   })
 })
+
+it('opens the current version only when explicitly requested after a pinned quote version disappears', async () => {
+  const words = 'The current document wording.'
+  await importKnowledgeFiles([new NodeFile([words], 'version.md', { type: 'text/markdown' }) as unknown as File])
+  const source = useKnowledge.getState().sources[0]
+  await render('library', '#/library?source=' + source.id + '&version=gone')
+  const reader = host.querySelector('[aria-label="Requested source version unavailable"]')!
+  expect(reader.textContent).toContain('This retained version is unavailable')
+  expect(reader.textContent).not.toContain(words)
+  const link = reader.querySelector<HTMLAnchorElement>('a')!
+  expect(link.textContent).toBe('Read current version')
+  await render('library', link.hash)
+  expect(host.querySelector('.knowledge-prose')?.textContent).toContain(words)
+})

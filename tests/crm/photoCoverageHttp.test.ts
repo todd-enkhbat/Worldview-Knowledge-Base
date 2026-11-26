@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto'
+import { realpath } from 'node:fs/promises'
 import { createServer, type Server } from 'node:http'
 import { mkdtemp, readdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -5,6 +7,7 @@ import { tmpdir } from 'node:os'
 import type { AddressInfo } from 'node:net'
 import { afterEach, beforeEach, expect, it } from 'vitest'
 import { createCrmHttp } from '../../server/crmHttp.ts'
+import { previewNameDigest, previewUrlDigest } from '../../server/crmProfilePreviewIdentity.ts'
 import { ArticleCapture, handleArticleCaptureRequest } from '../../server/articleCapture.ts'
 import { openWorldDb, type WorldDb } from '../../server/worldDb.ts'
 
@@ -13,7 +16,7 @@ const origin = `chrome-extension://${'a'.repeat(32)}`, clientHeaders = { 'x-wv-c
 beforeEach(async () => {
   db = openWorldDb(':memory:'); directory = await mkdtemp(join(tmpdir(), 'wv-photo-http-'))
   db.putSettings({ T0: 0, yPerYear: 12, stepsPerYear: 600, physicsSeed: 42, qualityTier: 'auto', firstRunComplete: true, lastBackupAt: null, autoBackupEnabled: false, createdAt: 1, schemaVersion: 1 })
-  const crm = createCrmHttp(db, { store: db.crm, blobDir: directory })
+  const crm = createCrmHttp(db, { store: db.crm, blobDir: directory, workspaceDirectory: directory })
   articles = new ArticleCapture({ db, blobDir: directory, saveFolkPhotos: input => crm.photos!.saveFolkPhotos(input), saveContactPhoto: input => crm.photos!.saveCapturedProfile(input) })
   server = createServer((req, res) => { if (req.url?.startsWith('/api/reading-capture')) void handleArticleCaptureRequest(articles, req, res); else void crm.handle(req, res) })
   await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve) }); base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
@@ -60,4 +63,44 @@ it('accepts only paired diagnostic-only Search captures and cannot write a conta
   const response = await post(payload); expect(response.status).toBe(200); const result = await response.json(); expect(result).toMatchObject({ sequence: 1, originalAssetId: expect.stringMatching(/^crm-file-/), folkPhotos: { diagnostic: true, total: 0, saved: 0, results: [] } }); expect(result).not.toHaveProperty('sourceId')
   expect((await post({ ...payload, sequence: 2, folkPhotos: [{ personId: people[0].id, name: 'Untouched contact', photoUrl: 'https://documents.folk.app/example' }] })).status).toBe(400)
   expect(db.crm.rows('people', false)).toEqual(people); expect(db.crm.rows('imports', false)).toHaveLength(1); expect(db.getKv('knowledge.v1')).toBeUndefined(); expect(db.getKv('reading.v1')).toBeUndefined()
+})
+
+it('saves native capture through the normal group and retained-source flow and replays without a duplicate person', async () => {
+  db.crm.command({ operation: 'create', requestId: 'native-group', collection: 'groups', record: { id: 'g', name: 'Founders', entityType: 'person' } })
+  const headers = { 'x-wv-client':'desktop-profile-capture', 'x-wv-workspace-fingerprint':createHash('sha256').update(await realpath(directory)).digest('hex'), 'content-type': 'application/json' }
+  const groupsUrl = base + '/api/crm/profile-capture/groups?entityType=person'
+  expect((await fetch(groupsUrl, {headers:{...headers, 'x-wv-workspace-fingerprint':'previous workspace'}})).status).toBe(409)
+  const dest = await (await fetch(groupsUrl, { headers })).json()
+  expect(dest).toMatchObject({ groups: [{ id: 'g', name: 'Founders' }], workspaceToken:expect.any(String) })
+  const snapshot = { workspaceToken:dest.workspaceToken, requestId: 'native-try', groupId: 'g', url: 'https://example.org/ada', title: 'Ada Example', text: 'Ada Example is a founder.', profile: { entityType: 'person', name: 'Ada Example' } }
+  const post = () => fetch(base + '/api/crm/profile-capture/quick-add', { method: 'POST', headers, body: JSON.stringify(snapshot) })
+  const stale = await fetch(base + '/api/crm/profile-capture/quick-add', { method:'POST', headers, body:JSON.stringify({...snapshot, workspaceToken:'earlier database'}) })
+  expect(stale.status).toBe(409)
+  expect(db.crm.rows('candidates')).toHaveLength(0)
+  const first = await (await post()).json()
+  expect(first).toMatchObject({ status: 'saved', recordId: expect.any(String) })
+  expect(await (await post()).json()).toMatchObject({ recordId: first.recordId, draftId: first.draftId })
+  expect(db.crm.list('people', {groupId: 'g'}).total).toBe(1)
+  const unrelated = { ...snapshot, requestId:'same-name-new-site', url:'https://different.example.org/about' }
+  const review = await fetch(base + '/api/crm/profile-capture/quick-add', { method:'POST', headers, body:JSON.stringify(unrelated) })
+  expect(await review.json()).toMatchObject({status:'review', draftId:expect.any(String)})
+  expect(db.crm.list('people').total).toBe(1)
+  expect(await (await fetch(base + '/api/crm/profile-capture/' + first.draftId, { headers })).json()).toMatchObject({ source: { captureMethod: 'desktop-capture' }, status: 'accepted' })
+})
+
+it('reads only a uniquely linked, exactly named active person’s saved affiliation facts for a native preview', async () => {
+  const source = 'https://uni.example/faculty/ada/'
+  const work = { kind:'employment', organization:'Example Lab', current:true, role:'Professor', evidence:[] }
+  const study = { kind:'education', organization:'Example University', evidence:[] }
+  db.crm.command({operation:'create', collection:'people', requestId:'preview-person', record:{id:'p-preview',fullName:'Ada J. Example', urls:[source], affiliations:[{...work,id:'a'}, {...work,id:'b',organization:'Former Org',current:false,endDate:'2020'}, {...study,id:'c'}]}})
+  const headers = { 'x-wv-client':'desktop-profile-capture', 'x-wv-workspace-fingerprint':createHash('sha256').update(await realpath(directory)).digest('hex') }
+  const get = async (name: string, url: string) => (await fetch(base + '/api/crm/profile-capture/groups?' + new URLSearchParams({ entityType:'person',sourceDigest:previewUrlDigest(url),nameDigest:previewNameDigest(name) }), {headers})).json()
+  const revision = db.crm.revision()
+  expect(await get('Ada J. Example', source + '?utm_source=preview#profile')).toMatchObject({savedAffiliations: { companies:['Example Lab'], schools:[{organization:'Example University',status:'attended'}] }})
+  expect(await get('Ada Example', source)).not.toHaveProperty('savedAffiliations')
+  expect(await get('Ada J. Example', source + '?differentPerson=2')).not.toHaveProperty('savedAffiliations')
+  expect(await get('Ada J. Example', 'https://other.example/ada')).not.toHaveProperty('savedAffiliations')
+  expect(db.crm.revision()).toBe(revision)
+  db.crm.command({operation:'create',collection:'people',requestId:'preview-duplicate-url',record:{id:'p-other',fullName:'Other Person',urls:[source]}})
+  expect(await get('Ada J. Example', source)).not.toHaveProperty('savedAffiliations')
 })

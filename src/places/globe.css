@@ -1,0 +1,72 @@
+.world-atlas .atlas-projections {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  padding: 2px;
+  border: 1px solid var(--atlas-rule);
+  border-radius: 6px;
+}
+.world-atlas .atlas-projections button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 9px;
+  min-height: 28px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--atlas-ink);
+  font: 600 12px/1.25 Inter, system-ui, sans-serif;
+}
+.world-atlas .atlas-projections [aria-pressed=true] {
+  background: var(--atlas-pin);
+  color: var(--atlas-sea);
+}
+.atlas-globe-scene {
+  isolation: isolate;
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  aspect-ratio: 2 / 1;
+  min-height: 212px;
+  touch-action: none;
+  cursor: grab;
+  color: var(--atlas-ink);
+  background-color: var(--atlas-sea);
+  background-image: radial-gradient(ellipse at center, transparent 36%, color-mix(in srgb,var(--atlas-rule) 26%,transparent) 100%);
+}
+.atlas-globe-scene:focus-visible { outline: 2px solid var(--atlas-copper); outline-offset: -3px; }
+.atlas-globe-scene:active { cursor: grabbing; }
+.atlas-sphere-surface {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%,-50%);
+  display: block;
+  max-width: none;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 25%, #dbe4d8, #97b1aa 75%, #738f89);
+  box-shadow: 6px 8px 16px color-mix(in srgb, var(--atlas-ink) 16%, transparent);
+}
+.atlas-globe-ink { position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden; pointer-events: none; }
+.globe-rim { fill: none; stroke: #465c50; stroke-width: .9px; vector-effect: non-scaling-stroke; }
+.globe-graticule { fill: none; stroke: #324a43; opacity: .48; stroke-width: .55px; vector-effect: non-scaling-stroke; }
+.globe-land-label { fill: #2b3f32; stroke: #dfe4cd; stroke-width: 1.2px; paint-order: stroke; font: italic 13px Georgia,serif; }
+[data-theme="dark"] .globe-graticule { stroke: #d1d7bd; opacity: .4; }
+[data-theme="dark"] .globe-land-label { stroke: #829887; }
+.atlas-coordinates {
+  position: absolute;
+  left: 12px;
+  bottom: 10px;
+  pointer-events: none;
+  font: 10px/1.55 'IBM Plex Mono',ui-monospace,monospace;
+  font-variant-numeric: tabular-nums;
+}
+.atlas-globe-status { position: absolute; top: 9px; left: 12px; color: var(--atlas-ink); font: 11px Inter, sans-serif; }
+.atlas-sphere-pin small { max-width: min(150px,22vw); }
+@media (max-width: 550px) {
+  .atlas-globe-scene { aspect-ratio: 1.45 / 1; min-height: 200px; }
+  .globe-land-label { font-size: 11px; }
+  .atlas-coordinates { font-size: 9px; left: 8px; bottom: 7px; }
+}
+.atlas-sphere-pin[data-label-side="left"] small { left: auto; right: 95%; }

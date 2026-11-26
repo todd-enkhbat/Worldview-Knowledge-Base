@@ -9,6 +9,8 @@ import type { CrmJson } from '../src/crm/types.ts'
 import type { CrmCalendar, CrmCalendarEvent, CrmCapturedContactSource, CrmConnectionsStatus, CrmConnectorBatch, CrmImportMapping, GoogleCrmCapability } from '../src/crm/connectionTypes.ts'
 import type { KnowledgeSnapshot } from '../src/knowledge/types.ts'
 import { batchCrmImport, connectorCandidate, crmEmail, crmHash, crmPerson, crmUrl, parseCrmEmailHeaders, previewCrmImport } from './crmConnectionParsers.ts'
+import { googleContactDetails } from './crmGoogleContact.ts'
+import { CrmRelationshipHistory } from './crmRelationshipHistory.ts'
 import { normalizeFolkExport } from './crmFolk.ts'
 
 export const CRM_GOOGLE_SCOPES: Record<GoogleCrmCapability, string[]> = {
@@ -27,7 +29,7 @@ const validCapabilities = (value: unknown): GoogleCrmCapability[] => [...new Set
 export class CrmConnectionError extends Error { status: number; retryAt?: number; rateLimited?: boolean; constructor(message: string, status = 400, options: { retryAt?: number; rateLimited?: boolean } = {}) { super(message); this.status = status; this.retryAt = options.retryAt; this.rateLimited = options.rateLimited } }
 interface ClientConfig { clientId: string; clientSecret?: string }
 interface GmailProgress { mode: 'messages' | 'history'; pageToken: string; historyId: string; baselineHistoryId: string; labelIds: string[]; pendingIds?: string[]; listComplete?: boolean; retryAt?: number | null; includeSubject?: boolean }
-interface PrivateAccount { id: string; label: string; email?: string; subject?: string; client: ClientConfig; capabilities: GoogleCrmCapability[]; scopes: string[]; tokens?: { access: string; refresh?: string; expiresAt: number }; connectedAt?: number; lastSyncAt?: number; gmailHistoryId?: string; gmailProgress?: GmailProgress; contactsSyncToken?: string; otherContactsSyncToken?: string }
+interface PrivateAccount { syncWorkspace?: string; includeSubjects?: boolean; autoSyncError?: string; autoSyncAt?: number; id: string; label: string; email?: string; subject?: string; client: ClientConfig; capabilities: GoogleCrmCapability[]; scopes: string[]; tokens?: { access: string; refresh?: string; expiresAt: number }; connectedAt?: number; lastSyncAt?: number; gmailHistoryId?: string; gmailProgress?: GmailProgress; contactsSyncToken?: string; contactsFormat?: number; otherContactsSyncToken?: string }
 interface OutboxEntry { id: string; digest: string; accountId: string; status: 'ambiguous' | 'sent' | 'failed'; attemptedAt: number; messageId?: string }
 interface PrivateVault { schemaVersion: 1; revision: number; accounts: PrivateAccount[]; happenstanceKey?: string; folkKey?: string; outbox: OutboxEntry[] }
 interface OAuthSession { accountId: string; verifier: string; redirect: string; origin: string; epoch: number; generation: number; expiresAt: number }
@@ -45,6 +47,8 @@ export class CrmConnections {
   private preparations = new Map<string, MailPreparation>()
   private gmailBusy = new Set<string>()
   private gmailLastRead = new Map<string, number>()
+  private history?: { key: string; view: CrmRelationshipHistory }
+  private syncRunning = false
   constructor(options: CrmConnectionsOptions) { this.options = options }
   private now() { return this.options.now?.() ?? Date.now() }
   private path() { return join(dirname(this.options.blobDir), 'connections', 'crm-google.private.json') }
@@ -99,7 +103,68 @@ export class CrmConnections {
     current(); this.gmailLastRead.set(account.id, this.now()); return this.google(account, url)
   }
   private async driveConfig(): Promise<ClientConfig | null> { try { const raw = await this.privateRead(join(dirname(this.options.blobDir), 'connections', 'google-drive.private.json')); return object(raw) && raw.clientType !== 'web' && typeof raw.clientId === 'string' ? { clientId: raw.clientId, ...(typeof raw.clientSecret === 'string' ? { clientSecret: raw.clientSecret } : {}) } : null } catch { return null } }
-  async status(): Promise<CrmConnectionsStatus> { const vault = await this.load(); return { available: true, accounts: vault.accounts.map((account) => ({ id: account.id, label: account.label, email: account.email ?? null, configured: true, connected: !!account.tokens, capabilities: account.capabilities, scopes: account.scopes, connectedAt: account.connectedAt ?? null, lastSyncAt: account.lastSyncAt ?? null, ...(account.capabilities.includes('gmail') ? { gmailSync: { pendingMessages: account.gmailProgress?.pendingIds?.length ?? 0, hasMore: !!account.gmailProgress && (!account.gmailProgress.listComplete || !!account.gmailProgress.pendingIds?.length), retryAt: account.gmailProgress?.retryAt ?? null } } : {}) })), driveClientAvailable: !!await this.driveConfig(), aiRequired: false, happenstance: { configured: !!vault.happenstanceKey, automaticResearch: false, mcpUrl: 'https://happenstance.ai/mcp' }, folk: { configured: !!vault.folkKey } } }
+  private workspaceKey() {
+    const device = this.options.db.db.prepare("SELECT body FROM crm_state WHERE key='device'").get()
+    return typeof device?.body === 'string' ? device.body : ''
+  }
+  private relationshipView() {
+    const key = this.workspaceKey() + ':' + this.options.db.getReplacementGeneration()
+    if (!this.history || this.history.key !== key) this.history = { key, view: new CrmRelationshipHistory(this.options.blobDir) }
+    return this.history.view
+  }
+  async reconnect(offset: number) {
+    check(Number.isSafeInteger(offset) && offset >= 0, 'Choose a valid follow-up page.')
+    const current = this.guard(), vault = await this.load(); current()
+    return this.relationshipView().reconnect(this.options.db.crm, vault.accounts, this.now(), offset, current)
+  }
+  async relationship(personId: string, offset: number) {
+    check(Number.isSafeInteger(offset) && offset >= 0, 'Choose a valid history page.')
+    const current = this.guard(), vault = await this.load(); current()
+    const person = this.options.db.crm.resolvePerson(personId)
+    check(person && person.archivedAt === null, 'Contact unavailable.', 404)
+    return this.relationshipView().read(this.options.db.crm, personId, vault.accounts, this.now(), offset, current)
+  }
+  async syncPreferences(input: Record<string, unknown>) {
+    const current = this.guard(), vault = await this.load(), id = str(input.accountId)
+    current()
+    check(!this.gmailBusy.has(id), 'The current email batch is finishing. Change sync preferences after it completes.', 409)
+    const account = vault.accounts.find(a => a.id === id)
+    check(account?.tokens && account.capabilities.some(c => c === 'gmail' || c === 'contacts'), 'Connect a Gmail or Contacts account first.')
+    check(typeof input.enabled === 'boolean' && typeof input.includeSubjects === 'boolean', 'Choose sync and subject preferences.')
+    const key = this.workspaceKey()
+    check(key, 'Workspace unavailable.')
+    await this.persist({ ...vault, accounts: vault.accounts.map(a => a.id === id ? { ...a, syncWorkspace: input.enabled ? key : undefined, includeSubjects: input.includeSubjects === true, gmailProgress: a.gmailProgress ? { ...a.gmailProgress, includeSubject: input.includeSubjects === true } : undefined, autoSyncAt: undefined, autoSyncError: undefined } : a) }, this.epoch, current)
+    return { ok: true }
+  }
+  async autoSync() {
+    if (this.syncRunning) return { changed: false }
+    this.syncRunning = true
+    try {
+      const current = this.guard(), key = this.workspaceKey(), ids = (await this.load()).accounts.map(a => a.id)
+      let changed = false
+      for (const accountId of ids) {
+        current()
+        const a = await this.account(accountId)
+        if (!a.tokens || !key || a.syncWorkspace !== key || a.autoSyncError || this.gmailBusy.has(accountId) || (a.autoSyncAt ?? -Infinity) > this.now() - 15 * 60000) continue
+        let problem = ''
+        try {
+          if (a.capabilities.includes('contacts')) { await this.contacts({ accountId }); changed = true }
+          current()
+          if (a.capabilities.includes('gmail') && (await this.account(accountId)).syncWorkspace === key) {
+            const result = await this.gmail({ accountId, limit: 50, includeSubject: a.includeSubjects }) as { errors: string[]; retryAt?: number; partial?: boolean }
+            changed = true
+            problem = result.errors.find(message => !message.startsWith('Progress was saved.')) ?? ''
+          }
+        } catch (error) { problem = error instanceof CrmConnectionError ? error.message : 'Discovery was interrupted. Review the account and resume sync.' }
+        const vault = await this.load(); current()
+        if (vault.accounts.find(row => row.id === accountId)?.syncWorkspace !== key) continue
+        await this.persist({ ...vault, accounts: vault.accounts.map(row => row.id === accountId ? { ...row, autoSyncAt: this.now(), autoSyncError: problem } : row) }, this.epoch, current)
+        changed = true
+      }
+      return { changed }
+    } finally { this.syncRunning = false }
+  }
+  async status(): Promise<CrmConnectionsStatus> { const vault = await this.load(); return { available: true, accounts: vault.accounts.map((account) => ({ id: account.id, label: account.label, email: account.email ?? null, configured: true, connected: !!account.tokens, autoSync: !!account.syncWorkspace && account.syncWorkspace === this.workspaceKey(), includeSubjects: account.includeSubjects === true, autoSyncError: account.autoSyncError, capabilities: account.capabilities, scopes: account.scopes, connectedAt: account.connectedAt ?? null, lastSyncAt: account.lastSyncAt ?? null, ...(account.capabilities.includes('gmail') ? { gmailSync: { pendingMessages: account.gmailProgress?.pendingIds?.length ?? 0, hasMore: !!account.gmailProgress && (!account.gmailProgress.listComplete || !!account.gmailProgress.pendingIds?.length), retryAt: account.gmailProgress?.retryAt ?? null } } : {}) })), driveClientAvailable: !!await this.driveConfig(), aiRequired: false, happenstance: { configured: !!vault.happenstanceKey, automaticResearch: false, mcpUrl: 'https://happenstance.ai/mcp' }, folk: { configured: !!vault.folkKey } } }
   async configure(input: Record<string, unknown>) {
     const current = this.guard(), capabilities = validCapabilities(input.capabilities); check(capabilities.length, 'Choose at least one account capability.'); check(str(input.label, 200).trim(), 'Give this account a label.')
     let client: ClientConfig | null = null
@@ -129,13 +194,28 @@ export class CrmConnections {
     check(!account.subject || account.subject === identity.sub, 'This sign-in is a different Google account. Configure it separately.', 409)
     const vault = await this.load(), updated: PrivateAccount = { ...account, email: str(identity.email, 320), subject: str(identity.sub, 1000), tokens: { access: str(value.access_token), ...(typeof value.refresh_token === 'string' ? { refresh: value.refresh_token } : {}), expiresAt: this.now() + Math.max(60, Math.min(86400, Number(value.expires_in) || 3600)) * 1000 }, connectedAt: this.now() }; current(); await this.persist({ ...vault, accounts: vault.accounts.map((item) => item.id === account.id ? updated : item) }, epoch, current); current(); return `${session!.origin}/#/people?connections=google-connected`
   }
-  async disconnect(accountId: string) { const vault = await this.load(); check(vault.accounts.some((item) => item.id === accountId), 'Account not found.', 404); this.epoch++; this.sessions.clear(); this.preparations.clear(); await this.persist({ ...vault, accounts: vault.accounts.map((account) => account.id === accountId ? { ...account, tokens: undefined, connectedAt: undefined, gmailHistoryId: undefined, gmailProgress: undefined, contactsSyncToken: undefined, otherContactsSyncToken: undefined } : account) }); return { ok: true, message: 'Disconnected locally. You can revoke Google account access separately. Retained CRM records remain available.' } }
+  async disconnect(accountId: string) { const vault = await this.load(); check(vault.accounts.some((item) => item.id === accountId), 'Account not found.', 404); this.epoch++; this.sessions.clear(); this.preparations.clear(); await this.persist({ ...vault, accounts: vault.accounts.map((account) => account.id === accountId ? { ...account, tokens: undefined, connectedAt: undefined, syncWorkspace: undefined, autoSyncError: undefined, gmailHistoryId: undefined, gmailProgress: undefined, contactsSyncToken: undefined, otherContactsSyncToken: undefined } : account) }); return { ok: true, message: 'Disconnected locally. You can revoke Google account access separately. Retained CRM records remain available.' } }
   async calendars(accountId: string) { const account = await this.account(accountId, 'calendar'), calendars: CrmCalendar[] = []; let pageToken = ''
     for (let page = 0; page < 20; page++) { const result = await this.google(account, `https://www.googleapis.com/calendar/v3/users/me/calendarList?${new URLSearchParams({ maxResults: '250', ...(pageToken ? { pageToken } : {}) })}`); for (const value of Array.isArray(result.items) ? result.items : []) if (object(value) && !value.deleted) calendars.push({ id: str(value.id), summary: str(value.summary, 1000), primary: value.primary === true, selected: value.selected === true, timeZone: str(value.timeZone), accessRole: str(value.accessRole) }); pageToken = str(result.nextPageToken); if (!pageToken) break }
     return { calendars, complete: !pageToken }
   }
   private cleanEvent(raw: Record<string, unknown>, accountId: string, calendarId: string): CrmCalendarEvent { const start = object(raw.start) ? raw.start : {}, end = object(raw.end) ? raw.end : {}, original = object(raw.originalStartTime) ? raw.originalStartTime : {}, organizer = object(raw.organizer) ? raw.organizer : {}, time = (value: unknown) => { const date = Date.parse(str(value)); return Number.isFinite(date) ? date : null }; return { id: str(raw.id, 1024), accountId, calendarId, iCalUID: str(raw.iCalUID), title: str(raw.summary, 2000) || 'Calendar event', body: str(raw.description, 30000), status: str(raw.status, 100), startAt: time(start.dateTime ?? start.date), endAt: time(end.dateTime ?? end.date), timezone: str(start.timeZone ?? end.timeZone), allDay: !!start.date && !start.dateTime, htmlLink: crmUrl(raw.htmlLink), attendees: (Array.isArray(raw.attendees) ? raw.attendees : []).filter(object).map((item) => ({ email: crmEmail(item.email), name: str(item.displayName, 1000), responseStatus: str(item.responseStatus), self: item.self === true, organizer: item.organizer === true })), organizer: { email: crmEmail(organizer.email), name: str(organizer.displayName, 1000) }, updated: str(raw.updated), originalStartTime: str(original.dateTime ?? original.date), raw: jsonValue(raw) } }
   async events(input: Record<string, unknown>) { const accountId = str(input.accountId), calendarId = str(input.calendarId), account = await this.account(accountId, 'calendar'); check(calendarId && calendarId.length < 1024, 'Choose a calendar.'); const min = Date.parse(str(input.timeMin)), max = Date.parse(str(input.timeMax)); check(Number.isFinite(min) && Number.isFinite(max) && max > min && max - min <= 370 * 86400000, 'Choose an event window up to one year.'); const pageToken = str(input.pageToken, 4000), params = new URLSearchParams({ singleEvents: 'true', showDeleted: 'true', maxResults: '100', timeMin: new Date(min).toISOString(), timeMax: new Date(max).toISOString(), ...(pageToken ? { pageToken } : {}) }); const result = await this.google(account, `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?${params}`); return { events: (Array.isArray(result.items) ? result.items : []).filter(object).map((raw) => this.cleanEvent(raw, accountId, calendarId)), nextPageToken: str(result.nextPageToken) || null, timeZone: str(result.timeZone), attendanceConfirmed: false } }
+  async venues(input: Record<string, unknown>) {
+    const page = await this.events(input)
+    const venues = page.events.flatMap(event => {
+      if (event.status === 'cancelled' || !object(event.raw)) return []
+      const location = str(event.raw.location, 4000).trim()
+      if (!location || /^https?:\/\/(?:meet\.google\.com|(?:[a-z0-9-]+\.)?zoom\.us|teams\.microsoft\.com)(?:\/|$)/i.test(location)) return []
+      const links = (event.body + ' ' + location).match(/https?:\/\/[^\s<>"']+/ig) ?? []
+      const hosts = links.flatMap(link => { try { return [new URL(link).hostname.toLowerCase()] } catch { return [] } })
+      const domains = [...hosts, (event.organizer.email.split('@')[1] || '').toLowerCase()]
+      const matches = (names: string[]) => domains.some(domain => names.some(name => domain === name || domain.endsWith('.' + name)))
+      const provider = matches(['lu.ma', 'luma.com']) ? 'luma' : matches(['partiful.com']) ? 'partiful' : 'calendar'
+      return [{ id: event.id, title: event.title, location, startAt: event.startAt, endAt: event.endAt, htmlLink: event.htmlLink, provider }]
+    })
+    return { venues, nextPageToken: page.nextPageToken }
+  }
   private async retain(bytes: Uint8Array) { const current = this.guard(), hash = `crm-file-${crmHash(bytes)}`, path = join(this.options.blobDir, hash); await mkdir(this.options.blobDir, { recursive: true }); current(); try { await writeFile(path, bytes, { flag: 'wx', mode: 0o600 }) } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW); try { const stat = await file.stat(); check(stat.isFile() && stat.size === bytes.length && crmHash(await file.readFile()) === crmHash(bytes), 'A retained original is damaged. Restore it before importing this source again.', 409) } finally { await file.close() } } current(); this.options.db.putAssetMeta({ id: hash, kind: 'file', mime: 'application/octet-stream', bytes: bytes.length, createdAt: this.now(), nodeId: null }); return hash }
   private async stage(batch: CrmConnectorBatch) { this.guard()(); check(this.options.stageBatch, 'The CRM review store is unavailable.', 503); const result = await this.options.stageBatch!(batch); return { staged: batch.candidates.length, counts: batch.counts, errors: batch.errors, result } }
   async stageEvent(input: Record<string, unknown>) { const current = this.guard(), accountId = str(input.accountId), calendarId = str(input.calendarId), id = str(input.eventId, 1024), account = await this.account(accountId, 'calendar'); check(id && calendarId, 'Choose a calendar event.'); const raw = await this.google(account, `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(id)}`), event = this.cleanEvent(raw, accountId, calendarId), originalAssetId = await this.retain(Buffer.from(JSON.stringify(raw))), candidates = []
@@ -144,12 +224,12 @@ export class CrmConnections {
     if (input.includeAttendees === true && event.status !== 'cancelled') for (const attendee of event.attendees) if (attendee.email && !attendee.self && attendee.responseStatus !== 'declined') candidates.push(connectorCandidate('google-calendar', accountId, `${externalId}:attendee:${attendee.email}`, { ...crmPerson(attendee.name, attendee.email), calendarContext: { eventId: event.id, title: event.title, responseStatus: attendee.responseStatus, attendanceConfirmed: false } }, jsonValue(attendee), originalAssetId, this.now()))
     current(); return this.stage({ provider: 'google-calendar', accountId, name: event.title, originalAssetIds: [originalAssetId], candidates, counts: { events: 1, candidates: candidates.length }, errors: [] })
   }
-  async contacts(input: Record<string, unknown>): Promise<unknown> { const operationCurrent = this.guard(), accountId = str(input.accountId), other = input.otherContacts === true, capability = other ? 'otherContacts' : 'contacts', account = await this.account(accountId, capability), cursorField = other ? 'otherContactsSyncToken' : 'contactsSyncToken', params = new URLSearchParams({ pageSize: '500', requestSyncToken: 'true', ...(other ? { readMask: 'names,emailAddresses,phoneNumbers,metadata' } : { personFields: 'names,emailAddresses,phoneNumbers,organizations,urls,biographies,addresses,photos,metadata' }) }), syncToken = input.reset !== true ? account[cursorField] : undefined; if (syncToken) params.set('syncToken', syncToken)
+  async contacts(input: Record<string, unknown>): Promise<unknown> { const operationCurrent = this.guard(), accountId = str(input.accountId), other = input.otherContacts === true, capability = other ? 'otherContacts' : 'contacts', account = await this.account(accountId, capability), cursorField = other ? 'otherContactsSyncToken' : 'contactsSyncToken', params = new URLSearchParams({ pageSize: '500', requestSyncToken: 'true', ...(other ? { readMask: 'names,emailAddresses,phoneNumbers,metadata' } : { personFields: 'names,emailAddresses,phoneNumbers,organizations,urls,biographies,addresses,photos,metadata' }) }), syncToken = input.reset !== true && (other || account.contactsFormat === 2) ? account[cursorField] : undefined; if (syncToken) params.set('syncToken', syncToken)
     const rawRows: Record<string, unknown>[] = []; let token = '', nextSyncToken = '', complete = false
     for (let page = 0; page < 20; page++) { if (token) params.set('pageToken', token); let result: Record<string, unknown>; try { result = await this.google(account, `https://people.googleapis.com/v1/${other ? 'otherContacts' : 'people/me/connections'}?${params}`) } catch (error) { if (syncToken && error instanceof CrmConnectionError && (error.status === 410 || error.status === 400)) return this.contacts({ ...input, reset: true }); throw error } rawRows.push(...(Array.isArray(result[other ? 'otherContacts' : 'connections']) ? result[other ? 'otherContacts' : 'connections'] as unknown[] : []).filter(object)); token = str(result.nextPageToken); nextSyncToken = str(result.nextSyncToken); if (!token) { complete = true; break } }
     check(complete, 'This address book exceeds 10,000 records. Use a contact export to preserve complete coverage.', 413)
-    operationCurrent(); const originalAssetId = await this.retain(Buffer.from(JSON.stringify(rawRows))), provider = other ? 'google-other-contacts' : 'google-contacts', candidates = rawRows.filter((raw) => !object(raw.metadata) || raw.metadata.deleted !== true).map((raw) => { const list = (key: string) => (Array.isArray(raw[key]) ? raw[key] as unknown[] : []).filter(object), names = list('names'), emails = list('emailAddresses').map((entry) => crmEmail(entry.value)).filter(Boolean), org = list('organizations')[0] ?? {}, payload = { ...crmPerson(str(names[0]?.displayName, 1000), emails[0] ?? ''), firstName: str(names[0]?.givenName, 1000), lastName: str(names[0]?.familyName, 1000), emails, phones: list('phoneNumbers').map((entry) => str(entry.value, 100)), urls: list('urls').map((entry) => crmUrl(entry.value)).filter(Boolean), jobTitle: str(org.title, 1000), importedCompanyName: str(org.name, 1000), description: str(list('biographies')[0]?.value, 30000), photos: list('photos').filter(entry => entry.default !== true).map(entry => ({ url: crmUrl(entry.url), default: false })).filter(entry => entry.url) }; return connectorCandidate(provider, accountId, str(raw.resourceName), payload, jsonValue(raw), originalAssetId, this.now()) })
-    operationCurrent(); const result = await this.stage({ provider, accountId, name: `${account.label} ${other ? 'Other contacts' : 'contacts'}`, originalAssetIds: [originalAssetId], candidates, counts: { records: rawRows.length, candidates: candidates.length, deleted: rawRows.length - candidates.length }, errors: [] }); operationCurrent(); const vault = await this.load(); await this.persist({ ...vault, accounts: vault.accounts.map((item) => item.id === accountId ? { ...item, ...(nextSyncToken ? { [cursorField]: nextSyncToken } : {}), lastSyncAt: this.now() } : item) }); operationCurrent(); return result
+    operationCurrent(); const originalAssetId = await this.retain(Buffer.from(JSON.stringify(rawRows))), provider = other ? 'google-other-contacts' : 'google-contacts', candidates = rawRows.filter((raw) => !object(raw.metadata) || raw.metadata.deleted !== true).map((raw) => { const list = (key: string) => (Array.isArray(raw[key]) ? raw[key] as unknown[] : []).filter(object), names = list('names'), emails = list('emailAddresses').map((entry) => crmEmail(entry.value)).filter(Boolean), payload = { ...crmPerson(str(names[0]?.displayName, 1000), emails[0] ?? ''), firstName: str(names[0]?.givenName, 1000), lastName: str(names[0]?.familyName, 1000), emails, phones: list('phoneNumbers').map((entry) => str(entry.value, 100)), urls: list('urls').map((entry) => crmUrl(entry.value)).filter(Boolean), ...googleContactDetails(raw, { provider, accountId, externalId: str(raw.resourceName) }), description: str(list('biographies')[0]?.value, 30000), photos: list('photos').filter(entry => entry.default !== true).map(entry => ({ url: crmUrl(entry.url), default: false })).filter(entry => entry.url) }; return connectorCandidate(provider, accountId, str(raw.resourceName), payload, jsonValue(raw), originalAssetId, this.now()) })
+    operationCurrent(); const result = await this.stage({ provider, accountId, name: `${account.label} ${other ? 'Other contacts' : 'contacts'}`, originalAssetIds: [originalAssetId], candidates, counts: { records: rawRows.length, candidates: candidates.length, deleted: rawRows.length - candidates.length }, errors: [] }); operationCurrent(); const vault = await this.load(); await this.persist({ ...vault, accounts: vault.accounts.map((item) => item.id === accountId ? { ...item, ...(nextSyncToken ? { [cursorField]: nextSyncToken } : {}), ...(!other ? { contactsFormat: 2 } : {}), lastSyncAt: this.now() } : item) }); operationCurrent(); return result
   }
   async gmail(input: Record<string, unknown>): Promise<unknown> {
     const accountId = str(input.accountId); check(!this.gmailBusy.has(accountId), 'Email discovery is already running for this account. Wait for its current checkpoint.', 409)
@@ -157,10 +237,11 @@ export class CrmConnections {
     try { return await this.gmailPass(input) } finally { this.gmailBusy.delete(accountId) }
   }
   private async gmailPass(input: Record<string, unknown>): Promise<unknown> {
-    const current = this.guard(), accountId = str(input.accountId), account = await this.account(accountId, 'gmail'); current()
-    const prior = input.reset === true ? undefined : account.gmailProgress, limit = Math.max(1, Math.min(100, Math.floor(Number(input.limit) || 50))), progress: GmailProgress = prior ? structuredClone(prior) : { mode: input.reset === true || !account.gmailHistoryId ? 'messages' : 'history', pageToken: '', historyId: account.gmailHistoryId ?? '', baselineHistoryId: '', labelIds: strings(input.labelIds, 20), pendingIds: [], listComplete: false, retryAt: null, includeSubject: input.includeSubject === true }
+    const current = this.guard(), accountId = str(input.accountId), account = await this.account(accountId, 'gmail')
+    const ownEmails = (await this.load()).accounts.map(row => crmEmail(row.email)).filter(Boolean); current()
+    const prior = input.reset === true ? undefined : account.gmailProgress, limit = Math.max(1, Math.min(100, Math.floor(Number(input.limit) || 50))), progress: GmailProgress = prior ? structuredClone(prior) : { mode: input.reset === true || !account.gmailHistoryId ? 'messages' : 'history', pageToken: '', historyId: account.gmailHistoryId ?? '', baselineHistoryId: '', labelIds: strings(input.labelIds, 20), pendingIds: [], listComplete: false, retryAt: null, includeSubject: input.includeSubject === true || account.includeSubjects === true }
     progress.pendingIds = strings(progress.pendingIds, 10000); progress.listComplete ??= false; progress.includeSubject ??= input.includeSubject === true
-    const errors: string[] = [], results: unknown[] = [], seen = new Set<string>(), buffer: { id: string; record: Record<string, unknown> }[] = []
+    const errors: string[] = [], results: unknown[] = [], seen = new Set<string>(ownEmails), buffer: { id: string; record: Record<string, unknown> }[] = []
     let messages = 0, staged = 0, skipped = 0, pages = 0
     const checkpoint = async () => { current(); const vault = await this.load(); current(); await this.persist({ ...vault, accounts: vault.accounts.map((item) => item.id === accountId ? { ...item, gmailProgress: structuredClone(progress) } : item) }, this.epoch, current); current() }
     const finish = async () => {
@@ -176,7 +257,11 @@ export class CrmConnections {
       current(); const records = buffer.map((item) => item.record), originalAssetId = await this.retain(Buffer.from(JSON.stringify(records))); current()
       const candidates = []
       for (const item of buffer) { const headers = item.record.headers as { name: string; value: string }[]
-        for (const contact of parseCrmEmailHeaders(headers.filter((header) => /^(from|to|cc)$/i.test(header.name)).map((header) => `${header.name}: ${header.value}`).join('\n'))) if (contact.email !== account.email?.toLowerCase() && !seen.has(contact.email)) { seen.add(contact.email); candidates.push(connectorCandidate('gmail-headers', accountId, contact.email, { ...crmPerson(contact.name, contact.email), emailContext: { messageId: item.id, date: item.record.internalDate } }, jsonValue(item.record), originalAssetId, this.now())) }
+        for (const contact of parseCrmEmailHeaders(headers.filter((header) => /^(from|to|cc)$/i.test(header.name)).map((header) => `${header.name}: ${header.value}`).join('\n'))) if (!seen.has(contact.email)) {
+          seen.add(contact.email)
+          const known = this.options.db.db.prepare("SELECT 1 FROM crm_sources WHERE collection='candidates' AND provider='gmail-headers' AND account_id=? AND external_id=? LIMIT 1").get(accountId, contact.email)
+          if (known) continue
+          candidates.push(connectorCandidate('gmail-headers', accountId, contact.email, { ...crmPerson(contact.name, contact.email), emailContext: { messageId: item.id, date: item.record.internalDate } }, jsonValue(item.record), originalAssetId, this.now())) }
       }
       current(); const result = await this.stage({ provider: 'gmail-headers', accountId, name: `${account.label} email participants`, originalAssetIds: [originalAssetId], candidates, counts: { messages: buffer.length, candidates: candidates.length }, errors: [] }); current(); results.push(result); staged += candidates.length; messages += buffer.length
       const completed = new Set(buffer.map((item) => item.id)); progress.pendingIds = progress.pendingIds!.filter((id) => !completed.has(id)); buffer.length = 0; await checkpoint()
@@ -201,12 +286,12 @@ export class CrmConnections {
       progress.pendingIds = [...ids].filter(Boolean); progress.pageToken = str(response.nextPageToken); progress.listComplete = !progress.pageToken; pages++; await checkpoint()
     }
     for (const id of progress.pendingIds.slice(0, limit)) {
-      const params = new URLSearchParams({ format: 'metadata' }); for (const name of ['From', 'To', 'Cc', 'Date', 'Message-ID', ...(progress.includeSubject ? ['Subject'] : [])]) params.append('metadataHeaders', name)
+      const params = new URLSearchParams({ format: 'metadata' }); for (const name of ['From', 'To', 'Cc', 'Date', 'Message-ID', 'List-ID', 'Auto-Submitted', 'Precedence', ...(progress.includeSubject ? ['Subject'] : [])]) params.append('metadataHeaders', name)
       let raw: Record<string, unknown>
       try { raw = await this.gmailRead(account, `https://www.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(id)}?${params}`, current) }
       catch (error) { if (error instanceof CrmConnectionError && error.status === 404) { skipped++; progress.pendingIds = progress.pendingIds.filter((item) => item !== id); await checkpoint(); continue } return pause(error) }
-      current(); const payload = object(raw.payload) ? raw.payload : {}, headers = (Array.isArray(payload.headers) ? payload.headers : []).filter(object).map((entry) => ({ name: str(entry.name), value: str(entry.value, 30000) }))
-      buffer.push({ id, record: { id, threadId: str(raw.threadId), historyId: str(raw.historyId), internalDate: str(raw.internalDate), labelIds: strings(raw.labelIds), headers } })
+      current(); const payload = object(raw.payload) ? raw.payload : {}, headers = (Array.isArray(payload.headers) ? payload.headers : []).filter(object).filter(entry => ['from', 'to', 'cc', 'date', 'message-id', 'list-id', 'auto-submitted', 'precedence', ...(progress.includeSubject ? ['subject'] : [])].includes(str(entry.name).toLowerCase())).map((entry) => ({ name: str(entry.name), value: str(entry.value, 30000) }))
+      buffer.push({ id, record: { id, accountEmail: account.email || '', threadId: str(raw.threadId), historyId: str(raw.historyId), internalDate: str(raw.internalDate), labelIds: strings(raw.labelIds), headers } })
       if (buffer.length >= 5) await flush()
     }
     await flush(); current(); return finish()
@@ -251,9 +336,11 @@ export async function handleCrmConnectionsRequest(service: CrmConnections, req: 
     if (action === 'google/callback' && req.method === 'GET') { const target = await service.callback(url, base.origin); res.writeHead(303, { location: target, 'cache-control': 'no-store', 'referrer-policy': 'no-referrer' }); res.end(); return }
     check(memoryOriginAllowed(req) && !!req.headers['x-wv-client'], 'Open Connections in the local Worldview app.', 403)
     if (req.method === 'GET' && (!action || action === 'status')) return sendMemoryJson(res, 200, await service.status())
+    if (req.method === 'GET' && action === 'reconnect') return sendMemoryJson(res, 200, await service.reconnect(Number(url.searchParams.get('offset') ?? '0')))
+    if (req.method === 'GET' && action === 'relationship') return sendMemoryJson(res, 200, await service.relationship(url.searchParams.get('personId') ?? '', Number(url.searchParams.get('offset') ?? '0')))
     if (req.method === 'GET' && action === 'sources') return sendMemoryJson(res, 200, service.capturedSources())
     if (req.method === 'POST') { const input = await requestBody(req); let result: unknown
-      switch (action) { case 'google/configure': result = await service.configure(input); break; case 'google/connect': result = await service.connect(str(input.accountId), base.origin); break; case 'google/disconnect': result = await service.disconnect(str(input.accountId)); break; case 'google/calendars': result = await service.calendars(str(input.accountId)); break; case 'google/events': result = await service.events(input); break; case 'google/event/stage': result = await service.stageEvent(input); break; case 'google/contacts/sync': result = await service.contacts(input); break; case 'google/gmail/sync': result = await service.gmail(input); break; case 'import/preview': result = await service.previewImport(input); break; case 'import/stage': result = await service.stageImport(input); break; case 'source/stage': result = await service.stageCapturedSource(input); break; case 'profile/stage': result = await service.stageCapturedSource(input, true); break; case 'happenstance/configure': result = await service.configureHappenstance(input); break; case 'happenstance/request': result = await service.happenstance(input); break; case 'folk/configure': result = await service.configureFolk(input); break; case 'folk/interactions': result = await service.folkInteractions(input); break; case 'mail/prepare': result = await service.prepareSend(input); break; case 'mail/send': result = await service.send(input); break; default: fail('Choose a supported connection action.', 404) }
+      switch (action) { case 'sync/preferences': result = await service.syncPreferences(input); break; case 'sync/run': result = await service.autoSync(); break; case 'google/configure': result = await service.configure(input); break; case 'google/connect': result = await service.connect(str(input.accountId), base.origin); break; case 'google/disconnect': result = await service.disconnect(str(input.accountId)); break; case 'google/calendars': result = await service.calendars(str(input.accountId)); break; case 'google/venues': result = await service.venues(input); break; case 'google/events': result = await service.events(input); break; case 'google/event/stage': result = await service.stageEvent(input); break; case 'google/contacts/sync': result = await service.contacts(input); break; case 'google/gmail/sync': result = await service.gmail(input); break; case 'import/preview': result = await service.previewImport(input); break; case 'import/stage': result = await service.stageImport(input); break; case 'source/stage': result = await service.stageCapturedSource(input); break; case 'profile/stage': result = await service.stageCapturedSource(input, true); break; case 'happenstance/configure': result = await service.configureHappenstance(input); break; case 'happenstance/request': result = await service.happenstance(input); break; case 'folk/configure': result = await service.configureFolk(input); break; case 'folk/interactions': result = await service.folkInteractions(input); break; case 'mail/prepare': result = await service.prepareSend(input); break; case 'mail/send': result = await service.send(input); break; default: fail('Choose a supported connection action.', 404) }
       return sendMemoryJson(res, 200, result)
     } return sendMemoryJson(res, 405, { error: 'Choose a supported connection action.' })
   } catch (error) { if (!res.headersSent && !res.destroyed) sendMemoryJson(res, error instanceof CrmConnectionError ? error.status : error instanceof SyntaxError ? 400 : 500, { error: error instanceof CrmConnectionError || error instanceof SyntaxError ? error.message : 'This connection action could not complete. Existing CRM records were preserved.', ...(error instanceof CrmConnectionError && error.rateLimited ? { rateLimited: true, retryAt: error.retryAt } : {}) }) }

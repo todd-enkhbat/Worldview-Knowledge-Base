@@ -1,4 +1,8 @@
-import { Extension, Node, InputRule, type JSONContent } from '@tiptap/core'
+import { savedQuote } from './quoteLink.ts'
+import { conceptExtension } from './conceptExtension.ts'
+import type { ConceptTerm } from './concepts.ts'
+import { topicHref } from '../reading/topics.ts'
+import { Mark, Extension, Node, InputRule, type JSONContent } from '@tiptap/core'
 import StarterKit from '@tiptap/starter-kit'
 import { TextStyleKit } from '@tiptap/extension-text-style'
 import TextAlign from '@tiptap/extension-text-align'
@@ -91,7 +95,7 @@ const WritingTopicLink = Node.create({
   name: 'writingTopicLink', group: 'inline', inline: true, atom: true, selectable: true,
   addAttributes() { return { topicId: { default: '' }, label: { default: '' } } },
   parseHTML() { return [] },
-  renderHTML({ node }) { return ['a', { href: `#/topics?topic=${encodeURIComponent(String(node.attrs.topicId))}`, class: 'writing-topic-link' }, `[[${node.attrs.label}]]`] },
+  renderHTML({ node }) { return ['a', { href: topicHref(node.attrs.topicId), 'data-writing-concept': node.attrs.topicId, tabindex: 0, class: 'writing-topic-link', title: 'Open concept' }, `[[${node.attrs.label}]]`] },
   renderText({ node }) { return `[[${node.attrs.label}]]` },
 })
 const WritingFootnote = Node.create({
@@ -109,16 +113,16 @@ const ReadOnlyGate = Extension.create({
   },
 })
 
-export function writingExtensions(options: { topics?: () => { id: string; label: string }[] } = {}) {
-  return [
+export function writingExtensions(options: { topics?: () => ConceptTerm[]; placeholder?: string } = {}) {
+  return [Mark.create({name:"writingAi",inclusive:false,parseHTML(){return []},renderHTML(){return ["span",{"class":"writing-ai-words","title":"AI-written"},0]}}),savedQuote, conceptExtension(options.topics ?? (() => [])),
     StarterKit.configure({ heading: { levels: [1, 2, 3, 4, 5, 6] }, link: { openOnClick: false, autolink: false, linkOnPaste: false, defaultProtocol: 'https', isAllowedUri: (url) => safeWritingLink(url), HTMLAttributes: { target: '_blank', rel: 'noopener noreferrer' } } }),
     TextStyleKit.configure({ lineHeight: false }),
     TextAlign.configure({ types: ['heading', 'paragraph'] }),
     Highlight.configure({ multicolor: true }),
-    Placeholder.configure({ placeholder: 'Begin with a thought…', showOnlyCurrent: false }),
+    Placeholder.configure({ placeholder: options.placeholder ?? 'Begin with a thought…', showOnlyCurrent: false }),
     TableKit.configure({ table: { resizable: true, cellMinWidth: 60, renderWrapper: true } }),
     WritingMedia, WritingEmbed, WritingCitation, WritingTopicLink, WritingFootnote, ReadOnlyGate,
-    Extension.create({ name: 'writingTopicInput', addInputRules() { return [new InputRule({ find: /\[\[([^\]\n]{1,100})\]\]$/, handler: ({ state, range, match }) => { if (state.selection.$from.parent.type.spec.code) return null; const label = String(match[1]).normalize('NFKC').trim().toLocaleLowerCase(); const topic = options.topics?.().find((entry) => entry.label.normalize('NFKC').trim().toLocaleLowerCase() === label); if (!topic) return null; state.tr.replaceWith(range.from, range.to, state.schema.nodes.writingTopicLink.create({ topicId: topic.id, label: topic.label })); } })] } }),
+    Extension.create({ name: 'writingTopicInput', addInputRules() { return [new InputRule({ find: /\[\[([^\]\n]{1,100})\]\]$/, handler: ({ state, range, match }) => { if (state.selection.$from.parent.type.spec.code) return null; const label = String(match[1]).normalize('NFKC').trim().toLocaleLowerCase(); const topic = options.topics?.().find((entry) => [entry.label, ...(entry.aliases ?? [])].some(name => name.normalize('NFKC').trim().toLocaleLowerCase() === label)); if (!topic) return null; state.tr.replaceWith(range.from, range.to, state.schema.nodes.writingTopicLink.create({ topicId: topic.id, label: topic.label })); } })] } }),
   ]
 }
 

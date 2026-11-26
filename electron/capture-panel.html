@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src https:; connect-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta name="referrer" content="no-referrer">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Add to Worldview</title>
+  <link rel="stylesheet" href="capture-panel.css">
+</head>
+<body class="compact">
+  <div id="pill"><span class="grip" aria-hidden="true">⠿</span><button id="expand">Add to Worldview</button><button id="choose-source" aria-label="Choose capture source" title="Choose capture source">▾</button><button class="dismiss" aria-label="Close floating capture">×</button></div>
+  <main hidden>
+    <header><h1>Worldview</h1><div><button class="quiet" id="collapse" aria-label="Collapse floating capture" title="Collapse">−</button> <button class="dismiss" aria-label="Close floating capture">×</button></div></header>
+    <nav class="capture-modes" aria-label="Capture mode"><button id="word">Dictionary</button> <button aria-pressed="true">Person</button> <button id="application">Application</button></nav>
+    <details id="sources"><summary>Capture source</summary><div class="toolbar"><label for="source">Read from</label><select id="source"><option value="browser">Worldview browser</option><option selected value="dia">Active Dia tab</option></select><button id="read">Read profile</button></div>
+    <form id="browser-tools">
+      <label for="address">Open a page in Worldview</label>
+      <div class="address-row"><input id="address" type="url" placeholder="Paste a profile URL" autocomplete="off" spellcheck="false"><button id="open-browser" type="submit">Open LinkedIn</button></div>
+      <p id="browser-help">You can sign in and browse in this window. Read the profile when you reach it.</p>
+    </form></details>
+    <section id="preview" hidden>
+      <div class="identity"><img id="photo" alt="" referrerpolicy="no-referrer" hidden><div><h2 id="name"></h2><p id="headline"></p></div></div>
+      <details><summary>Profile details</summary><p id="url"></p>
+      <dl id="person-facts"><div><dt>Current company</dt><dd id="companies"></dd><small id="companies-origin" hidden>From Worldview</small></div><div><dt>Alma mater</dt><dd id="schools"></dd><small id="schools-origin" hidden>From Worldview</small></div></dl>
+      <dl id="company-facts" hidden><div><dt>Website</dt><dd id="website"></dd></div><div><dt>Industry</dt><dd id="industry"></dd></div></dl>
+      </details><label for="group">Group</label><select id="group"></select>
+      <button id="save" class="primary">Add to Worldview</button>
+    </section>
+    <p id="status" role="status" aria-live="polite"></p><button id="record" hidden>Open in Worldview</button>
+  </main>
+  <script src="capture-panel.js"></script>
+</body></html>

@@ -3,6 +3,8 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useApp, useWorld } from '../../src/app/store.ts'
+import { newWritingDraft, useWriting } from '../../src/writing/store.ts'
+import { useReading } from '../../src/reading/store.ts'
 import { useAuth } from '../../src/data/auth.ts'
 import type { NodeRecord } from '../../src/domain/types.ts'
 import { useKnowledge } from '../../src/knowledge/index.ts'
@@ -16,7 +18,7 @@ let root: Root
 let opener: HTMLButtonElement
 
 const node = (id: string, title: string, extra: Partial<NodeRecord> = {}): NodeRecord => ({
-  id, title, slug: id, archetype: 'idea', contentMd: 'secret body-only phrase', tags: ['architecture'],
+  id, title, slug: id, libraryOrigin: 'saved', archetype: 'idea', contentMd: 'secret body-only phrase', tags: ['architecture'],
   temporalOrigin: 0, temporalPrecision: 'day', referenceDate: null, thermo: { mass: 1, temperature: 1 }, anchorXZ: [0, 0], links: [], attachments: [], visibility: 'private', createdAt: 1, updatedAt: 2, deletedAt: null, schemaVersion: 1, ...extra,
 })
 const source = (id: string, title: string, extra: Partial<KnowledgeSource> = {}): KnowledgeSource => ({ id, title, kind: 'document', externalId: id, currentVersionId: `${id}-version`, createdAt: 1, updatedAt: 3, tags: ['budget'], excluded: false, aiAllowed: false, ...extra })
@@ -49,6 +51,8 @@ beforeEach(async () => {
   restoreWorkspaceContext()
   useWorld.getState().hydrate(null, [])
   useKnowledge.setState({ sources: [], loaded: true })
+  useReading.setState({ topics: [] })
+  useWriting.setState({ docs: [] })
   useAuth.setState({ user: null, state: 'none' })
   for (const panel of Object.keys(useApp.getState().panels) as (keyof ReturnType<typeof useApp.getState>['panels'])[]) useApp.getState().togglePanel(panel, false)
   useApp.getState().closeEditor()
@@ -129,6 +133,18 @@ describe('workspace command menu', () => {
     key(input(), 'Enter')
     expect(location.hash).toBe('#/library?source=src')
     expect(useWorkspace.getState().selectedSourceId).toBe('src')
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it('reopens a saved concept by an alias or accent-insensitive name in the keyboard switcher', () => {
+    useReading.setState({ topics: [{ id: 'term-virtue', name: 'Virtù', aliases: ['political skill'], createdAt: 1 }] })
+    useWriting.setState({ docs: [newWritingDraft({ title: 'Virtù', topicIds: ['term-virtue'] }, 'concept-note:term-virtue')] })
+    act(() => openCommandMenu())
+    type('virtu')
+    expect(current()?.textContent).toContain('VirtùConcept')
+    type('political skill')
+    key(input(), 'Enter')
+    expect(location.hash).toBe('#/topics?topic=term-virtue')
     expect(fetch).not.toHaveBeenCalled()
   })
 

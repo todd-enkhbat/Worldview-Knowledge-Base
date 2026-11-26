@@ -148,3 +148,15 @@
   .knowledge-workbench .writing-editor-page { width: 100%; margin: 0; padding: 0; min-height: 0; box-shadow: none; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
   .writing-canvas { background: none !important; }
 }
+.knowledge-workbench .writing-desk > header { margin-bottom: 24px; }
+.knowledge-workbench .writing-start-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; }
+.knowledge-workbench .writing-resume { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 24px; padding: 18px 20px; border: 1px solid var(--kb-line); border-radius: 8px; text-decoration: none; color: var(--kb-text); background: var(--kb-panel); }
+.knowledge-workbench .writing-resume div { min-width: 0; }
+.knowledge-workbench .writing-resume h3 { margin: 5px 0 0; font-size: 20px; font-weight: 500; overflow-wrap: anywhere; }
+.knowledge-workbench .writing-resume p { margin: 5px 0 0; color: var(--kb-muted); font-size: 13px; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
+.knowledge-workbench .writing-resume small { font-size: 12px; color: var(--kb-muted); }
+.knowledge-workbench .writing-resume:hover { background: var(--kb-hover); }
+.knowledge-workbench .writing-export-menu hr { width: 100%; margin: 4px 0; border: 0; border-bottom: 1px solid var(--kb-line); }
+.knowledge-workbench .writing-rich-toolbar:not(.is-expanded) .writing-toolbar-secondary,
+.knowledge-workbench .writing-rich-toolbar:not(.is-expanded) :is(select[aria-label="Font family"],select[aria-label="Font size"],button[aria-label="Strikethrough"],button[aria-label="Inline code"],button[aria-label="Insert divider"]) { display: none; }
+.knowledge-workbench .writing-toolbar-more { display: inline-flex; align-items: center; padding: 5px 8px; border: 0; border-radius: 4px; background: transparent; color: var(--kb-text); font-size: 12px; cursor: pointer; }

@@ -7,6 +7,7 @@ import { pipeline } from 'node:stream/promises'
 import type { AssetMeta, InteractionEvent, NodeRecord, WorldSettings } from '../src/domain/types.ts'
 import { ChangeBus, parseEnvelope } from './changes.ts'
 import { fetchReadable } from './fetchUrl.ts'
+import { expandShortMapLink } from './mapLink.ts'
 import { bytesF32, EMBEDDING_DIM, StoreInputError, type WorldDb } from './worldDb.ts'
 import { extractPdfText, ExtractionError, MAX_EXTRACT_BYTES } from './extractText.ts'
 import type { Authorship, SearchFilters } from '../src/knowledge/types.ts'
@@ -261,6 +262,12 @@ export function createApiHandler(opts: ApiOptions): Handler {
         chunks.push(chunk)
       }
       return send(res, 200, await extractPdfText(Buffer.concat(chunks))), true
+    }
+    if (seg[0] === 'map-link' && method === 'POST') {
+      if (req.headers['x-wv-client'] !== 'worldview-maps') throw new HttpError(403, 'Open Maps to resolve a place link.')
+      const input = await readJson<{ url: string }>(req, 16 * 1024)
+      try { return send(res, 200, { url: await expandShortMapLink(input.url) }), true }
+      catch (error) { throw new HttpError(422, error instanceof Error ? error.message : 'This map link could not be expanded.') }
     }
     if (seg[0] === 'fetch-url' && method === 'POST') {
       const b = await readJson<{ url?: unknown }>(req, 64 * 1024)

@@ -1,0 +1,41 @@
+.crm-career-section { margin: 20px 0; }
+.crm-affiliation-boxes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.crm-affiliation-boxes > section { display: flex; flex-direction: column; gap: 8px; padding: 13px 12px; background: var(--kb-panel, #f4f3ef); border: 1px solid var(--kb-line, #dedcd5); border-radius: 8px; }
+.crm-affiliation-boxes h3 { display: flex; align-items: center; gap: 6px; }
+.crm-affiliation-boxes p { margin: 0; color: var(--kb-muted, #686c66); font-size: 11px; }
+.crm-affiliation-box-link { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 7px; align-items: center; padding: 4px 0; }
+.crm-affiliation-box-link strong, .crm-affiliation-box-link small { display: block; overflow-wrap: anywhere; }
+.crm-affiliation-box-link strong { font-size: 12px; line-height: 1.4; }
+.crm-affiliation-box-link small { margin-top: 2px; line-height: 1.5; }
+.crm-affiliation-box-link > svg { color: var(--kb-muted, #686c66); }
+@media (max-width: 420px) { .crm-affiliation-boxes { grid-template-columns: 1fr; } }
+.crm-career-enrichment { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; }
+.crm-career-enrichment small { color: var(--kb-muted, #686c66); font-size: 11px; }
+.crm-career-section > h4 { margin: 0; padding-bottom: 9px; border-bottom: 1px solid var(--kb-line, #dedcd5); font-size: 14px; font-weight: 600; }
+.crm-career-employer { padding: 16px 0 13px; }
+.crm-career-employer + .crm-career-employer { border-top: 1px solid var(--kb-line, #dedcd5); }
+.crm-career-org { display: flex; align-items: center; gap: 10px; }
+.crm-career-org > :first-child { flex: none; }
+.crm-career-org h5 { margin: 0; font-size: 13px; font-weight: 600; line-height: 1.45; overflow-wrap: anywhere; }
+.crm-career-org a:hover, .crm-career-evidence a:hover { text-decoration: underline; }
+.crm-career-links, .crm-career-period { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; color: var(--kb-muted, #686c66); font-size: 11px; }
+.crm-career-links a { display: inline-flex; align-items: center; gap: 3px; }
+.crm-career-roles { list-style: none; margin: 9px 0 0 15px; padding: 0 0 0 26px; }
+.crm-career-roles li { position: relative; min-width: 0; padding: 2px 0 9px; }
+.crm-career-roles.is-grouped { border-left: 1px solid var(--kb-line, #dedcd5); }
+.crm-career-roles.is-grouped li::before { content: ''; position: absolute; left: -30px; top: 9px; width: 7px; height: 7px; border-radius: 50%; background: var(--kb-muted, #737b70); }
+.crm-career-role-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.crm-career-role-heading strong, .crm-career-legacy strong { display: block; font-size: 14px; font-weight: 600; line-height: 1.5; overflow-wrap: anywhere; }
+.crm-career-period { margin-top: 1px; line-height: 1.7; }
+.crm-career-period [data-status=current] { color: var(--crm-accent, #315d49); font-weight: 600; }
+.crm-career-actions { display: flex; gap: 1px; }
+.crm-career-actions .crm-person-icon { width: 24px; height: 26px; }
+.crm-career-description, .crm-person-bio { margin: 8px 0; font-size: 12px; line-height: 1.7; white-space: pre-line; overflow-wrap: anywhere; }
+.crm-career-evidence { margin-top: 6px; color: var(--kb-muted, #686c66); font-size: 10px; }
+.crm-career-evidence summary { cursor: pointer; }
+.crm-career-evidence > div { margin-top: 6px; }
+.crm-career-evidence blockquote { margin: 5px 0; padding: 0 0 0 8px; border-left: 2px solid var(--kb-line, #dedcd5); white-space: pre-line; overflow-wrap: anywhere; }
+.crm-career-legacy { margin: 8px 0 0 42px; }
+.crm-career-legacy small { font-size: 11px; color: var(--kb-muted, #686c66); }
+@media (pointer: coarse) { .crm-career-actions .crm-person-icon { width: 36px; min-height: 40px; } }
+.crm-person-bio-more > summary { cursor: pointer; font-size: 11px; color: var(--crm-accent, #315d49); }

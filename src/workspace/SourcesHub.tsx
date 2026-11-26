@@ -11,21 +11,26 @@ import { SourcesVoiceInbox } from '../capture/SourcesVoiceInbox.tsx'
 import { TelegramCaptureControls } from '../capture/TelegramCaptureControls.tsx'
 import AssistantConnections from '../connections/AssistantConnections.tsx'
 import DesktopConnection from '../connections/DesktopConnection.tsx'
+import NotebookSources from '../connections/NotebookSources.tsx'
 import GoogleDriveConnection from '../connections/GoogleDriveConnection.tsx'
 import { BrowserCaptureSetup } from '../reading/BrowserCaptureSetup.tsx'
 import './sourcesHub.css'
 
-type ConnectionId = 'voice' | 'folders' | 'qmd' | 'memory' | 'export' | 'telegram' | 'cloud' | 'browser' | 'desktop' | 'drive'
+type ConnectionId = 'voice' | 'folders' | 'qmd' | 'memory' | 'export' | 'telegram' | 'cloud' | 'browser' | 'desktop' | 'drive' | 'notebooks'
 type Readiness = { label: string; tone?: 'ready' | 'attention' | 'quiet' }
 type Statuses = Partial<Record<ConnectionId, Readiness>>
 const endpoints = {
-  voice: '/api/models/whisper/status', folders: '/api/capture/folders', qmd: '/api/qmd/status',
+  notebooks: '/api/connections/notebooks', voice: '/api/models/whisper/status', folders: '/api/capture/folders', qmd: '/api/qmd/status',
   memory: '/api/memory/clients', telegram: '/api/capture/telegram', cloud: '/api/ai/status',
   browser: '/api/reading-capture', drive: '/api/connections/drive', desktop: '/api/connections/desktop',
 } as const
 
 function readiness(id: keyof typeof endpoints, value: Record<string, unknown>): Readiness {
   switch (id) {
+    case 'notebooks': {
+      const count = Number(value.granola === true) + Number(value.wispr === true)
+      return { label: count ? count + ' connected' : 'Ready to connect', tone: count ? 'ready' : 'quiet' }
+    }
     case 'desktop': return { label: window.worldviewDesktop ? 'Desktop app' : value.available ? 'Ready to download' : 'Build pending', tone: value.available ? 'ready' : 'quiet' }
     case 'drive': return { label: value.connected ? 'Connected' : value.configured ? 'Ready to connect' : 'Setup needed', tone: value.connected ? 'ready' : 'quiet' }
     case 'browser': { const pairs = Array.isArray(value.clients) ? (value.clients as { revokedAt?: number | null; expiresAt?: number }[]).filter((client) => !client.revokedAt && (client.expiresAt ?? 0) > Date.now()) : []; return value.available === false ? { label: 'Local app needed', tone: 'quiet' } : { label: pairs.length ? `${pairs.length} paired` : 'Ready to pair', tone: pairs.length ? 'ready' : 'quiet' } }
@@ -129,6 +134,7 @@ export function SourcesHub({ hash, importActions }: { hash?: string; importActio
         <ConnectionDisclosure {...common('folders')} title="Watched folders" description="Bring new and edited local files into your library" icon={<FolderSimple size={21} />}><FolderCapture /></ConnectionDisclosure>
       </section>
       <section className="sources-hub-group" aria-labelledby="sources-hub-memory"><h3 id="sources-hub-memory">Search & memory</h3>
+        <ConnectionDisclosure {...common('notebooks')} title="Granola & Wispr Flow" description="Select meeting notes and scratchpad entries for your library" icon={<PlugsConnected size={21} />}><NotebookSources onChange={reload} /></ConnectionDisclosure>
         <ConnectionDisclosure {...common('drive')} title="Google Drive" description="Import selected files and send writing back to your Drive" icon={<Cloud size={21} />}><GoogleDriveConnection /></ConnectionDisclosure>
         <ConnectionDisclosure {...common('qmd')} title="Local search" description="Choose sources for QMD’s optional search index" icon={<MagnifyingGlass size={21} />}><QmdControls /></ConnectionDisclosure>
         <ConnectionDisclosure {...common('memory')} title="Agent access" description="Connect ChatGPT, Claude, or Cursor to chosen sources and review proposed edits" icon={<PlugsConnected size={21} />}><AssistantConnections /></ConnectionDisclosure>

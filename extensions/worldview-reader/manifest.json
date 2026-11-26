@@ -1,11 +1,12 @@
 {
   "manifest_version": 3,
   "name": "Worldview Reader",
-  "version": "0.4.1",
+  "version": "0.7.0",
+  "icons": { "128": "worldview-128.png" },
   "description": "Save chosen profiles, company details, education, affiliations, articles and highlights to your local Worldview workspace.",
   "minimum_chrome_version": "114",
-  "permissions": ["activeTab", "scripting", "storage"],
+  "permissions": ["activeTab", "scripting", "storage", "alarms"],
   "host_permissions": ["http://localhost/*", "http://127.0.0.1/*"],
   "background": { "service_worker": "background.js", "type": "module" },
-  "action": { "default_popup": "popup.html", "default_title": "Worldview Reader · keep a page or profile" }
+  "action": { "default_popup": "popup.html", "default_icon": "worldview-128.png", "default_title": "Worldview Reader · keep a page or profile" }
 }

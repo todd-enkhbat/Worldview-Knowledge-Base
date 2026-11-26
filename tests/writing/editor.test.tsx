@@ -1,6 +1,10 @@
 // @vitest-environment jsdom
 import { Activity, StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import { linkSavedQuote } from '../../src/writing/quoteLink.ts'
+import { writingAuthorshipMessages } from '../../src/writing/authorship.ts'
+import { writingPassages } from '../../src/writing/concepts.ts'
+import { selectWritingPassage } from '../../src/writing/passageNavigation.ts'
 import type { Editor } from '@tiptap/core'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import RichEditor, { type RichEditorProps } from '../../src/writing/RichEditor.tsx'
@@ -299,6 +303,10 @@ describe('connected writing tools', () => {
     act(() => { editor.commands.setTextSelection(editor.state.doc.content.size - 1); editor.view.someProp('handleTextInput', (handler) => handler(editor.view, editor.state.selection.from, editor.state.selection.to, ']', () => editor.state.tr.insertText(']'))) })
     expect(editor.getJSON().content?.[0].content?.[0]).toMatchObject({ type: 'writingTopicLink', attrs: { topicId: 'topic-physics', label: 'Physics' } })
     expect(() => validateWritingContent(normalizedWritingJSON(editor.getJSON()))).not.toThrow()
+    act(() => { expect(selectWritingPassage(editor, new URLSearchParams('atom=1&topic=topic-physics'))).toBe('selected') })
+    expect(editor.state.selection.toJSON()).toEqual({ type: 'node', anchor: 1 })
+    expect(selectWritingPassage(editor, new URLSearchParams('atom=1&topic=other'))).toBe('changed')
+    expect(selectWritingPassage(editor, new URLSearchParams('atom=999&topic=topic-physics'))).toBe('changed')
   })
 
   it('retains version-bound citations and rejects malformed provenance or unsafe source links', async () => {
@@ -312,4 +320,122 @@ describe('connected writing tools', () => {
     expect(() => validateWritingContent({ type: 'doc', content: [{ ...citation, attrs: { ...citation.attrs, url: 'javascript:unsafe()' } }] })).toThrow()
     expect(fetch).not.toHaveBeenCalled()
   })
+})
+
+describe('concepts in the writing editor', () => {
+  it('fits the measured selection toolbar within a dialog with its own positioning origin', async () => {
+    const modal = document.createElement('dialog')
+    document.body.append(modal); modal.open = true; modal.append(host)
+    const style = document.createElement('style')
+    style.textContent = '.writing-selection-menu { position: fixed; }'
+    modal.append(style)
+    const originalRect = HTMLElement.prototype.getBoundingClientRect
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      if (this === modal) return new DOMRect(32, 18, 390, 600)
+      if (this.classList.contains('writing-selection-menu')) return new DOMRect(
+        32 + Number.parseFloat(this.style.left || '0'), 18 + Number.parseFloat(this.style.top || '0'), 304, 44,
+      )
+      return originalRect.call(this)
+    })
+    try {
+      await render({ variant: 'notebook', conceptActions: { terms: [], resolve: vi.fn(), onQuote: vi.fn() } })
+      vi.spyOn(editor.view, 'coordsAtPos').mockReturnValue({ left: 410, right: 410, top: 128, bottom: 150 })
+      range(1, 6)
+      const rect = byLabel('Selection formatting').getBoundingClientRect()
+      expect(rect.right).toBe(414)
+      expect(rect.bottom).toBe(122)
+    } finally { document.body.append(host); modal.remove() }
+  })
+
+  it('links selected wording, recognizes aliases across formatting, opens either link, and timestamps edits', async () => {
+    const terms = [{ id: 'virtue', label: 'Virtù', aliases: ['virtue'] }]
+    const resolve = vi.fn(async () => ({ id: 'virtue', name: 'Virtù' }))
+    const onQuote = vi.fn()
+    const content: WritingNode = { type: 'doc', content: [{ type: 'paragraph', content: [
+      { type: 'text', text: 'Virtù and vir' }, { type: 'text', marks: [{ type: 'bold' }], text: 'tue' }, { type: 'text', text: ' develop.' },
+    ] }] }
+    await render({ content, topics: terms, conceptActions: { terms, resolve, onQuote } })
+    expect(editor.view.dom.querySelectorAll('.writing-concept-mention').length).toBeGreaterThanOrEqual(2)
+    expect(writingPassages(editor.getJSON())).toEqual([])
+    range(1, 6)
+    const button = (label: string) => [...host.querySelectorAll<HTMLButtonElement>('.writing-selection-menu button')].find(entry => entry.textContent === label)!
+    await until(() => !!button('Make concept'))
+    await act(async () => button('Make concept').click())
+    expect(button('Open concept')).toBeTruthy()
+    const [link] = writingPassages(editor.getJSON())
+    expect(resolve).toHaveBeenCalledWith('Virtù')
+    expect(link).toMatchObject({ text: 'Virtù', topicId: 'virtue', relation: 'concept', from: 1, to: 6 })
+    expect(() => validateWritingContent(editor.getJSON())).not.toThrow()
+    act(() => button('Quote').click())
+    expect(onQuote).toHaveBeenCalledWith(expect.objectContaining({ text: 'Virtù', from: 1, to: 6 }))
+    // Keep editing the prose while the link identity and original timestamp survive.
+    act(() => editor.view.dispatch(editor.state.tr.insertText('x', 3)))
+    const [edited] = writingPassages(editor.getJSON())
+    expect(edited).toMatchObject({ id: link.id, text: 'Vixrtù', createdAt: link.createdAt })
+    expect(edited.updatedAt).toBeGreaterThan(link.updatedAt)
+    const explicit = editor.view.dom.querySelector<HTMLElement>('[data-passage-id]')!
+    const recognized = editor.view.dom.querySelector<HTMLElement>('.writing-concept-mention')!
+    for (const item of [explicit, recognized]) {
+      location.hash = '#/write'
+      act(() => item.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1 })))
+      expect(location.hash).toBe('#/topics?topic=virtue')
+      location.hash = '#/write'
+      act(() => item.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })))
+      expect(location.hash).toBe('#/topics?topic=virtue')
+    }
+  })
+
+  it('lets a keyboard reader make a concept in place, reopen the saved note, and follow the link', async () => {
+    const actions = { terms: [], resolve: vi.fn(async () => ({ id: 'virtù', name: 'Virtù' })), onQuote: vi.fn() }
+    await render({ variant: 'notebook', content: doc('Virtù and fortune.'), conceptActions: actions })
+    expect(byLabel('Reading note')).toBe(editor.view.dom)
+    expect(byLabel('Note formatting').textContent).toContain('Select words to make a concept.')
+    expect(host.querySelector('.writing-rich-toolbar')).toBeNull()
+    range(1, 6)
+    await act(async () => editor.view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'K', ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true })))
+    expect(actions.resolve).toHaveBeenCalledWith('Virtù')
+    const saved = changed.mock.lastCall![0]
+    await render({ variant: 'notebook', documentId: 'reopened', content: saved, conceptActions: actions })
+    const link = editor.view.dom.querySelector<HTMLElement>('[data-writing-concept]')!
+    expect(link.textContent).toBe('Virtù')
+    location.hash = '#/bookshelf'
+    act(() => link.dispatchEvent(new MouseEvent('click', { shiftKey: true, bubbles: true, cancelable: true })))
+    expect(location.hash).toBe('#/bookshelf')
+    act(() => link.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })))
+    expect(location.hash).toBe('#/topics?topic=virt%C3%B9')
+  })
+
+  it('saves the exact selected sentence as an example of a named entity', async () => {
+    const resolve = vi.fn(async () => ({ id: 'p', name: 'Palantir' }))
+    await render({ conceptActions: { terms: [], resolve, onQuote: vi.fn() } })
+    range(1, 11)
+    const opener = () => [...host.querySelectorAll<HTMLButtonElement>('.writing-selection-menu button')].find(el => el.textContent === 'Example of…')
+    await until(() => !!opener())
+    act(() => opener()!.click())
+    const form = host.querySelector<HTMLFormElement>('.writing-concept-form')!, input = form.querySelector('input')!
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'Palantir')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(async () => form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
+    expect(resolve).toHaveBeenCalledWith('Palantir')
+    expect(writingPassages(editor.getJSON())).toEqual([expect.objectContaining({ text: 'Alpha beta', relation: 'example', topicId: 'p' })])
+  })
+})
+
+it('links only an unchanged selection to its saved quotation and removes the annotation if its wording is edited', async () => {
+  const content = doc('The original wording.')
+  await render({ content })
+  const selection = { doc: editor.state.doc, from: 5, to: 13, text: 'original' }
+  expect(linkSavedQuote(editor, selection, 'quote-1', 'different')).toBe(false)
+  act(() => { expect(linkSavedQuote(editor, selection, 'quote-1', 'original')).toBe(true) })
+  expect(validateWritingContent(editor.getJSON())).toEqual(expect.objectContaining({ type: 'doc' }))
+  const saved = editor.view.dom.querySelector<HTMLAnchorElement>('[data-saved-quote]')!
+  expect(saved.textContent).toBe('original')
+  expect(saved.getAttribute('href')).toBe('#/quotes?quote=quote-1')
+  const authorship = writingAuthorshipMessages(editor.getJSON())
+  expect(authorship.filter(message => message.role === 'third-party').map(message => message.text)).toEqual(['original'])
+  act(() => editor.view.dispatch(editor.state.tr.insertText('x', 8)))
+  expect(editor.view.dom.querySelector('[data-saved-quote]')).toBeNull()
+  expect(linkSavedQuote(editor, selection, 'quote-2', 'original')).toBe(false)
 })

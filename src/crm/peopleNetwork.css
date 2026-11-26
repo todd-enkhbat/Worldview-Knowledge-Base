@@ -1,0 +1,21 @@
+.crm-network.crm-network-browser { flex:0 0 auto; min-height:0; gap:10px; padding-bottom:18px; }
+.crm-network-groups { display:flex; align-items:center; gap:8px; font-size:12px; }
+.crm-network-groups select { max-width:min(320px,75%); color:var(--kb-text); background:var(--kb-panel); border:1px solid var(--kb-line); border-radius:6px; padding:6px 10px; }
+.crm-network-context strong { font-weight:550; font-size:14px; }
+.crm-network-focus strong,.crm-network-focus span { overflow-wrap:anywhere; }
+.crm-network-context>span,.crm-network-controls>span,.crm-network-focus span { color:var(--kb-muted); font-size:11px; }
+.crm-network-context,.crm-network-controls,.crm-network-controls nav,.crm-network-controls>div,.crm-network-focus { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.crm-network-context { min-height:36px; }.crm-network-focus { min-width:0; }.crm-network-focus>div { display:grid; min-width:0; flex:1; }
+.crm-network-canvas { flex:none; overflow:hidden; border:1px solid var(--kb-line); border-radius:8px; background:var(--kb-panel); }
+.crm-network-canvas>svg { display:block; width:100%; user-select:none; touch-action:pan-y; }
+.crm-network-canvas .crm-person-outline { fill:var(--kb-panel); stroke:var(--kb-line); }
+.crm-network-canvas .is-selected .crm-person-outline { stroke:var(--crm-accent); stroke-width:2px; }
+.crm-network-canvas .crm-graph-person text { font-size:12px; }
+.crm-network-canvas .crm-graph-edges line { stroke-width:1.5; opacity:.48; }
+.crm-network-controls { justify-content:flex-end; }.crm-network-controls>span { margin-right:auto; }
+.crm-network-controls nav button { border:1px solid var(--kb-line); background:var(--kb-panel); color:var(--kb-text); padding:5px 9px; border-radius:5px; cursor:pointer; }
+.crm-network-label { display:block; width:100%; text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--kb-text); font:500 12px/19px var(--font-sans,sans-serif); }
+.crm-network-canvas .is-selected .crm-network-label { color:var(--crm-accent); }
+.crm-org-links line {stroke:#5e816b;stroke-width:2;stroke-dasharray:5 4}
+.crm-shared-clusters {display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+.crm-shared-clusters button {border:1px solid var(--kb-line);border-radius:20px;background:var(--kb-panel);color:var(--kb-text);padding:4px 10px;cursor:pointer}

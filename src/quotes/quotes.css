@@ -1,0 +1,108 @@
+.quote-collection { width: min(100%, 840px); margin: 0 auto; padding: clamp(18px,4vw,46px); color: var(--text, inherit); }
+.quote-collection>header,.quote-collection>header>div,.quote-actions { display:flex; align-items:center; gap:10px; }
+.quote-collection>header { justify-content:space-between; }
+.quote-collection h1 { font-size:clamp(28px,5vw,42px); line-height:1.15; margin:0; }
+.quote-find,.quote-form label { display:grid; gap:5px; font-size:.88rem; }
+.quote-find { margin:22px 0; }
+.quote-find input,.quote-form :is(input,select,textarea) { font:inherit; min-width:0; }
+.quote-card { padding:20px 0; border-top:1px solid var(--border, #a0a09970); }
+.quote-card blockquote { font:1.25rem/1.55 Georgia,serif; white-space:pre-wrap; overflow-wrap:anywhere; margin:0 0 12px; }
+.quote-card p { margin:5px 0; }
+.quote-status,.quote-datestamp,.quote-card details { font-size:.85rem; }
+.quote-actions { flex-wrap:wrap; padding:8px 0; }
+.quote-actions :is(a,button),.quote-card summary { cursor:pointer; }
+.quote-card details li { margin:10px 0; }
+.quote-form { display:grid; gap:12px; }
+.quote-form textarea { resize:vertical; white-space:pre-wrap; }
+.quote-form p { margin:0; }
+.quote-reference-fields { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+@media(max-width:550px) { .quote-reference-fields { grid-template-columns:1fr; } }
+.book-linked-quotes ul { margin:0; padding-left:1.1rem; }
+.book-linked-quotes li { margin:.65rem 0; }
+.book-linked-quotes small { display:block; }
+
+/* Keep the citation action available as the list of editions and optional fields grow. */
+.reading-dialog[open]:has(> .quote-form) {
+  display: flex; flex-direction: column; box-sizing: border-box;
+  width: min(37rem, calc(100vw - 24px)); max-height: calc(100dvh - 24px);
+  overflow: hidden; padding: 0; background: var(--kb-bg); color: var(--kb-text);
+}
+.reading-dialog:has(> .quote-form) > header {
+  flex: none; margin: 0; padding: 16px 20px 13px; border-bottom: 1px solid var(--kb-line);
+}
+.reading-dialog .quote-form { display: flex; flex-direction: column; min-height: 0; overflow: hidden; gap: 0; }
+.quote-capture-body {
+  min-height: 0; padding: 15px 20px; overflow-y: auto; overscroll-behavior: contain;
+  display: flex; flex-direction: column; gap: 12px; scroll-padding-block: 10px;
+}
+.quote-capture-body > * { flex: none; }
+.reading-dialog .quote-form label { min-width: 0; font-size: 12px; margin: 0; line-height: 1.5; color: var(--kb-muted); }
+.reading-dialog .quote-form label input, .reading-dialog .quote-form select {
+  width: 100%; min-width: 0; margin: 4px 0 0; padding: 6px 9px; color: var(--kb-text);
+  border: 1px solid var(--kb-line); background: var(--kb-panel); border-radius: 5px; font: inherit;
+}
+.quote-passage {
+  display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 10px;
+  border-left: 2px solid var(--kb-accent); padding: 4px 0 4px 12px;
+}
+.quote-passage > svg { color: var(--kb-accent); margin-top: 3px; }
+.reading-dialog .quote-form .quote-passage textarea {
+  display: block; width: 100%; min-height: 2.8em; max-height: 6em; margin: 0; padding: 0 2px;
+  resize: vertical; background: transparent; color: var(--kb-text);
+  border: 0; border-radius: 2px; font: 17px/1.45 Georgia, serif;
+}
+.quote-passage textarea[readonly] { resize: none; }
+.quote-passage small { grid-column: 2; color: var(--kb-muted); font-size: 11px; overflow-wrap: anywhere; }
+.quote-picker-tools,.quote-source-categories,.quote-manual,.quote-more,.quote-source-search,.quote-source-choice,.quote-citation-details summary {
+  display: flex; align-items: center;
+}
+.quote-picker-tools { justify-content: space-between; gap: 8px; }
+.quote-source-categories { gap: 2px; padding: 2px; background: var(--kb-panel); border: 1px solid var(--kb-line); border-radius: 6px; }
+.quote-source-categories button,.quote-manual,.quote-more {
+  border: 0; padding: 5px 8px; font: inherit; font-size: 12px; color: var(--kb-muted); background: transparent; cursor: pointer;
+}
+.quote-source-categories button { border-radius: 4px; }
+.quote-source-categories button[aria-pressed=true] { background: var(--kb-hover); color: var(--kb-text); font-weight: 600; }
+.quote-manual,.quote-more { gap: 5px; padding-inline: 0; }
+.quote-manual:hover,.quote-more:hover { color: var(--kb-text); text-decoration: underline; }
+.quote-pending-article { display: flex; align-items: center; gap: 6px; margin-top: 8px; padding: 6px 9px; border-radius: 5px; border: 1px solid var(--kb-line); color: var(--kb-text); background: transparent; font: inherit; font-size: 12px; cursor: pointer; }
+.quote-pending-article[aria-pressed=true] { border-color: var(--kb-accent); background: var(--kb-hover); }
+.reading-dialog .quote-form .quote-source-search { display: flex; gap: 6px; margin: 8px 0 0; border: 1px solid var(--kb-line); border-radius: 5px; padding-left: 8px; }
+.reading-dialog .quote-form .quote-source-search input { border: 0; margin: 0; background: transparent; }
+.quote-source-list { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 6px; margin-top: 8px; }
+.quote-source-choice {
+  width: 100%; min-width: 0; gap: 8px; padding: 7px 8px; text-align: left; font: inherit;
+  background: var(--kb-panel); color: var(--kb-text); border: 1px solid var(--kb-line); border-radius: 6px; cursor: pointer;
+}
+.quote-source-choice:is(:hover,[aria-pressed=true]) { background: var(--kb-hover); }
+.quote-source-choice[aria-pressed=true] { border-color: var(--kb-accent); }
+.quote-source-choice > svg { flex: none; color: var(--kb-accent); }
+.quote-choice-icon { display: grid; place-content: center; width: 24px; height: 32px; flex: none; border-radius: 2px 4px 4px 2px; overflow: hidden; color: var(--kb-muted); background: var(--kb-bg); }
+.quote-choice-icon img { width: 24px; height: 32px; object-fit: cover; }
+.quote-choice-text { flex: 1; min-width: 0; }
+.quote-choice-text strong,.quote-choice-text small,.quote-capture-status > strong { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.quote-choice-text strong { font-size: 13px; font-weight: 550; line-height: 1.4; }
+.quote-choice-text small,.quote-source-empty { font-size: 11px; line-height: 1.45; color: var(--kb-muted); }
+.quote-form .quote-source-empty { margin: 9px 0 0; }
+.quote-locator span { color: var(--kb-muted); }
+.quote-citation-details summary { width: fit-content; gap: 5px; font-size: 12px; color: var(--kb-muted); cursor: pointer; list-style: none; }
+.quote-citation-details summary::-webkit-details-marker { display: none; }
+.quote-citation-details[open] summary svg { transform: rotate(90deg); }
+.quote-citation-details[open] summary { margin-bottom: 8px; }
+.quote-reference-fields { grid-template-columns: repeat(2,minmax(0,1fr)); }
+.reading-dialog .quote-form .quote-capture-footer {
+  flex: none; display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 12px; align-items: center;
+  margin: 0; padding: 10px 20px; border-top: 1px solid var(--kb-line); background: var(--kb-panel);
+}
+.quote-capture-status { min-width: 0; }
+.quote-capture-status strong { font-size: 12px; color: var(--kb-text); font-weight: 550; }
+.quote-capture-status span { display: block; color: var(--kb-muted); font-size: 11px; line-height: 1.4; }
+.quote-capture-status[role=alert] { color: var(--kb-danger); font-size: 12px; max-height: 4.3em; overflow: auto; }
+.quote-form :is(button,input,textarea,select,summary):focus-visible { outline: 2px solid var(--kb-accent); outline-offset: 1px; }
+@media (max-width: 480px) {
+  .reading-dialog[open]:has(> .quote-form) { width: calc(100vw - 12px); max-height: calc(100dvh - 12px); }
+  .reading-dialog:has(> .quote-form) > header,.quote-capture-body,.reading-dialog .quote-form .quote-capture-footer { padding-inline: 12px; }
+  .quote-source-list,.quote-reference-fields { grid-template-columns: minmax(0,1fr); }
+  .quote-picker-tools { flex-wrap: wrap; }
+  .reading-dialog .quote-form input,.reading-dialog .quote-form select { font-size: 16px; }
+}

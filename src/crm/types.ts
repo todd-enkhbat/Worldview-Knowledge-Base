@@ -8,13 +8,21 @@ export interface CrmSourceRef { provider: string; accountId: string; externalId:
 export interface CrmEvidence { label: string; sourceRef?: CrmSourceRef; sourceId?: string; url?: string; excerpt?: string }
 export interface CrmAffiliation {
   id: string; kind: 'education' | 'employment' | 'membership' | 'advisory'; organization: string;
-  role?: string; degree?: string; field?: string; startDate?: string; endDate?: string; current?: boolean;
-  organizationUrl?: string; organizationId?: string; excerpt?: string; evidence: CrmEvidence[];
+  role?: string; description?: string; degree?: string; field?: string; startDate?: string; endDate?: string; current?: boolean;
+  organizationUrl?: string; organizationLogoUrl?: string; organizationId?: string; excerpt?: string; evidence: CrmEvidence[];
 }
 /** Unknown imported fields remain in raw/extra; source payloads are never coerced away. */
 export interface CrmBase { id: string; revision: number; createdAt: number; updatedAt: number; archivedAt: number | null; sourceRefs: CrmSourceRef[]; raw?: CrmJson; extra?: Record<string, CrmJson>; [key: string]: unknown }
 export interface CrmPerson extends CrmBase { firstName: string; lastName: string; fullName: string; emails: string[]; phones: string[]; urls: string[]; jobTitle: string; description: string; location: string; companyIds: string[]; tags: string[]; avatarAssetId: string | null; mergedIntoId: string | null; affiliations?: CrmAffiliation[]; profileCaptureIds?: string[] }
-export interface CrmCompany extends CrmBase { name: string; description: string; domain: string; emails: string[]; phones: string[]; urls: string[]; industry: string; tags: string[]; logoAssetId: string | null; organizationType?: 'company' | 'school' | 'university' | 'nonprofit' | 'community' | 'other'; tagline?: string; location?: string; profileCaptureIds?: string[] }
+export interface CrmCompany extends CrmBase { name: string; description: string; domain: string; emails: string[]; phones: string[]; urls: string[]; industry: string; tags: string[]; logoAssetId: string | null; logoUrl?: string; organizationType?: 'company' | 'school' | 'university' | 'nonprofit' | 'community' | 'other'; tagline?: string; location?: string; profileCaptureIds?: string[] }
+export interface CrmIntroductionPath {
+  id: string; via: { id: string; name: string }; employee: { id: string; name: string }
+  relation: string; context: string; fromId: string
+}
+export interface CrmCompanyRoster {
+  current: CrmPerson[]; former: CrmPerson[]; education: CrmPerson[]; other: CrmPerson[]
+  educationStatuses?: Record<string, import('./affiliationStatus.ts').EducationStatus[]>
+}
 export interface CrmObject extends CrmBase { name: string; objectType: string; groupId: string | null; personIds: string[]; companyIds: string[]; description: string }
 export interface CrmGroup extends CrmBase { name: string; parentId: string | null; entityType: CrmEntityType; objectType?: string; description: string; color: string; visibility: string; iconAssetId?: string | null; coverAssetId?: string | null; emoji?: string; icon?: 'folder' | 'people' | 'graduation' | 'planet' | 'sparkle' | 'books' | 'globe' | 'heart' | 'coffee' | 'briefcase' | 'camera' | 'music' | 'leaf' | 'lightning' | 'code' | 'mountains'; coverStyle?: 'contours' | 'orbit' | 'paper' | 'grid' | 'solid'; coverPosition?: number; appearanceDensity?: 'compact' | 'comfortable'; titleFont?: 'sans' | 'serif'; coverHeight?: 'small' | 'medium' | 'large'; titleColor?: string; coverDim?: number }
 export interface CrmMembership extends CrmBase { groupId: string; entityType: CrmEntityType; entityId: string }
@@ -22,10 +30,10 @@ export interface CrmFieldOption { id: string; label: string; color?: string; ord
 export interface CrmField extends CrmBase { groupId: string; entityType: CrmEntityType; name: string; type: string; options: CrmFieldOption[]; config: Record<string, CrmJson> }
 export interface CrmFieldValue extends CrmBase { fieldId: string; groupId: string; entityType: CrmEntityType; entityId: string; value: CrmJson }
 export interface CrmNote extends CrmBase { entityRefs: CrmEntityRef[]; body: string; authorName: string; parentId: string | null; mentionIds: string[]; attachmentAssetIds: string[]; pinned: boolean }
-export interface CrmInteraction extends CrmBase { title: string; type: string; status: 'scheduled' | 'logged' | 'cancelled'; body: string; personIds: string[]; companyIds: string[]; startAt: number | null; endAt: number | null; occurredAt: number | null; timezone: string; allDay: boolean; attendanceConfirmed: boolean; attachmentAssetIds: string[] }
+export interface CrmInteraction extends CrmBase { title: string; type: string; status: 'scheduled' | 'logged' | 'cancelled'; body: string; personIds: string[]; companyIds: string[]; startAt: number | null; endAt: number | null; occurredAt: number | null; timezone: string; allDay: boolean; attendanceConfirmed: boolean; confirmedPersonIds?: string[]; attachmentAssetIds: string[] }
 export interface CrmTask extends CrmBase { title: string; body: string; entityRefs: CrmEntityRef[]; dueAt: number | null; completedAt: number | null; assigneeId: string | null }
 export type CrmFilter = { op: 'and' | 'or'; rules: CrmFilter[] } | { field: string; operator: 'eq' | 'neq' | 'contains' | 'notContains' | 'empty' | 'notEmpty' | 'in' | 'gt' | 'gte' | 'lt' | 'lte'; value?: CrmJson }
-export interface CrmView extends CrmBase { name: string; groupId: string | null; collection: 'people' | 'companies' | 'objects'; layout: 'table' | 'gallery' | 'board' | 'network' | 'list'; filter: CrmFilter | null; columns: string[]; sort: { field: string; direction: 'asc' | 'desc' }[]; groupBy: string | null }
+export interface CrmView extends CrmBase { name: string; groupId: string | null; collection: 'people' | 'companies' | 'objects'; layout: 'table' | 'gallery' | 'board' | 'network' | 'places' | 'list'; filter: CrmFilter | null; columns: string[]; sort: { field: string; direction: 'asc' | 'desc' }[]; groupBy: string | null }
 export interface CrmRelationship extends CrmBase { from: CrmEntityRef; to: CrmEntityRef; relation: string; confirmed: boolean; context: string; evidence: CrmEvidence[] }
 export interface CrmCandidate extends CrmBase {
   /** Review suggestions only; multiple matches never choose a target automatically. */

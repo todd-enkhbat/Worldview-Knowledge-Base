@@ -1,17 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { getStore, getWorldGeneration, isRepoReady } from '../data/repo.ts'
-import { updateWritingDocument } from './store.ts'
-import { writingPublicationValue } from './model.ts'
+import { createWritingDocument, updateWritingDocument } from './store.ts'
+import { plainTextFromWriting, writingPublicationValue } from './model.ts'
 import type { WritingDocument, WritingDocumentPatch } from './types.ts'
 
 const value = (document: WritingDocument) => JSON.stringify(writingPublicationValue(document))
 const message = (error: unknown) => error instanceof Error ? error.message : String(error)
 
 /** A pending save may advance its baseline, but can never erase a more recent edit. */
-export function useWritingDraft(document: WritingDocument) {
+export function useWritingDraft(document: WritingDocument, createOnEdit = false) {
   const [draft, setDraft] = useState(document), [status, setStatus] = useState<'saved' | 'dirty' | 'saving' | 'error'>('saved'), [error, setError] = useState('')
   const local = useRef(document), baseline = useRef(document), epoch = useRef(0), savedEpoch = useRef(0)
   const pending = useRef<Promise<void> | null>(null), failed = useRef(false), mounted = useRef(true)
+  const needsCreation = useRef(createOnEdit)
   const lastError = useRef('')
   const scope = useRef({ store: getStore(), generation: getWorldGeneration() })
   const current = useCallback(() => isRepoReady() && getStore() === scope.current.store && getWorldGeneration() === scope.current.generation, [])
@@ -20,9 +21,17 @@ export function useWritingDraft(document: WritingDocument) {
     if (pending.current) { await pending.current; if (epoch.current !== savedEpoch.current) return flush(); return }
     if (epoch.current === savedEpoch.current) return
     const submitted = local.current, version = epoch.current, expectedUpdatedAt = baseline.current.updatedAt
+    if (needsCreation.current && !submitted.title.trim() && !plainTextFromWriting(submitted.content).trim() && !submitted.subtitle.trim() && !submitted.byline.trim()) {
+      savedEpoch.current = version
+      if (mounted.current) setStatus('saved')
+      return
+    }
     if (mounted.current) { setStatus('saving'); setError('') }
-    const action = updateWritingDocument(submitted.id, writingPublicationValue(submitted), { expectedUpdatedAt }).then((saved) => {
+    const fields = writingPublicationValue(submitted)
+    const write = needsCreation.current ? createWritingDocument(fields, submitted.id) : updateWritingDocument(submitted.id, fields, { expectedUpdatedAt })
+    const action = write.then((saved) => {
       if (!current()) return
+      needsCreation.current = false
       baseline.current = saved; savedEpoch.current = version; failed.current = false; lastError.current = ''
       if (epoch.current === version) { local.current = saved; if (mounted.current) { setDraft(saved); setStatus('saved') } }
       else if (mounted.current) setStatus('dirty')

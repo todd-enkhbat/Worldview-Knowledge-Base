@@ -6,6 +6,8 @@ import { normalizeEmail, normalizePhone } from '../src/crm/model.ts'
 import { PROFILE_CAPTURE_FIELDS, type CrmCapturedProfile, type CrmProfileCaptureApplyResult, type CrmProfileCaptureDraft, type CrmProfileCaptureList, type CrmProfileCaptureMatch, type CrmProfileCaptureSource } from '../src/crm/profileCaptureTypes.ts'
 import type { CrmAffiliation, CrmCandidate, CrmCompany, CrmPerson } from '../src/crm/types.ts'
 import type { KnowledgeSnapshot, SourceVersion } from '../src/knowledge/types.ts'
+import { organizationUrlKey } from './crmOrganizations.ts'
+import { organizationHomepageHost } from './crmProfileUrls.ts'
 import { CrmError, type SqliteCrmStore } from './crmStore.ts'
 import { profileLinkIdentity, publicProfileUrl } from './crmProfileMedia.ts'
 import type { WorldDb } from './worldDb.ts'
@@ -19,7 +21,7 @@ const unique = <T>(values: T[], identity: (value: T) => string) => { const seen 
 const identity = (value: string) => value.normalize('NFKC').toLowerCase().replace(/\s+/g, ' ').trim()
 const affiliationKey = (value: Pick<CrmAffiliation, 'kind' | 'organization' | 'role' | 'degree' | 'field' | 'startDate' | 'endDate'>) => stable([value.kind, identity(value.organization), identity(value.role ?? ''), identity(value.degree ?? ''), identity(value.field ?? ''), value.startDate ?? '', value.endDate ?? ''])
 const affiliationEvidence = (row: CrmAffiliation, source: CrmProfileCaptureSource) => [{ label: `Captured ${row.kind} entry; review against the retained source`, url: source.url, sourceRef: { provider: 'profile-capture', accountId: 'local', externalId: entityUrl(source.url, 'person') || profileLinkIdentity(source.url), url: source.url, version: source.contentHash, originalAssetId: source.originalAssetId, observedAt: source.capturedAt }, ...(row.excerpt ? { excerpt: row.excerpt } : {}) }]
-function entityUrl(raw: string, type: 'person' | 'company') {
+export function entityUrl(raw: string, type: 'person' | 'company') {
   const accepted = publicProfileUrl(raw); if (!accepted) return ''
   const parsed = new URL(accepted)
   if (/(^|\.)linkedin\.com$/i.test(parsed.hostname)) {
@@ -52,15 +54,23 @@ export class CrmProfileCapture {
   }
   private matches(profile: CrmCapturedProfile, sourceUrl: string): CrmProfileCaptureMatch[] {
     const collection = profile.entityType === 'person' ? 'people' : 'companies', keys = new Set([sourceUrl, ...profile.urls].map(url => entityUrl(url, profile.entityType)).filter(Boolean))
+    const personEmails = new Set(profile.emails.map(normalizeEmail).filter(email => !/^(info|contact|team|admin|sales|support|hello|office|jobs|press|mail|careers|billing|help)@/.test(email)))
+    const organizationKeys = new Set(profile.urls.map(organizationUrlKey).filter(Boolean))
     return this.options.store.rows(collection, false).filter(row => !(collection === 'people' && (row as CrmPerson).mergedIntoId)).flatMap(row => {
       const matched = row.urls.some(url => keys.has(entityUrl(url, profile.entityType)))
+      const sameName = identity(profile.name) === identity(collection === 'people' ? (row as CrmPerson).fullName || [(row as CrmPerson).firstName, (row as CrmPerson).lastName].filter(Boolean).join(' ') : (row as CrmCompany).name)
+      const personalEmail = collection === 'people' && sameName && row.emails.some(email => personEmails.has(normalizeEmail(email)))
+      const domain = collection === 'companies' ? organizationUrlKey((row as CrmCompany).domain) : ''
+      const companyDomain = !!domain && organizationKeys.has(domain)
+      const affiliationOnly = collection === 'companies' && sameName && !row.urls.length && !domain && row.sourceRefs.some(ref => ref.provider === 'profile-affiliation')
       const continuity = row.sourceRefs.some(ref => ref.provider === 'profile-capture' && keys.has(entityUrl(ref.url ?? ref.externalId, profile.entityType)))
-      return matched || continuity ? [{ collection, id: row.id, name: collection === 'people' ? (row as CrmPerson).fullName || (row as CrmPerson).emails[0] || 'Unnamed contact' : (row as CrmCompany).name, revision: row.revision, reason: matched ? 'profile-url' as const : 'source-continuity' as const }] : []
+      const reason = matched ? 'profile-url' : continuity ? 'source-continuity' : personalEmail ? 'email-and-name' : companyDomain ? 'company-domain' : affiliationOnly ? 'affiliation-name' : null
+      return reason ? [{ collection, id: row.id, name: collection === 'people' ? (row as CrmPerson).fullName || (row as CrmPerson).emails[0] || 'Unnamed contact' : (row as CrmCompany).name, revision: row.revision, reason }] : []
     })
   }
   private draft(row: CrmCandidate, preview = false): CrmProfileCaptureDraft {
     const stored = this.stored(row), matches = this.matches(stored.profile, stored.source.url)
-    return { id: row.id, draftId: row.id, revision: row.revision, status: row.status, profile: preview ? { ...stored.profile, description: stored.profile.description.slice(0, 500) } : stored.profile, source: preview ? { ...stored.source, text: stored.source.text.slice(0, 500) } : stored.source, matches, targetId: row.targetId ?? (matches.length === 1 ? matches[0].id : null), reviewUrl: `/#/people?capture=${encodeURIComponent(row.id)}`, cloudAiUsed: false }
+    return { id: row.id, draftId: row.id, revision: row.revision, status: row.status, profile: preview ? { ...stored.profile, description: stored.profile.description.slice(0, 500) } : stored.profile, source: preview ? { ...stored.source, text: stored.source.text.slice(0, 500) } : stored.source, matches, targetId: row.status === 'accepted' ? row.targetId : matches.length === 1 ? matches[0].id : null, reviewUrl: `/#/people?capture=${encodeURIComponent(row.id)}`, cloudAiUsed: false }
   }
   list(input: { offset?: number; limit?: number; status?: string } = {}): CrmProfileCaptureList {
     const offset = input.offset ?? 0, limit = input.limit ?? 20
@@ -89,9 +99,10 @@ export class CrmProfileCapture {
       check(object(row) && ['education', 'employment', 'membership', 'advisory'].includes(String(row.kind)), 'Choose a supported captured affiliation.')
       const organization = text(row.organization, 500); check(organization, 'A captured affiliation needs an organization name.')
       const fields = Object.fromEntries(['role', 'degree', 'field', 'startDate', 'endDate'].flatMap(key => { const supplied = text(row[key], 500); return supplied ? [[key, supplied]] : [] }))
-      const organizationUrl = publicProfileUrl(row.organizationUrl), excerpt = text(row.excerpt, 4000)
+      const description = text(row.description, 12000)
+      const organizationUrl = publicProfileUrl(row.organizationUrl), organizationLogoUrl = publicProfileUrl(row.organizationLogoUrl), excerpt = text(row.excerpt, 4000)
       check(row.current === undefined || typeof row.current === 'boolean', 'The captured current-affiliation flag must be explicit.')
-      const result = { kind: row.kind as CrmAffiliation['kind'], organization, ...fields, ...(organizationUrl ? { organizationUrl } : {}), ...(row.current === undefined ? {} : { current: row.current }), ...(excerpt ? { excerpt } : {}), evidence: [] }
+      const result = { kind: row.kind as CrmAffiliation['kind'], organization, ...fields, ...(description ? { description } : {}), ...(organizationUrl ? { organizationUrl } : {}), ...(organizationLogoUrl && organizationLogoUrl.length <= 2048 ? { organizationLogoUrl } : {}), ...(row.current === undefined ? {} : { current: row.current }), ...(excerpt ? { excerpt } : {}), evidence: [] }
       return { ...result, id: `affiliation-${hash(affiliationKey(result)).slice(0, 40)}` }
     }), affiliationKey)
     const rawImages = value.images ?? []; check(Array.isArray(rawImages) && rawImages.length <= 8, 'Capture at most eight named profile image references.')
@@ -173,8 +184,8 @@ export class CrmProfileCapture {
     check(targetId || input.createNew === true, 'Choose an existing record or explicitly create a new one.')
     const target = targetId ? this.options.store.get(collection, targetId) : undefined
     check(!targetId || target && target.archivedAt === null && !(collection === 'people' && (target as CrmPerson).mergedIntoId) && target.revision === input.expectedRecordRevision, 'The selected record changed or is unavailable. Refresh before applying.', 409)
-    check(!input.createNew || !draft.matches.length, 'This profile already matches a saved record. Review the existing record instead of duplicating it.', 409)
-    check(input.groupId === undefined, 'Add the saved record to a group through its group controls after review.')
+    check(!input.createNew || !this.matches(draft.profile, draft.source.url).length, 'This profile already matches a saved record. Review the existing record instead of duplicating it.', 409)
+    check(input.groupId === undefined || typeof input.groupId === 'string' && input.groupId.length > 0 && input.groupId.length <= 1000, 'Choose an available group.')
     const patch: Record<string, unknown> = {}, profile = draft.profile, fields = new Set(input.fields as string[])
     if (!target) check(fields.has('name'), 'Include the captured name when creating a person or company.')
     for (const key of ['name', 'headline', 'description', 'location', 'industry'] as const) if (fields.has(key) && profile[key]) { if (key === 'name') patch[collection === 'people' ? 'fullName' : 'name'] = profile.name; else if (key === 'headline') patch[collection === 'people' ? 'jobTitle' : 'tagline'] = profile.headline; else patch[key] = profile[key] }
@@ -183,27 +194,35 @@ export class CrmProfileCapture {
       const additions = profile[key].filter(value => { const normalized = canonical(value); if (seen.has(normalized)) return false; seen.add(normalized); return true })
       patch[key] = [...existing, ...additions]
     }
+    if (collection === 'companies' && fields.has('urls') && !(target as CrmCompany | undefined)?.domain) {
+      const domains = [...new Set(profile.urls.map(organizationUrlKey).filter(key => key && !/[/?]/.test(key)))]
+      if (domains.length === 1) patch.domain = domains[0]
+      else if (!domains.length && draft.source.captureMethod === 'public-url' && organizationHomepageHost(draft.source.url)) patch.domain = organizationHomepageHost(draft.source.url)
+    }
     if (collection === 'people' && fields.has('affiliations')) {
       check(input.affiliationIds === undefined || Array.isArray(input.affiliationIds) && input.affiliationIds.length <= 60 && input.affiliationIds.every(value => typeof value === 'string' && profile.affiliations.some(row => row.id === value)), 'Select affiliations from this captured profile only.')
-      const selected = profile.affiliations.filter(row => !Array.isArray(input.affiliationIds) || input.affiliationIds.includes(row.id)).map(row => {
-        const reviewed = { ...row, evidence: affiliationEvidence(row, draft.source) }
-        if (!row.organizationUrl) return reviewed
-        const key = profileLinkIdentity(row.organizationUrl), companies = this.options.store.rows('companies', false).filter(company => company.urls.some(url => profileLinkIdentity(url) === key))
-        return companies.length === 1 ? { ...reviewed, organizationId: companies[0].id } : reviewed
-      })
-      const merged = new Map(((target as CrmPerson | undefined)?.affiliations ?? []).map(row => [affiliationKey(row), row]))
+      const selected = profile.affiliations.filter(row => !Array.isArray(input.affiliationIds) || input.affiliationIds.includes(row.id)).map(row => ({ ...row, evidence: affiliationEvidence(row, draft.source) }))
+      const merged = [...((target as CrmPerson | undefined)?.affiliations ?? [])]
       for (const row of selected) {
-        const key = affiliationKey(row), previous = merged.get(key)
-        merged.set(key, previous ? { ...previous, evidence: unique([...previous.evidence, ...row.evidence], stable) } : row)
+        let index = merged.findIndex(role => affiliationKey(role) === affiliationKey(row))
+        if (index === -1 && row.kind === 'employment' && row.startDate && (row.endDate || row.current === false)) {
+          const matching = merged.filter(role => role.kind === row.kind && identity(role.organization) === identity(row.organization) &&
+            identity(role.role ?? '') === identity(row.role ?? '') && role.startDate === row.startDate && role.current === true &&
+            role.evidence.some(item => item.sourceRef?.provider === 'profile-capture' && item.sourceRef.externalId === row.evidence[0].sourceRef.externalId))
+          if (matching.length === 1) index = merged.indexOf(matching[0])
+        }
+        const previous = merged[index]
+        if (!previous) { merged.push(row); continue }
+        const ended = row.kind === 'employment' && !!row.endDate && /\d{4}/.test(row.endDate)
+        merged[index] = { ...previous, ...row, id: previous.id, ...(ended ? { current: false } : {}), evidence: unique([...previous.evidence, ...row.evidence], stable) }
       }
-      patch.affiliations = [...merged.values()]
-      const employmentCompanies = selected.filter(row => row.kind === 'employment' && row.current === true && row.organizationId).map(row => row.organizationId!)
-      patch.companyIds = [...new Set([...((target as CrmPerson | undefined)?.companyIds ?? []), ...employmentCompanies])]
+      patch.affiliations = merged
+      patch.companyIds = (target as CrmPerson | undefined)?.companyIds ?? []
     }
     patch.profileCaptureIds = [...new Set([...(target?.profileCaptureIds ?? []), candidate.id])]
     current()
     this.options.db.db.prepare('INSERT OR REPLACE INTO crm_state(key,body) VALUES(?,?)').run(stateKey, JSON.stringify({ fingerprint: requestHash }))
-    const saved = this.options.store.command({ requestId: receiptId, operation: 'review_candidate', id, expectedRecordRevision: candidate.revision, accept: true, ...(targetId ? { targetId, expectedTargetRevision: input.expectedRecordRevision } : {}), patch }, 'profile-capture')
+    const saved = this.options.store.command({ requestId: receiptId, operation: 'review_candidate', id, expectedRecordRevision: candidate.revision, accept: true, ...(input.groupId ? { groupId: input.groupId } : {}), ...(targetId ? { targetId, expectedTargetRevision: input.expectedRecordRevision } : {}), patch }, 'profile-capture')
     const record = saved.record as CrmPerson | CrmCompany; check(record, 'The profile review did not return its saved record.', 500)
     const result: CrmProfileCaptureApplyResult = { ok: true, record, draft: this.detail(id), ...(saved.replayed ? { replayed: true } : {}) }
     this.options.db.db.prepare('INSERT OR REPLACE INTO crm_state(key,body) VALUES(?,?)').run(stateKey, JSON.stringify({ fingerprint: requestHash, result }))

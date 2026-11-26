@@ -2,7 +2,7 @@ import { useBookshelf } from '../bookshelf/store.ts'
 import { useBookshelfCover } from '../bookshelf/useCover.ts'
 import type { ShelfBook } from '../bookshelf/types.ts'
 
-const stages = { wish: 'Want to buy', unread: 'Unread', reading: 'Reading', read: 'Read' }
+const stages = { wish: 'Wishlist', unread: 'Unread', reading: 'Reading', read: 'Read' }
 
 /** Show the user's changed details first; complete structured records remain available below. */
 export function BookChangePreview({ before, after }: { before?: ShelfBook; after: ShelfBook }) {

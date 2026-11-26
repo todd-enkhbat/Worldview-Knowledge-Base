@@ -79,9 +79,18 @@ export function validateWritingContent(value: unknown): WritingNode {
       if (type !== 'text' || !Array.isArray(raw.marks) || raw.marks.length > 16) throw invalid()
       for (const mark of raw.marks) {
         if (!object(mark) || typeof mark.type !== 'string' || Object.keys(mark).some((key) => key !== 'type' && key !== 'attrs')) throw invalid()
-        if (['bold', 'italic', 'strike', 'code', 'underline'].includes(mark.type)) attrs(mark.attrs, {})
+        if (['bold', 'italic', 'strike', 'code', 'underline','writingAi'].includes(mark.type)) attrs(mark.attrs, {})
         else if (mark.type === 'textStyle') attrs(mark.attrs, { color: safeColor, backgroundColor: safeColor, fontFamily: safeFont, fontSize: safeSize })
         else if (mark.type === 'highlight') attrs(mark.attrs, { color: safeColor })
+        else if (mark.type === 'writingQuote') {
+          if (!object(mark.attrs) || !identifier(mark.attrs.quoteId) || Object.keys(mark.attrs).length !== 1) throw invalid()
+        }
+        else if (mark.type === 'writingConcept') {
+          const values = mark.attrs
+          if (!object(values) || !identifier(values.id) || !identifier(values.topicId) || !['concept', 'example'].includes(String(values.relation)) ||
+              !Number.isSafeInteger(values.createdAt) || !Number.isSafeInteger(values.updatedAt) || Number(values.createdAt) < 0 || Number(values.updatedAt) < Number(values.createdAt) ||
+              Object.keys(values).some(key => !['id', 'topicId', 'relation', 'createdAt', 'updatedAt'].includes(key))) throw invalid()
+        }
         else if (mark.type === 'link') { attrs(mark.attrs, { href: safeWritingLink, target: (value) => ['_blank', '_self'].includes(String(value)), rel: (value) => typeof value === 'string' && /^[a-z\s-]{0,120}$/.test(value), class: (value) => typeof value === 'string' && /^[a-zA-Z\d\s_-]{0,120}$/.test(value) }); if (!object(mark.attrs) || !safeWritingLink(mark.attrs.href)) throw invalid() }
         else throw invalid()
       }
@@ -92,14 +101,16 @@ export function validateWritingContent(value: unknown): WritingNode {
   return structuredClone(value) as WritingNode
 }
 export function validateWritingAppearance(value: unknown): WritingAppearance { const parsed = appearanceSchema.safeParse(value); if (!parsed.success) throw invalid(); return parsed.data }
-const documentSchema = z.object({ id, title: z.string().max(300), subtitle: z.string().max(2000), byline: z.string().max(300), format: z.enum(['note', 'essay', 'newsletter', 'journal', 'poem', 'research']), content: z.unknown(), appearance: z.unknown(), createdAt: timestamp, updatedAt: timestamp, sourceId: id.optional(), basedOnSourceId: id.optional(), baseVersionId: id.optional(), archivedAt: timestamp.nullable(), topicIds: z.array(z.string().min(1).max(160)).max(100).optional(), publishedUpdatedAt: timestamp.optional(), publishedFingerprint: z.string().regex(/^[a-f\d]{64}$/).optional(), lastPublishedAt: timestamp.optional() }).strict()
+const documentSchema = z.object({ id, title: z.string().max(300), subtitle: z.string().max(2000), byline: z.string().max(300), format: z.enum(['note', 'essay', 'newsletter', 'journal', 'poem', 'research']), content: z.unknown(), appearance: z.unknown(), createdAt: timestamp, updatedAt: timestamp, sourceId: id.optional(), basedOnSourceId: id.optional(), applicationId:id.optional(),chapter:z.string().max(500).optional(), bookEditionId: id.nullable().optional(), baseVersionId: id.optional(), archivedAt: timestamp.nullable(), topicIds: z.array(z.string().min(1).max(160)).max(100).optional(), publishedUpdatedAt: timestamp.optional(), publishedFingerprint: z.string().regex(/^[a-f\d]{64}$/).optional(), lastPublishedAt: timestamp.optional() }).strict()
 export function validateWritingDocument(value: unknown): WritingDocument { const parsed = documentSchema.safeParse(value); if (!parsed.success || parsed.data.updatedAt < parsed.data.createdAt) throw invalid(); return { ...parsed.data, content: validateWritingContent(parsed.data.content), appearance: validateWritingAppearance(parsed.data.appearance) } }
 export function decodeWriting(value: unknown): WritingSnapshot {
   if (value === undefined) return emptyWriting()
   if (!object(value) || value.schemaVersion !== 1 || !Number.isSafeInteger(value.revision) || Number(value.revision) < 0 || !Array.isArray(value.docs) || value.docs.length > 10000) throw invalid()
   const docs = value.docs.map(validateWritingDocument)
   if (new Set(docs.map((doc) => doc.id)).size !== docs.length) throw invalid()
-  return { schemaVersion: 1, revision: Number(value.revision), docs }
+  const edits = z.array(z.object({ documentId: id, at: timestamp, fields: z.array(z.string().min(1).max(80)).min(1).max(16) })).optional().safeParse(value.edits)
+  if (!edits.success) throw invalid()
+  return { schemaVersion: 1, revision: Number(value.revision), docs, ...(edits.data ? { edits: edits.data } : {}) }
 }
 export function writingFromPlainText(text: string): WritingNode { return validateWritingContent({ type: 'doc', content: text.split('\n\n').map((paragraph) => ({ type: 'paragraph', content: paragraph.split('\n').flatMap((line, index) => [...(index ? [{ type: 'hardBreak' }] : []), ...(line ? [{ type: 'text', text: line }] : [])]) })) }) }
 export function plainTextFromWriting(node: WritingNode): string {
@@ -113,7 +124,7 @@ export function plainTextFromWriting(node: WritingNode): string {
   if (node.type === 'writingMedia') return String(node.attrs?.caption || node.attrs?.alt || `[${node.attrs?.kind ?? 'media'}: ${node.attrs?.name ?? 'attachment'}]`)
   return (node.content ?? []).map(plainTextFromWriting).join(['doc', 'blockquote'].includes(node.type) ? '\n\n' : ['orderedList', 'bulletList', 'listItem', 'table', 'tableCell', 'tableHeader'].includes(node.type) ? '\n' : node.type === 'tableRow' ? '\t' : '')
 }
-export function writingPublicationValue(doc: WritingDocument) { return { title: doc.title, subtitle: doc.subtitle, byline: doc.byline, format: doc.format, content: doc.content, appearance: doc.appearance, ...(doc.topicIds?.length ? { topicIds: doc.topicIds } : {}) } }
+export function writingPublicationValue(doc: WritingDocument) { return { title: doc.title, subtitle: doc.subtitle, byline: doc.byline, format: doc.format, content: doc.content, appearance: doc.appearance, ...(doc.applicationId ? {applicationId:doc.applicationId}:{}), ...(doc.chapter !== undefined ? {chapter:doc.chapter} : {}), ...(doc.bookEditionId !== undefined ? { bookEditionId: doc.bookEditionId } : {}), ...(doc.topicIds?.length ? { topicIds: doc.topicIds } : {}) } }
 export function writingAssetIds(doc: WritingDocument): string[] {
   const ids = new Set<string>(doc.appearance.backgroundAssetId ? [doc.appearance.backgroundAssetId] : [])
   const visit = (node: WritingNode) => { if (node.type === 'writingMedia' && typeof node.attrs?.assetId === 'string') ids.add(node.attrs.assetId); for (const child of node.content ?? []) visit(child) }

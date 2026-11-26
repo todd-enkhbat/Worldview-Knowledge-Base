@@ -121,7 +121,7 @@
 .reading-graph{--graph-gold:#e4c68b;--graph-canvas:#151715;--graph-canvas-ink:#f2eee3;--graph-canvas-muted:#a0a29b;--graph-support:#78b6aa;--graph-contradict:#d99791;--graph-build:#a2b9cf;--graph-accent:var(--kb-accent,#c0a06b)}
 .reading-graph-heading{margin-bottom:20px;align-items:end}.reading-graph-eyebrow{display:block;color:var(--graph-muted);font:10px/1.5 var(--font-sans,system-ui);margin-bottom:7px;letter-spacing:.04em}.reading-graph-heading h2{font:clamp(25px,3vw,38px)/1.15 Georgia,"Times New Roman",serif;letter-spacing:-1px;display:block}.reading-graph-heading p{margin-top:7px;font-size:12px}.reading-graph-heading-actions{display:flex;gap:12px;align-items:center;flex-wrap:wrap;justify-content:flex-end}.reading-graph-motion{display:inline-flex;align-items:center;gap:7px;padding:7px 10px;border:1px solid var(--graph-line);border-radius:6px;background:transparent;color:var(--graph-text);font:11px/1.5 var(--font-sans,system-ui)}.reading-graph-motion[aria-pressed=true] svg{color:var(--graph-accent)}.reading-graph-motion:hover:not(:disabled){background:var(--graph-hover)}.reading-graph-motion:disabled{opacity:.8}
 .reading-graph-layout{grid-template-columns:minmax(0,1fr) 290px;border-radius:12px;box-shadow:0 14px 50px #00000008}.reading-graph-stage{height:clamp(430px,64dvh,720px);min-height:400px;background-color:var(--graph-canvas);background-image:radial-gradient(ellipse at 35% 35%,#58604610,transparent 57%),radial-gradient(circle at 18% 26%,#d7d5c04a 0 .6px,transparent 1px),radial-gradient(circle at 76% 69%,#d7d5c035 0 .6px,transparent 1px),radial-gradient(circle at 63% 19%,#d7d5c025 0 .6px,transparent 1px);background-size:100% 100%,161px 193px,211px 257px,307px 283px;isolation:isolate}.reading-graph-stage::after{content:"";position:absolute;pointer-events:none;inset:0;box-shadow:inset 0 0 100px #0003;z-index:0}.reading-graph-canvas{position:relative;z-index:1;color:var(--graph-canvas-ink)}.reading-graph-stage-label{position:absolute;left:20px;top:18px;z-index:2;pointer-events:none}.reading-graph-stage-label>span{display:block;color:#d6d2c4;font:11px/1.5 var(--font-sans,system-ui)}.reading-graph-stage-label small{display:block;color:#868c83;font:9px/1.5 var(--font-sans,system-ui);margin-top:4px}.reading-graph-canvas-tools{top:auto;right:16px;bottom:20px;z-index:3;background:#1d201def;border-color:#f4eed41c;box-shadow:0 4px 18px #0002;flex-direction:column;padding:4px}.reading-graph-canvas-tools button{color:#d9d6c9}.reading-graph-canvas-tools button:hover{background:#ffffff0c;color:#fff}.reading-graph-canvas-tools>span{font-size:9px;color:#9b9f94;margin:3px 0}.reading-graph-canvas-tools button:focus-visible{outline-color:var(--graph-gold)}
-.reading-graph-node{cursor:grab;color:var(--graph-gold);opacity:calc(var(--graph-enter-opacity,1)*var(--graph-focus-opacity,1));transition:opacity 180ms ease;outline:0}.reading-graph-node:active{cursor:grabbing}.reading-graph-node.is-dimmed{--graph-focus-opacity:.2}.reading-graph-node.is-connected{--graph-focus-opacity:1}.reading-graph-node-dot{stroke:#151715;stroke-width:1.2;filter:drop-shadow(0 0 4px #f8ebbf24)}.reading-graph-node.is-source .reading-graph-node-dot{fill:#e4e2d7}.reading-graph-node.is-topic .reading-graph-node-dot{fill:var(--graph-gold);stroke:#f7e6b488}.reading-graph-node.is-tag .reading-graph-node-dot{fill:#20251f;stroke:#ad9e79;stroke-width:1.4}.reading-graph-node-glyph{color:#332c1f;pointer-events:none;opacity:.85}.reading-graph-node.is-tag .reading-graph-node-glyph{color:#c6b58b}.reading-graph-node-target{fill:transparent;stroke:transparent;transition:fill 180ms ease,stroke 180ms ease}.reading-graph-node:is(:hover,:focus-visible,.is-selected) .reading-graph-node-target{fill:#e6c7840d;stroke:#e6c78455;stroke-width:1}.reading-graph-node:is(:hover,.is-selected) .reading-graph-node-dot{filter:drop-shadow(0 0 8px #e6c78480);stroke:#fff1c6;stroke-width:1.5}.reading-graph-node:focus-visible .reading-graph-node-target{stroke:#fff1c6;stroke-width:2}.reading-graph-node.is-pinned .reading-graph-node-target{stroke:#e6c78477;stroke-dasharray:2 4}.reading-graph-node text{fill:var(--graph-canvas-muted);font-family:Georgia,"Times New Roman",serif;letter-spacing:.01em;paint-order:stroke;stroke:#151715;stroke-width:3px;stroke-linejoin:round;pointer-events:none}.reading-graph-node:is(:hover,:focus-visible,.is-selected,.is-connected) text{fill:#f1eee4}.reading-graph-node.is-selected text{font-weight:600}.reading-graph-node-thumbnail{pointer-events:none}.reading-graph-node.has-thumbnail .reading-graph-node-dot{stroke:#d9c69d;stroke-width:1.5}
+.reading-graph-node{cursor:grab;color:var(--graph-gold);opacity:var(--graph-focus-opacity,1);transition:opacity 180ms ease;outline:0}.reading-graph-node:active{cursor:grabbing}.reading-graph-node.is-dimmed{--graph-focus-opacity:.2}.reading-graph-node.is-connected{--graph-focus-opacity:1}.reading-graph-node-dot{stroke:#151715;stroke-width:1.2;filter:drop-shadow(0 0 4px #f8ebbf24)}.reading-graph-node.is-source .reading-graph-node-dot{fill:#e4e2d7}.reading-graph-node.is-topic .reading-graph-node-dot{fill:var(--graph-gold);stroke:#f7e6b488}.reading-graph-node.is-tag .reading-graph-node-dot{fill:#20251f;stroke:#ad9e79;stroke-width:1.4}.reading-graph-node-glyph{color:#332c1f;pointer-events:none;opacity:.85}.reading-graph-node.is-tag .reading-graph-node-glyph{color:#c6b58b}.reading-graph-node-target{fill:transparent;stroke:transparent;transition:fill 180ms ease,stroke 180ms ease}.reading-graph-node:is(:hover,:focus-visible,.is-selected) .reading-graph-node-target{fill:#e6c7840d;stroke:#e6c78455;stroke-width:1}.reading-graph-node:is(:hover,.is-selected) .reading-graph-node-dot{filter:drop-shadow(0 0 8px #e6c78480);stroke:#fff1c6;stroke-width:1.5}.reading-graph-node:focus-visible .reading-graph-node-target{stroke:#fff1c6;stroke-width:2}.reading-graph-node.is-pinned .reading-graph-node-target{stroke:#e6c78477;stroke-dasharray:2 4}.reading-graph-node text{fill:var(--graph-canvas-muted);font-family:Georgia,"Times New Roman",serif;letter-spacing:.01em;paint-order:stroke;stroke:#151715;stroke-width:3px;stroke-linejoin:round;pointer-events:none}.reading-graph-node:is(:hover,:focus-visible,.is-selected,.is-connected) text{fill:#f1eee4}.reading-graph-node.is-selected text{font-weight:600}.reading-graph-node-thumbnail{pointer-events:none}.reading-graph-node.has-thumbnail .reading-graph-node-dot{stroke:#d9c69d;stroke-width:1.5}
 .reading-graph-edge{--graph-edge-color:#d9c28b;--graph-edge-opacity:.28;transition:opacity 180ms ease;color:var(--graph-edge-color)}.reading-graph-edge.is-dimmed{opacity:.12}.reading-graph-edge>path{stroke:var(--graph-edge-color);stroke-opacity:var(--graph-edge-opacity);stroke-width:1.05;fill:none}.reading-graph-edge.is-tag{--graph-edge-color:#c8c5b1;--graph-edge-opacity:.18}.reading-graph-edge.is-tag>.reading-graph-edge-line{stroke-dasharray:2 6}.reading-graph-edge.is-assigned{--graph-edge-color:#73b7a7;--graph-edge-opacity:.32}.reading-graph-edge.relation-supports{--graph-edge-color:var(--graph-support)}.reading-graph-edge.relation-contradicts{--graph-edge-color:var(--graph-contradict)}.reading-graph-edge.relation-contradicts>.reading-graph-edge-line{stroke-dasharray:6 5}.reading-graph-edge.relation-builds-on{--graph-edge-color:var(--graph-build)}.reading-graph-edge.is-manual{--graph-edge-opacity:.48}.reading-graph-edge.is-active{--graph-edge-opacity:.85}.reading-graph-edge.is-active>.reading-graph-edge-line{stroke:var(--graph-edge-color);stroke-width:1.45;stroke-opacity:.85}.reading-graph-edge text{fill:#a9a99e;stroke:#151715;font-family:var(--font-sans,system-ui);opacity:.8}.reading-graph-edge.is-active text{fill:#e3dfce;opacity:1}.reading-graph-edge>.reading-graph-edge-trace{stroke:#fff4d2;stroke-width:2.2;stroke-opacity:0;stroke-linecap:round;stroke-dasharray:.055 .945;animation:graph-saved-thread 1600ms cubic-bezier(.2,.5,.3,1) both;filter:drop-shadow(0 0 3px var(--graph-edge-color))}@keyframes graph-saved-thread{0%{stroke-dashoffset:.08;stroke-opacity:0}12%{stroke-opacity:1}80%{stroke-opacity:.9}100%{stroke-dashoffset:-1;stroke-opacity:0}}
 .reading-graph-legend{bottom:20px;left:20px;right:80px;z-index:2;gap:8px 15px;flex-wrap:wrap;color:#adae9f;font:9px/1.5 var(--font-sans,system-ui)}.reading-graph-legend i{width:6px;height:6px;background:#ede8d4;box-shadow:0 0 5px #e5dbc626}.reading-graph-legend i.is-topic{background:var(--graph-gold)}.reading-graph-legend i.is-tag{border-color:#c5b894;background:transparent;box-shadow:none}.reading-graph-legend i.is-supports,.reading-graph-legend i.is-contradicts{width:15px;height:1px;border-radius:0;box-shadow:none;background:var(--graph-support)}.reading-graph-legend i.is-contradicts{background:var(--graph-contradict);height:0;border-top:1px dashed var(--graph-contradict)}.reading-graph-selection-tools{position:absolute;left:20px;top:64px;z-index:3;display:flex;gap:5px;flex-wrap:wrap}.reading-graph-selection-tools button{display:flex;align-items:center;gap:6px;border:1px solid #eee4bf20;border-radius:5px;background:#1d201de8;color:#d4d3c5;padding:6px 9px;font:10px/1.5 var(--font-sans,system-ui)}.reading-graph-selection-tools button[aria-pressed=true]{color:#f1d491;border-color:#e6c78455}.reading-graph-selection-tools button:hover:not(:disabled){background:#2a2d26}.reading-graph-selection-tools button:focus-visible{outline-color:var(--graph-gold)}
 .reading-graph-inspector{background:var(--graph-panel);padding:18px 19px}.reading-graph-inspector-heading{display:flex;justify-content:space-between;align-items:center;margin-bottom:13px;color:var(--graph-muted);font:9px/1.5 var(--font-sans,system-ui);text-transform:uppercase;letter-spacing:.07em}.reading-graph-inspector .reading-graph-inspector-heading button{display:grid;place-items:center;width:25px;height:25px;padding:0;border:0}.reading-graph-kicker{display:inline-flex;padding:3px 8px;background:color-mix(in srgb,var(--graph-accent) 12%,transparent);border-radius:4px;font:9px/1.5 var(--font-sans,system-ui);color:var(--graph-text)}.reading-graph-detail h3{font:27px/1.2 Georgia,"Times New Roman",serif;letter-spacing:-.6px;margin:12px 0 20px}.reading-graph-counts{justify-content:space-between;gap:10px;margin-bottom:18px}.reading-graph-counts dd{font:22px/1.2 Georgia,"Times New Roman",serif}.reading-graph-open{font-size:11px;padding:11px 0}.reading-graph-source-thumbnail{display:block;width:100%;height:135px;object-fit:cover;border-radius:6px;margin:16px 0}.reading-graph-source-actions{display:flex;flex-direction:column;gap:9px;margin-top:13px}.reading-graph-inspector .reading-graph-source-actions button{display:flex;align-items:center;justify-content:space-between;padding:9px 10px;background:var(--graph-text);color:var(--graph-panel);border-color:transparent}.reading-graph-source-actions a{color:var(--graph-muted);font-size:10px;text-decoration:none}.reading-graph-source-actions a:hover{text-decoration:underline}.reading-graph-excerpt h4{font:15px/1.5 Georgia,"Times New Roman",serif;margin:22px 0 10px}.reading-graph-inspector .reading-graph-preview{font:13px/1.8 Georgia,"Times New Roman",serif;margin:0 0 10px;color:var(--graph-text)}.reading-graph-inspector .reading-graph-excerpt-toggle{border:0;padding:2px 0;background:transparent;color:var(--graph-muted);font-size:10px}.reading-graph-source-meta{display:flex;flex-wrap:wrap;gap:6px 12px;color:var(--graph-muted);font-size:9px;padding:14px 0 0}.reading-graph-detail-empty{padding:14px 0 12px}.reading-graph-detail-empty svg{color:var(--graph-accent)}.reading-graph-detail-empty h3{font:25px/1.25 Georgia,"Times New Roman",serif;letter-spacing:-.4px;margin-top:17px}.reading-graph-detail-empty p{font-size:12px;line-height:1.8}.reading-graph-detail-empty>span{display:block;color:var(--graph-muted);font-size:10px;line-height:1.7;margin-top:18px}.reading-graph-connections h4{font:15px/1.5 Georgia,"Times New Roman",serif}.reading-graph-neighbor{padding:12px 0}.reading-graph-neighbor>span{font-size:9px}.reading-graph-neighbor strong{font-family:Georgia,"Times New Roman",serif;font-size:14px;margin-top:3px}.reading-graph-node-list>summary{display:flex;align-items:center;gap:5px;list-style:none}.reading-graph-list-hint{margin-left:auto!important;font-size:9px!important;opacity:.6}.reading-graph-node-list:not([open]) .reading-graph-list-hint::before{content:"+ ";}.reading-graph-notice{display:flex;align-items:center;justify-content:space-between;gap:12px}.reading-graph-notice button{display:grid;place-items:center;flex-shrink:0;width:24px;height:24px;background:transparent;color:inherit;border:0}.reading-graph-outside{background:var(--graph-bg);font-size:10px}.reading-graph-caption{font-size:9px;gap:8px;padding:12px 16px}.reading-graph-caption p{max-width:460px}
@@ -138,4 +138,294 @@
 .reading-graph-remove { display:inline-flex; align-items:center; justify-content:center; }
 
 /* Match the reading desk's editorial type despite the shared heading reset. */
-.knowledge-workbench .reading-graph .reading-graph-heading h2 { font-family:Georgia,'Times New Roman',serif; font-size:clamp(27px,3vw,42px); line-height:1.12; font-weight:400; letter-spacing:-1px; margin-bottom:8px; }
+.knowledge-workbench .reading-graph .reading-graph-heading h2 { font-family:'Alte Haas',var(--font-sans); font-size:clamp(27px,3vw,42px); line-height:1.12; font-weight:400; letter-spacing:-1px; margin-bottom:8px; }
+.reading-graph-scope { display: inline-flex; flex-shrink: 0; align-items: center; padding: 3px; border: 1px solid var(--graph-line); border-radius: 7px; }
+.reading-graph-scope button { padding: 7px 12px; border: 0; border-radius: 4px; background: transparent; color: var(--graph-muted); font: inherit; font-size: 12px; cursor: pointer; }
+.reading-graph-scope [aria-pressed="true"] { color: var(--graph-text); background: var(--graph-hover); }
+.reading-graph-view-options { position: relative; z-index: 5; color: var(--graph-text); }
+.reading-graph-view-options summary, .reading-graph-guide summary { padding: 8px 10px; cursor: pointer; color: var(--graph-muted); font-size: 12px; }
+.reading-graph-view-options > div { position: absolute; top: 100%; left: 0; display: grid; gap: 12px; width: max-content; padding: 14px; border: 1px solid var(--graph-line); border-radius: 6px; background: var(--graph-panel); }
+.reading-graph-view-options label { display: flex; align-items: center; gap: 6px; }
+.reading-graph-view-options .reading-graph-filter-divider { display: none; }
+.reading-graph-guide { border-top: 1px solid var(--graph-line); color: var(--graph-text); }
+.reading-graph-guide .reading-graph-legend { position: static; margin: 6px 12px; }
+.reading-graph-starters { padding: 0; list-style: none; }
+.reading-graph-starters button { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; border: 0; border-bottom: 1px solid var(--graph-line); background: transparent; color: var(--graph-text); padding: 9px 3px; text-align: left; cursor: pointer; }
+@container (max-width: 500px) {
+  .reading-graph-heading { flex-wrap: wrap; }
+  .reading-graph-view-options > div { right: 0; left: auto; }
+}
+
+.reading-graph-stage-label { max-width: calc(100% - 210px); }
+.reading-graph-stage-label > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reading-graph-empty a { color: var(--graph-text); text-underline-offset: 3px; }
+
+/* Keep relationship lines and labels legible against the user's chosen workspace theme. */
+[data-theme="light"] .reading-graph {
+  --graph-canvas:#f6f5f0;
+  --graph-canvas-ink:#2e3838;
+  --graph-canvas-muted:#3d4947;
+  --graph-gold:#856531;
+  --graph-support:#317361;
+  --graph-contradict:#a94440;
+  --graph-build:#426e95;
+}
+[data-theme="light"] .reading-graph-stage {
+  background:radial-gradient(circle,#c7cbc2 0.75px,transparent 0.95px) 0 0 / 22px 22px,var(--graph-canvas);
+}
+[data-theme="light"] .reading-graph-stage::after { box-shadow:none; }
+[data-theme="light"] .reading-graph-stage-label > span { color:var(--graph-canvas-ink); }
+[data-theme="light"] .reading-graph-stage-label small,
+[data-theme="light"] .reading-graph-legend { color:#55625e; }
+[data-theme="light"] .reading-graph-node text,
+[data-theme="light"] .reading-graph-edge text { font-family:var(--font-sans,system-ui); stroke:var(--graph-canvas); }
+[data-theme="light"] .reading-graph-node:is(:hover,:focus-visible,.is-selected,.is-connected) text,
+[data-theme="light"] .reading-graph-edge text { fill:var(--graph-canvas-ink); }
+[data-theme="light"] .reading-graph-node-dot { stroke:#4a615c; filter:none; }
+[data-theme="light"] .reading-graph-node.is-tag .reading-graph-node-dot { fill:#fffaf0; stroke:var(--graph-gold); }
+[data-theme="light"] .reading-graph-node.is-tag .reading-graph-node-glyph { color:#70501d; }
+[data-theme="light"] .reading-graph-node:is(:hover,:focus-visible,.is-selected) .reading-graph-node-target { fill:#27685d16; stroke:#27685d; }
+[data-theme="light"] .reading-graph-edge { --graph-edge-color:#526e65; --graph-edge-opacity:.72; }
+[data-theme="light"] .reading-graph-edge.is-tag { --graph-edge-color:#7a7660; --graph-edge-opacity:.64; }
+[data-theme="light"] .reading-graph-edge.is-tag > .reading-graph-edge-line { stroke-dasharray:3 4; stroke-opacity:.72; }
+[data-theme="light"] .reading-graph-edge.relation-supports { --graph-edge-color:var(--graph-support); }
+[data-theme="light"] .reading-graph-edge.relation-contradicts { --graph-edge-color:var(--graph-contradict); }
+[data-theme="light"] .reading-graph-edge.relation-builds-on { --graph-edge-color:var(--graph-build); }
+[data-theme="light"] .reading-graph-canvas-tools,
+[data-theme="light"] .reading-graph-selection-tools button { background:#fffefa; border-color:#c5c9c0; color:var(--graph-canvas-ink); }
+[data-theme="light"] .reading-graph-canvas-tools :is(button,span) { color:#485653; }
+[data-theme="light"] .reading-graph-selection-tools button[aria-pressed="true"],
+[data-theme="light"] .reading-graph-canvas-tools button:hover,
+[data-theme="light"] .reading-graph-selection-tools button:hover:not(:disabled) { background:#e4ebe4; color:#24463c; }
+[data-theme="light"] .reading-graph-legend i:not([class]) { background:#50665f; }
+[data-theme="dark"] .reading-graph-edge.is-tag > .reading-graph-edge-line { stroke-opacity:.5; }
+[data-theme="dark"] .reading-graph { --graph-canvas-muted:#c2c5bc; }
+
+@font-face {
+  font-family: 'Alte Haas';
+  src: url('../assets/fonts/alte-haas/alte-haas-400.woff2') format('woff2');
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Alte Haas';
+  src: url('../assets/fonts/alte-haas/alte-haas-700.woff2') format('woff2');
+  font-weight: 700;
+  font-display: swap;
+}
+
+.reading-graph {
+  --atlas-figure: 'Alte Haas', 'Helvetica Neue', Arial, sans-serif;
+  --atlas-mono: 'IBM Plex Mono', ui-monospace, monospace;
+  --atlas-source: #c7ded1;
+  --atlas-source-ink: #183d33;
+  --atlas-concept: #edc991;
+  --atlas-concept-ink: #4a301c;
+}
+[data-theme="light"] .reading-graph {
+  --atlas-source: #28594c;
+  --atlas-source-ink: #fffef6;
+  --atlas-concept: #995938;
+  --atlas-concept-ink: #fff8e9;
+}
+.reading-graph .reading-graph-heading { align-items: center; margin-bottom: 12px; }
+.reading-graph .reading-graph-filters { margin-bottom: 10px; }
+.reading-graph .reading-graph-layout { border-radius: 9px; }
+.reading-graph .reading-graph-stage {
+  min-height: 345px;
+  height: clamp(345px, 60dvh, 720px);
+}
+.reading-graph .reading-graph-stage-label {
+  display: grid;
+  grid-template-columns: auto minmax(0,1fr);
+  max-width: min(72%, 410px);
+}
+.reading-graph .reading-graph-stage-label > span {
+  grid-column: 2;
+  font: 700 14px/1.25 var(--atlas-figure);
+}
+.reading-graph .reading-graph-stage-label small {
+  grid-column: 2;
+  font: 10px/1.4 var(--atlas-mono);
+}
+.reading-graph-back {
+  grid-row: 1 / 3;
+  align-self: center;
+  display: grid;
+  place-items: center;
+  background: var(--graph-canvas);
+  color: var(--graph-canvas-ink);
+  border: 1px solid var(--graph-line);
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  margin-right: 9px;
+  pointer-events: auto;
+}
+.reading-graph .reading-graph-canvas-tools {
+  flex-direction: row;
+  left: auto;
+  bottom: 12px;
+  right: 12px;
+}
+.reading-graph .reading-graph-canvas-tools span { font-family: var(--atlas-mono); }
+.reading-graph .reading-graph-selection-tools {
+  left: auto;
+  top: 12px;
+  right: 12px;
+  max-width: 40%;
+  justify-content: flex-end;
+}
+.reading-graph .reading-graph-selection-tools button { font-size: 11px; }
+.reading-graph .reading-graph-selection-tools button:disabled { display: none; }
+
+.reading-graph-node.is-source .reading-graph-node-dot { fill: var(--atlas-source); }
+.reading-graph-node.is-topic:not(.is-tag) .reading-graph-node-dot { fill: var(--atlas-concept); }
+.reading-graph-node.is-source .reading-graph-node-glyph { color: var(--atlas-source-ink); opacity: 1; }
+.reading-graph-node.is-topic:not(.is-tag) .reading-graph-node-glyph { color: var(--atlas-concept-ink); opacity: 1; }
+.reading-graph .reading-graph-node .reading-graph-node-label {
+  font-family: var(--atlas-figure);
+  font-weight: 400;
+  letter-spacing: .01em;
+  fill: var(--graph-canvas-ink);
+  paint-order: stroke;
+  stroke: var(--graph-canvas);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+.reading-graph .reading-graph-node.is-selected .reading-graph-node-label { font-weight: 700; }
+.reading-graph .reading-graph-node:not(.has-label):not(:hover,:focus-visible,.is-selected) .reading-graph-node-label { visibility: hidden; }
+.reading-graph-orbit { fill: none; stroke: var(--atlas-concept); stroke-width: 1; pointer-events: none; }
+.reading-graph-orbit circle { stroke-dasharray: 1 3.5; }
+.reading-graph[data-motion="on"] .reading-graph-orbit circle { animation: atlas-orient .48s ease-out both; transform-box: fill-box; transform-origin: center; }
+@keyframes atlas-orient { from { transform: rotate(-32deg) scale(.64); opacity: 0; } to { transform: rotate(0deg) scale(1); opacity: .9; } }
+
+.reading-graph .reading-graph-overview {
+  position: absolute;
+  z-index: 2;
+  left: 10px;
+  bottom: 8px;
+  width: 66px;
+  height: 66px;
+  padding: 0;
+  background: transparent;
+  color: var(--graph-canvas-muted);
+  border: 0;
+  border-radius: 50%;
+}
+.reading-graph-overview svg { display: block; width: 100%; height: 100%; }
+.atlas-rim { fill: var(--graph-canvas); stroke: currentColor; stroke-width: .6; }
+.atlas-grid { fill: none; stroke: currentColor; stroke-width: .5; opacity: .47; }
+.atlas-window { fill: var(--atlas-source); fill-opacity: .1; stroke: var(--atlas-source); stroke-width: .9; }
+.atlas-point { fill: currentColor; }
+.atlas-active { fill: var(--atlas-concept); stroke: var(--graph-canvas); stroke-width: .75; }
+.reading-graph-overview:hover .atlas-rim { stroke-width: 1.7; stroke: var(--atlas-source); }
+.reading-graph .reading-graph-detail-empty { padding: 0; }
+.reading-graph-detail-empty > header { display: flex; align-items: center; gap: 9px; }
+.reading-graph-detail-empty > header h3 { margin: 0; font-size: 23px; }
+.reading-graph-starters { margin: 9px 0 15px; }
+.reading-graph-inspector .reading-graph-starters button {
+  display: grid;
+  grid-template-columns: 18px minmax(0,1fr) 14px;
+  border: 0;
+  border-radius: 0;
+  border-bottom: 1px solid var(--graph-line);
+  padding: 10px 1px;
+  text-align: left;
+}
+.reading-graph-starters strong {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  font: 700 14px/1.25 var(--atlas-figure);
+}
+.reading-graph-starters small { display: block; margin-top: 3px; color: var(--graph-muted); font: 10px/1.4 var(--atlas-mono); }
+@container (max-width: 760px) {
+  .reading-graph .reading-graph-stage { height: clamp(310px, 55dvh, 560px); min-height: 310px; }
+  .reading-graph .reading-graph-inspector { padding: 15px 17px; }
+  .reading-graph .reading-graph-search { flex-basis: 160px; }
+}
+@container (max-width: 420px) {
+  .reading-graph .reading-graph-stage-label { max-width: 58%; left: 10px; top: 12px; }
+  .reading-graph .reading-graph-selection-tools { top: 9px; right: 8px; }
+  .reading-graph .reading-graph-selection-tools button { padding: 5px 6px; }
+  .reading-graph .reading-graph-stage-label > span { font-size: 12px; }
+}
+
+.reading-graph { font-family: Inter, 'Helvetica Neue', Arial, sans-serif; }
+[data-theme="light"] .reading-graph-stage {
+  background: radial-gradient(ellipse at 48% 42%, #fcfaf3 12%, #f5f4ed 100%);
+}
+.reading-graph-stage::before {
+  content: '';
+  position: absolute;
+  pointer-events: none;
+  inset: 9px;
+  opacity: .32;
+  background:
+    linear-gradient(to right, currentColor 8px, transparent 8px) top left,
+    linear-gradient(to bottom, currentColor 8px, transparent 8px) top left,
+    linear-gradient(to left, currentColor 8px, transparent 8px) top right,
+    linear-gradient(to bottom, currentColor 8px, transparent 8px) top right,
+    linear-gradient(to right, currentColor 8px, transparent 8px) bottom left,
+    linear-gradient(to top, currentColor 8px, transparent 8px) bottom left,
+    linear-gradient(to left, currentColor 8px, transparent 8px) bottom right,
+    linear-gradient(to top, currentColor 8px, transparent 8px) bottom right;
+  background-size: 8px 1px, 1px 8px, 8px 1px, 1px 8px, 8px 1px, 1px 8px, 8px 1px, 1px 8px;
+  background-repeat: no-repeat;
+  color: var(--graph-canvas-muted);
+}
+.reading-graph .reading-graph-edge > .reading-graph-edge-illuminate {
+  fill: none;
+  stroke: var(--atlas-concept);
+  stroke-width: 2.5px;
+  stroke-dasharray: none;
+  pointer-events: none;
+  opacity: 0;
+  animation: atlas-illuminate .85s ease-out both;
+}
+@keyframes atlas-illuminate { 0% { opacity: 0; } 28% { opacity: .78; } 100% { opacity: 0; } }
+.reading-graph .reading-graph-stage-label { max-width: min(50%, 380px); }
+.reading-graph .reading-graph-detail h3 { font-size: clamp(20px, 2.3cqi, 26px); line-height: 1.15; margin: 8px 0 13px; }
+.reading-graph .reading-graph-detail-empty > header h3 { letter-spacing: -.02em; line-height: 1.1; }
+.reading-graph .reading-graph-starters svg { color: var(--graph-canvas-muted); }
+.reading-graph .reading-graph-inspector { max-height: max(430px, 70dvh); overflow-y: auto; scrollbar-gutter: stable; }
+@container(max-width:760px) {
+  .reading-graph .reading-graph-inspector { max-height: none; overflow: visible; }
+}
+@container(max-width:500px) {
+  .reading-graph .reading-graph-stage-label { max-width: 56%; }
+  .reading-graph .reading-graph-selection-tools { max-width: 40%; flex-direction: column; align-items: end; gap: 3px; }
+  .reading-graph .reading-graph-selection-tools button:not([aria-pressed]) { font-size: 10px; }
+}
+
+.reading-graph-graticule { fill: none; stroke: var(--graph-canvas-muted); opacity: .2; pointer-events: none; }
+.reading-graph-graticule :is(circle, ellipse, path) { vector-effect: non-scaling-stroke; stroke-width: .55; }
+.reading-graph-graticule path { stroke-dasharray: 1 5; }
+.reading-graph[data-motion="on"] .reading-graph-graticule > g { transition: transform 380ms cubic-bezier(.22,.68,.24,1); }
+
+.reading-graph {
+  --atlas-figure:'Alte Haas',var(--font-sans);
+  --atlas-mono:var(--atlas-figure);
+  font-family:var(--atlas-figure);
+}
+.reading-graph .reading-graph-heading h2 { font:500 clamp(27px,3.8cqi,42px)/1.12 var(--atlas-figure); letter-spacing:-.045em; }
+.reading-graph .reading-graph-layout { border:0; box-shadow:none; overflow:visible; }
+.reading-graph .reading-graph-stage { border-radius:9px; height:clamp(330px,65dvh,820px); }
+.reading-graph .reading-graph-stage::before,.reading-graph .reading-graph-stage::after { content:none; }
+.reading-graph .reading-graph-node-face { transform:scale(var(--graph-inverse,1)); }
+.reading-graph .reading-graph-node .reading-graph-node-label { font:12px var(--atlas-figure); letter-spacing:0; }
+.reading-graph .reading-graph-node:not(.has-label) .reading-graph-node-label { visibility:hidden; }
+.reading-graph .reading-graph-node.is-dimmed { --graph-focus-opacity:.83; }
+.reading-graph .reading-graph-node.is-source .reading-graph-node-dot { fill:var(--atlas-source); stroke:var(--graph-canvas); stroke-width:1; filter:none; }
+.reading-graph .reading-graph-node.is-tag .reading-graph-node-dot { fill:var(--graph-canvas); stroke:var(--atlas-concept); stroke-width:1.3; }
+.reading-graph .reading-graph-node.is-topic:not(.is-tag) .reading-graph-node-dot { fill:var(--atlas-concept); stroke:var(--graph-canvas); stroke-width:1; }
+.reading-graph .reading-graph-node-target { fill:transparent; stroke:none; }
+.reading-graph .reading-graph-node:is(:focus-visible,:hover) .reading-graph-node-target { fill:color-mix(in srgb,var(--atlas-concept) 18%,transparent); stroke:var(--atlas-concept); stroke-width:1; }
+.reading-graph .reading-graph-edge .reading-graph-edge-line { stroke-width:.95px; }
+.reading-graph .reading-graph-edge.is-active .reading-graph-edge-line { stroke-width:1.65px; }
+.reading-graph .reading-graph-edge.is-dimmed { opacity:.65; }
+.reading-graph .reading-graph-inspector { background:transparent; }
+.reading-graph :is(.reading-graph-kicker,.reading-graph-source-meta,.reading-graph-inspector-heading,.reading-graph-counts dt,.reading-graph-stage-label small) { font-family:var(--atlas-figure); letter-spacing:0; }

@@ -4,13 +4,15 @@ Bookshelf is a personal catalog of books and articles, separate from the retaine
 
 ## A shelf for every reading stage
 
-Open **Bookshelf**, then choose **Books** or **Articles**. The stage tabs are **All**, **Want to buy**, **Unread**, **Reading**, and **Read**. Search finds titles, authors, recommenders, ISBNs, personal notes, and your own custom details. Sort by recent changes, title, author, or rating.
+Open **Bookshelf**, then choose **Books** or **Articles**. The stage tabs are **All**, **Wishlist**, **Unread**, **Reading**, and **Read**. Search finds titles, authors, recommenders, ISBNs, personal notes, and your own custom details. Sort by recent changes, title, author, or rating.
 
 Add a title manually, or use **Add from Library** to link an existing retained article or document. The linked source keeps its original bytes, annotations, topic assignments, and version history in Library. Adding the same source again opens its existing shelf entry, including when it is in Trash; it does not overwrite personal edits or create another projection.
 
 The books are code-native physical objects: front covers, spines, page edges, subtle linen-like texture, and slim shelf ledges. Cover motifs use original CSS geometry and your actual title/author. No third-party cover artwork or fake personal books are seeded. Pointer tilt has a keyboard focus alternative and respects reduced motion. The warm-paper light appearance and dark-study appearance follow the existing workspace theme.
 
 ## Details that stay editable
+
+Choose **Add a book** to search Open Library by title, author, or ISBN. Open a result, review its selected edition, or choose **Browse all editions** for other publishers, languages, and publication dates. Select an edition and save. The shelf keeps the edition ID, ISBN, author identities, and available cover. Choose **Article** for an article's URL and byline. An author's name opens their saved books and articles.
 
 Open a book or article to edit its title, subtitle, authors, print/digital edition, reading stage, rating from 0–5, recommender, personal notes, web URL, ISBN, publication year, page count, and reading dates. Separate multiple authors with semicolons. Add your own named fields for details the standard form does not cover.
 
@@ -20,7 +22,7 @@ Changes stay in the editor until **Save changes**. Pending work is visibly label
 
 ## Covers and original files
 
-Upload a PNG, JPEG, WebP, GIF, or AVIF cover up to **12 MiB**. File signatures determine accepted image types; HTML and SVG cannot become cover images through their extension or MIME declaration. Original bytes are retained under a `bookshelf-cover-<SHA256>` asset identity, verified again on read, and shown through scoped local Blob URLs. No remote cover image is fetched automatically.
+Upload a PNG, JPEG, WebP, GIF, or AVIF cover up to **12 MiB**. File signatures determine accepted image types; HTML and SVG cannot become cover images through their extension or MIME declaration. Original bytes are retained under a `bookshelf-cover-<SHA256>` asset identity, verified again on read, and shown through scoped local Blob URLs. Selecting a catalog edition retrieves its cover through the local server. Subsequent shelf views read the stored image.
 
 Without an uploaded cover, choose a palette, literary/modern/typeset typography, a contour/grid/arch/quiet motif, and your own cover/ink colors. Replacing or removing a current cover keeps older covers referenced by saved history.
 
@@ -34,13 +36,15 @@ History is not silently pruned. The portable ledger supports up to 10,000 entrie
 
 ## Import and export
 
+**More → Import from Goodreads** links to Goodreads’ export page. Choose the CSV you downloaded to import edition IDs, reading stages, ratings, reviews, private notes, dates, coauthors, and individual shelves. The transfer uses the file you select. [Goodreads export](https://www.goodreads.com/review/import)
+
 **More → Import CSV / JSON** accepts a CSV with a `Title` column, or a Worldview bookshelf JSON export. Suggested CSV columns:
 
 ```csv
 Title,Author,Kind,Format,Status,Rating,Recommended by,Notes,URL,ISBN,Year,Pages,Started,Finished,Collections
 ```
 
-Quoted cells support commas, newlines, and doubled quotes. Semicolons separate multiple authors and collection names. Common Goodreads headings—including `Exclusive Shelf`, `My Rating`, `My Review`, and `Date Read`—are recognized. Valid rows are added, invalid rows receive explicit row receipts, and existing titles with the same authors are skipped rather than overwriting personal edits. CSV imports are limited to 16 MiB and 10,000 rows.
+Quoted cells support commas, newlines, and doubled quotes. Semicolons separate multiple authors and collection names. Common Goodreads headings—including `Exclusive Shelf`, `My Rating`, `My Review`, and `Date Read`—are recognized. Valid rows are added, invalid rows receive explicit row receipts, and repeat edition identifiers match existing books. Distinct identified editions remain separate. Rows without identifiers fall back to the title and authors. CSV imports are limited to 16 MiB and 10,000 rows.
 
 **Export bookshelf** creates a self-contained JSON document containing books, articles, collections, complete detail history, and verified original cover bytes. Imports merge without replacing current books; matching identities or title/author pairs remain untouched. Exported cover data is bounded to 64 MiB and the whole artifact to 128 MiB.
 
@@ -51,3 +55,7 @@ Raw CSV/JSON import files are privately retained as `bookshelf-file-<SHA256>` or
 `bookshelves.v1` is a versioned compare-and-swap ledger bound to the active store, account lifecycle, and world generation. Existing originals are preserved on failed writes. Cover/reference collection includes archived titles, historical revisions, and raw import receipts. Nothing in this module enables a cloud provider, syncs a third-party account, or changes spatial rendering.
 
 Entry points: [view](../src/bookshelf/Bookshelf.tsx), [model](../src/bookshelf/model.ts), [commands/history](../src/bookshelf/store.ts), [originals](../src/bookshelf/media.ts), [portability](../src/bookshelf/portability.ts). Focused tests cover [storage/history/covers](../tests/bookshelf/store.test.ts), [CSV parsing](../tests/bookshelf/portability.test.ts), and [actual editing flow](../tests/bookshelf/ui.test.tsx).
+
+## Attach the text of a saved edition
+
+In saved book details, open **Reading text → Attach Library text**. Choose the retained source and a version, check its text preview, and select **Attach this version**. The input is a copy you already retained in Library. The catalog supplies publication details and cover art. Captured quotes use the attached text version even after a newer Library version arrives. Previous text attachments remain in the book's saved history.

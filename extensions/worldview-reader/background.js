@@ -1,8 +1,21 @@
 /* global chrome */
-import { extractArticle, extractFolkPhotos, extractProfile } from './extract.js'
+import { extractArticle, extractFolkPhotos, extractProfile, captureLinkedInExperience } from './extract.js'
 
-const ENDPOINT = 'http://127.0.0.1:5173/api/reading-capture/capture'
-const CONNECT = 'http://127.0.0.1:5173/api/reading-capture/connect'
+const DEFAULT_PORT = 5173
+const RETRY_ALARM = 'worldview-pending-captures'
+function localPort(value = DEFAULT_PORT) {
+  const port = Number(value)
+  if (!Number.isInteger(port) || port < 5173 || port > 5185) throw new Error('Use the local port shown in Worldview for Mac under Sources → Desktop.')
+  return port
+}
+const localOrigin = port => 'http://127.0.0.1:' + localPort(port)
+const endpoint = (port, route) => localOrigin(port) + '/api/reading-capture/' + route
+async function scheduleDelivery() {
+  if (!chrome.alarms) return
+  const state = await chrome.storage.local.get(['outbox', 'retryStopped'])
+  if (!state.outbox?.length || state.retryStopped) { await chrome.alarms.clear(RETRY_ALARM); return }
+  if (!await chrome.alarms.get(RETRY_ALARM)) await chrome.alarms.create(RETRY_ALARM, { delayInMinutes: 1, periodInMinutes: 1 })
+}
 const storageReady = Promise.all([chrome.storage.local.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' }), chrome.storage.session.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' })])
 let operations = Promise.resolve()
 // Register listeners synchronously; service-worker restarts must not miss the waking event.
@@ -35,13 +48,16 @@ async function finishConnection() {
   if (pending.expiresAt <= Date.now()) { await chrome.storage.local.remove('pendingConnection'); return }
   // Chromium may omit Origin on a privileged extension GET. A JSON POST forces
   // an Origin-bearing request without weakening the server's exact-origin gate.
-  const response = await fetch(`${CONNECT}/${encodeURIComponent(pending.requestId)}`, { method: 'POST', headers: { authorization: `Bearer ${pending.secret}`, 'content-type': 'application/json' }, body: JSON.stringify({ action: 'check' }), credentials: 'omit', signal: AbortSignal.timeout(5000) })
+  const CONNECT = endpoint(pending.port, 'connect')
+  const response = await fetch(`${CONNECT}/${encodeURIComponent(pending.requestId)}`, { method: 'POST', headers: { authorization: `Bearer ${pending.secret}`, 'content-type': 'application/json' }, body: JSON.stringify({ action: 'check' }), credentials: 'omit', redirect: 'error', signal: AbortSignal.timeout(5000) })
   const value = await response.json().catch(() => ({}))
   if (!response.ok) { if (response.status === 401) await chrome.storage.local.remove('pendingConnection'); throw new Error(value.error ?? 'The connection request could not be checked.') }
   if (value.connected && /^wvread_[A-Za-z0-9_-]{43}$/.test(value.token ?? '')) {
+    const stored = await chrome.storage.local.get(['pairing', 'outbox'])
+    if (stored.outbox?.length && stored.pairing?.token !== value.token) throw new Error('Deliver or discard the previous pairing’s pending captures before finishing this connection.')
     // Persist first, acknowledge second. Reopening the popup safely retries an uncertain ack.
-    await chrome.storage.local.set({ pairing: { token: value.token }, sequence: 0 })
-    await fetch(`${CONNECT}/${encodeURIComponent(pending.requestId)}`, { method: 'POST', headers: { authorization: `Bearer ${pending.secret}`, 'content-type': 'application/json' }, body: JSON.stringify({ action: 'acknowledge' }), credentials: 'omit', signal: AbortSignal.timeout(5000) }).catch(() => {})
+    await chrome.storage.local.set({ pairing: { token: value.token, port: localPort(pending.port) }, sequence: 0 })
+    await fetch(`${CONNECT}/${encodeURIComponent(pending.requestId)}`, { method: 'POST', headers: { authorization: `Bearer ${pending.secret}`, 'content-type': 'application/json' }, body: JSON.stringify({ action: 'acknowledge' }), credentials: 'omit', redirect: 'error', signal: AbortSignal.timeout(5000) }).catch(() => {})
     await chrome.storage.local.remove('pendingConnection')
   }
 }
@@ -54,6 +70,7 @@ async function enqueue(body) {
   if (outbox.length >= 20) throw new Error('The local capture queue is full. Open Worldview and retry pending captures.')
   outbox.push({ ...body, sequence })
   await chrome.storage.local.set({ sequence, outbox })
+  await scheduleDelivery()
   try { return await drain() } catch (error) { return { queued: true, message: errorText(error) } }
 }
 async function drain() {
@@ -61,12 +78,16 @@ async function drain() {
   if (!config?.token) throw new Error('Pair the reader first.')
   let result = null
   try { while (outbox.length) {
-    const response = await fetch(ENDPOINT, { method: 'POST', mode: 'cors', credentials: 'omit', headers: { 'content-type': 'application/json', authorization: `Bearer ${config.token}` }, body: JSON.stringify(outbox[0]), signal: AbortSignal.timeout(10_000) })
+    const response = await fetch(endpoint(config.port, 'capture'), { method: 'POST', mode: 'cors', credentials: 'omit', redirect: 'error', headers: { 'content-type': 'application/json', authorization: `Bearer ${config.token}` }, body: JSON.stringify(outbox[0]), signal: AbortSignal.timeout(outbox[0].quickAdd ? 35_000 : 10_000) })
     const value = await response.json().catch(() => ({}))
-    if (!response.ok) throw new Error(value?.error ?? `Local capture failed (${response.status}).`)
+    if (!response.ok) {
+      if (response.status >= 400 && response.status < 500 && ![408, 425, 429].includes(response.status)) await chrome.storage.local.set({ retryStopped: true })
+      throw new Error(value?.error ?? `Local capture failed (${response.status}).`)
+    }
     if (outbox[0].saveProfileData === true) {
       const draft = value?.profileDraft
       if (value?.sequence !== outbox[0].sequence || typeof draft?.id !== 'string' || !draft.id || typeof draft?.source?.originalAssetId !== 'string' || !draft.source.originalAssetId) throw new Error('The profile draft was not confirmed. Your source stays queued; update Worldview and retry.')
+      if (outbox[0].quickAdd && !(value.quickAdd?.status === 'saved' && typeof value.quickAdd?.recordId === 'string' || value.quickAdd?.status === 'review')) throw new Error('CRM save was not confirmed. Update Worldview and retry the pending capture.')
     } else if (outbox[0].saveFolkPhotos === true) {
       const photos = value?.folkPhotos, count = value => Number.isSafeInteger(value) && value >= 0
       if (!value || value.sequence !== outbox[0].sequence || typeof value.originalAssetId !== 'string' || !value.originalAssetId || !photos || !['total', 'saved', 'kept', 'unmatched', 'unavailable'].every(key => count(photos[key]))) throw new Error('The Folk photo capture was not confirmed. Your capture stays queued; update Worldview and retry.')
@@ -75,8 +96,12 @@ async function drain() {
       const photo = value.contactPhoto
       if (!photo || !['saved', 'kept', 'unmatched', 'unavailable'].includes(photo.status) || ['saved', 'kept'].includes(photo.status) && (typeof photo.personId !== 'string' || !photo.personId || typeof photo.avatarAssetId !== 'string' || !photo.avatarAssetId)) throw new Error('The contact photo was not confirmed. Your capture stays queued; update Worldview and retry.')
     }
-    result = value; outbox.shift(); await chrome.storage.local.set({ outbox, lastDeliveryAt: Date.now(), lastFailure: '' })
+    const delivered = outbox.shift(), entityType = delivered.profile?.entityType
+    const rememberGroup = delivered.quickAdd && value.quickAdd?.status === 'saved' && ['person', 'company'].includes(entityType)
+    result = value
+    await chrome.storage.local.set({ outbox, retryStopped: false, lastDeliveryAt: Date.now(), lastFailure: '', ...(rememberGroup ? { [`lastProfileGroup:${entityType}`]: delivered.groupId || '' } : {}) })
   } } catch (error) { await chrome.storage.local.set({ lastFailure: errorText(error) }); throw error }
+  await scheduleDelivery()
   return result
 }
 async function activeArticle(tabId) {
@@ -86,6 +111,86 @@ async function activeArticle(tabId) {
   const results = await chrome.scripting.executeScript({ target: { tabId }, func: extractArticle })
   if (!results[0]?.result?.text) throw new Error('This page could not be read. Paste article text into Worldview instead.')
   return results[0].result
+}
+
+async function readExperience(tabId, snapshot, employer) {
+  const profileUrl = new URL(snapshot.url), path = profileUrl.pathname.replace(/\/$/, '')
+  if (snapshot.profile.entityType !== 'person' || !/(^|\.)linkedin\.com$/.test(profileUrl.hostname) || !/^\/in\/[^/]+$/.test(path)) return
+  const detailPath = path + '/details/experience'
+  const onPath = (value, expected) => {
+    try { const u = new URL(value); return u.origin === profileUrl.origin && u.pathname.replace(/\/$/, '') === expected } catch { return false }
+  }
+  const read = async () => (await chrome.scripting.executeScript({ target: { tabId }, func: captureLinkedInExperience, args: [snapshot.url, employer || ''] }))[0]?.result
+  const main = await read(), sources = [{ result: main, url: profileUrl.origin + path + '/' }]
+  let notice = ''
+  if (main?.continuation && onPath(main.continuation, detailPath)) {
+    const start = await chrome.tabs.get(tabId)
+    if (!start.active || !onPath(start.url, path)) throw new Error('Return to the selected profile and save again.')
+    // activeTab covers this same-origin tab. Follow only the visible Experience link
+    // of this person. Restore the original page without touching another navigation.
+    let entered = false
+    const gate = value => {
+      try { const u = new URL(value); return u.origin === profileUrl.origin && /^\/(?:authwall|login|checkpoint)(?:\/|$)/.test(u.pathname) } catch { return false }
+    }
+    try {
+      await chrome.tabs.update(tabId, { url: main.continuation })
+      let ready = false
+      for (let attempt = 0; attempt < 50; attempt++) {
+        const tab = await chrome.tabs.get(tabId)
+        entered ||= onPath(tab.url, detailPath)
+        if (!tab.active || (!onPath(tab.pendingUrl || tab.url, detailPath) && (entered || !onPath(tab.url, path)))) throw new Error('The tab changed while loading the selected person’s experience.')
+        if (onPath(tab.url, detailPath) && tab.status === 'complete') { ready = true; break }
+        await new Promise(resolve => setTimeout(resolve, 200))
+      }
+      if (!ready) throw new Error('LinkedIn did not finish loading this person’s full Experience. Retry the save after it loads.')
+      const details = await read()
+      if (!details?.roles?.length) throw new Error('LinkedIn did not show the roles on its full Experience page. Retry when the page has loaded.')
+      sources.push({ result: details, url: profileUrl.origin + detailPath + '/' })
+    } catch (error) {
+      const current = await chrome.tabs.get(tabId), target = current.pendingUrl || current.url
+      if (!current.active || !onPath(target, detailPath) && !gate(target) && (entered || !onPath(target, path))) throw error
+      notice = 'LinkedIn’s full Experience page was unavailable. This capture includes the details shown on the main profile.'
+    } finally {
+      const current = await chrome.tabs.get(tabId)
+      if (onPath(current.pendingUrl || current.url, detailPath) || gate(current.pendingUrl || current.url)) {
+        // Dia can replace the entry when a privileged tab update follows a
+        // link, leaving no browser history entry for tabs.goBack().
+        try { await chrome.tabs.goBack(tabId) } catch {
+          const stranded = await chrome.tabs.get(tabId)
+          if (onPath(stranded.pendingUrl || stranded.url, detailPath) || gate(stranded.pendingUrl || stranded.url)) await chrome.tabs.update(tabId, { url: snapshot.url })
+        }
+        for (let attempt = 0; attempt < 25; attempt++) {
+          const restoring = await chrome.tabs.get(tabId)
+          if (onPath(restoring.pendingUrl || restoring.url, path)) break
+          if (!onPath(restoring.url, detailPath) && !gate(restoring.url)) break
+          await new Promise(resolve => setTimeout(resolve, 120))
+        }
+      }
+    }
+  }
+  const last = await chrome.tabs.get(tabId)
+  if (!last.active || !onPath(last.pendingUrl || last.url, path)) throw new Error('The tab navigated to a different profile during capture.')
+  if (notice) snapshot.text += '\n\n' + notice
+  const rows = [], evidence = [], norm = value => String(value || '').trim().toLowerCase()
+  const sameRole = (a,b) => norm(a.role) === norm(b.role) && norm(a.organization) === norm(b.organization)
+  for (const source of sources) {
+    if (!source.result?.roles?.length) continue
+    evidence.push('Experience · ' + source.url)
+    for (const row of source.result.roles) {
+      const prior = rows.find(other => sameRole(row, other) && norm(row.startDate) === norm(other.startDate) && norm(row.endDate) === norm(other.endDate))
+      if (prior) Object.assign(prior, row)
+      else rows.push(row)
+      evidence.push([row.role, row.organization, row.startDate + ' – ' + (row.endDate || 'Present')].join(' · '))
+    }
+  }
+  if (!rows.length) return notice
+  const previous = snapshot.profile.affiliations || []
+  const others = previous.filter(old => old.kind !== 'employment' || !rows.some(row => sameRole(row, old) && (!old.startDate || norm(row.startDate) === norm(old.startDate)) && (!old.endDate || norm(row.endDate) === norm(old.endDate))))
+  snapshot.profile = { ...snapshot.profile, affiliations: [...rows, ...others].slice(0, 60) }
+  snapshot.text += '\n\n' + evidence.join('\n')
+  const escape = value => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  snapshot.html += '<section><h2>Captured experience</h2>' + evidence.map(line => '<p>' + escape(line) + '</p>').join('') + '</section>'
+  return notice
 }
 async function captureFolk(tabId, entry = null, diagnosticSearch = false, saveSearchPhotos = false) {
   const tab = await chrome.tabs.get(tabId)
@@ -110,27 +215,34 @@ async function captureFolk(tabId, entry = null, diagnosticSearch = false, saveSe
   return { result, seen: [...new Set([...previous, ...keys])].slice(-5000), url: batch.url, title: batch.title }
 }
 async function popupAction(message) {
-  if (message.type === 'reader-status') { let connectionError = ''; try { await finishConnection() } catch (error) { connectionError = errorText(error) } if (Number.isSafeInteger(message.tabId)) await reconcileFolk(message.tabId); const state = await chrome.storage.local.get(['pairing', 'outbox', 'pendingConnection', 'lastDeliveryAt', 'lastFailure']), session = await chrome.storage.session.get('folkStopReason'); return { paired: !!state.pairing?.token, pendingConnection: !!state.pendingConnection, connectionError, extensionId: chrome.runtime.id, queued: state.outbox?.length ?? 0, pending: (state.outbox ?? []).map((entry) => ({ sequence: entry.sequence, title: entry.title ?? 'Reading progress', url: entry.url })), lastDeliveryAt: state.lastDeliveryAt ?? null, lastFailure: state.lastFailure ?? '', tracked: await tracked(), folkTracked: await folkTracked(), folkStopReason: session.folkStopReason || '' } }
+  if (message.type === 'reader-status') { let connectionError = ''; try { await finishConnection() } catch (error) { connectionError = errorText(error) } if (Number.isSafeInteger(message.tabId)) await reconcileFolk(message.tabId); const state = await chrome.storage.local.get(['pairing', 'outbox', 'pendingConnection', 'lastDeliveryAt', 'lastFailure']), session = await chrome.storage.session.get('folkStopReason'); return { port: localPort(state.pendingConnection?.port ?? state.pairing?.port), paired: !!state.pairing?.token, pendingConnection: !!state.pendingConnection, connectionError, extensionId: chrome.runtime.id, queued: state.outbox?.length ?? 0, pending: (state.outbox ?? []).map((entry) => ({ sequence: entry.sequence, title: entry.title ?? 'Reading progress', url: entry.url })), lastDeliveryAt: state.lastDeliveryAt ?? null, lastFailure: state.lastFailure ?? '', tracked: await tracked(), folkTracked: await folkTracked(), folkStopReason: session.folkStopReason || '' } }
   if (message.type === 'reader-connect') {
     if (((await chrome.storage.local.get('outbox')).outbox ?? []).length) throw new Error('Retry or explicitly discard pending captures before connecting a different browser pairing.')
-    const response = await fetch(CONNECT, { method: 'POST', credentials: 'omit', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'Worldview Reader' }), signal: AbortSignal.timeout(5000) })
+    const port = localPort(message.port)
+    const response = await fetch(endpoint(port, 'connect'), { method: 'POST', credentials: 'omit', redirect: 'error', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'Worldview Reader' }), signal: AbortSignal.timeout(5000) })
     const value = await response.json().catch(() => ({}))
     if (!response.ok) throw new Error(value.error ?? 'Open Worldview locally, then click Connect again.')
     if (!/^wvconnect_[A-Za-z0-9_-]{43}$/.test(value.secret ?? '') || !value.requestId) throw new Error('The local service returned an invalid connection request.')
-    await chrome.storage.local.set({ pendingConnection: value })
-    return { ok: true, openUrl: 'http://127.0.0.1:5173/#/sources?connection=browser' }
+    await chrome.storage.local.set({ pendingConnection: { ...value, port } })
+    return { ok: true, openUrl: localOrigin(port) + '/#/sources?connection=browser' }
   }
   if (message.type === 'reader-pair') {
     if (!/^wvread_[A-Za-z0-9_-]{43}$/.test(message.token ?? '')) throw new Error('Paste the pairing token generated by Worldview.')
     // A new token has its own sequence. Never silently send an older pair's pending data to it.
     if (((await chrome.storage.local.get('outbox')).outbox ?? []).length) throw new Error('Retry or explicitly discard pending captures before changing the pairing.')
     const previous = await pairing()
-    await chrome.storage.local.set({ pairing: { token: message.token }, ...(previous?.token === message.token ? {} : { sequence: 0 }) }); return { ok: true }
+    await chrome.storage.local.set({ pairing: { token: message.token, port: localPort(message.port) }, ...(previous?.token === message.token ? {} : { sequence: 0 }) })
+    await chrome.storage.local.remove('pendingConnection')
+    return { ok: true }
   }
-  if (message.type === 'reader-disconnect') { await chrome.storage.local.remove(['pairing', 'pendingConnection', 'outbox', 'sequence', 'lastFailure', 'lastDeliveryAt']); const all = await tracked(); for (const key of Object.keys(all)) { const tabId = Number(key); await chrome.tabs.sendMessage(tabId, { type: 'reading-stop' }).catch(() => {}); await badge(tabId, '') } for (const key of Object.keys(await folkTracked())) await stopFolk(Number(key)); await chrome.storage.session.remove(['tracked', 'folkTracked']); return { ok: true } }
+  if (message.type === 'reader-disconnect') { await chrome.storage.local.remove(['pairing', 'pendingConnection', 'outbox', 'sequence', 'lastFailure', 'lastDeliveryAt', 'retryStopped']); const all = await tracked(); for (const key of Object.keys(all)) { const tabId = Number(key); await chrome.tabs.sendMessage(tabId, { type: 'reading-stop' }).catch(() => {}); await badge(tabId, '') } for (const key of Object.keys(await folkTracked())) await stopFolk(Number(key)); await chrome.storage.session.remove(['tracked', 'folkTracked']); return { ok: true } }
   if (message.type === 'reader-discard') { await chrome.storage.local.set({ outbox: [] }); return { ok: true } }
   if (message.type === 'reader-discard-one') { if (!Number.isSafeInteger(message.sequence)) throw new Error('Choose a pending capture.'); const outbox = ((await chrome.storage.local.get('outbox')).outbox ?? []).filter((entry) => entry.sequence !== message.sequence); await chrome.storage.local.set({ outbox, ...(!outbox.length ? { lastFailure: '' } : {}) }); return { ok: true } }
-  if (message.type === 'reader-retry') return { ok: true, result: await drain() }
+  if (message.type === 'reader-retry') {
+    await chrome.storage.local.remove('retryStopped')
+    await scheduleDelivery()
+    return { ok: true, result: await drain() }
+  }
   if (!Number.isSafeInteger(message.tabId)) throw new Error('Choose an active article tab.')
   const tabId = message.tabId
   if (message.type === 'reader-stop') { if ((await folkTracked())[tabId]) { await stopFolk(tabId); return { ok: true } } const all = await tracked(), entry = all[tabId]; const final = await chrome.tabs.sendMessage(tabId, { type: 'reading-stop' }).catch(() => null); try { if (entry && !folkPage(entry.url) && final?.progress) await enqueue({ url: entry.url, title: entry.title, progress: final.progress }) } finally { delete all[tabId]; await chrome.storage.session.set({ tracked: all }); await badge(tabId, '') } return { ok: true } }
@@ -146,7 +258,7 @@ async function popupAction(message) {
     }
     return { ok: true, result: captured.result }
   }
-  if (message.type === 'reader-profile-data') {
+  if (['reader-profile-data', 'reader-profile-preview', 'reader-profile-add'].includes(message.type)) {
     const tab = await chrome.tabs.get(tabId)
     if (!tab.active || !/^https?:\/\//.test(tab.url || '') || folkPage(tab.url)) throw new Error('Choose a person’s profile or company website in the active tab. Folk keeps its separate private import.')
     const extracted = await chrome.scripting.executeScript({ target: { tabId }, func: extractProfile, args: [null, true] }), profile = extracted[0]?.result
@@ -156,8 +268,33 @@ async function popupAction(message) {
     const pageKey = value => { try { const parsed = new URL(value); return /(^|\.)linkedin\.com$/i.test(parsed.hostname) && /^\/(?:in|company|school)\/[^/]+(?:\/(?:about|people|posts|jobs|life))?\/?$/.test(parsed.pathname) ? `${parsed.origin}${parsed.pathname.replace(/\/$/, '')}${parsed.search}${parsed.hash}` : value } catch { return value } }
     if (pageKey(profile.url) !== pageKey(tab.url) || pageKey(latest.url) !== pageKey(tab.url)) throw new Error('The tab navigated to a different profile during capture. Choose that person or company again before saving.')
     if (!latest.active) throw new Error('The chosen profile tab is no longer active. Return to it and save again.')
-    const result = await enqueue({ ...profile, saveProfileData: true })
-    return { ok: true, result, ...(result?.profileDraft?.id ? { openUrl: `http://127.0.0.1:5173/#/people?capture=${encodeURIComponent(result.profileDraft.id)}` } : {}) }
+    const { headerEmployer, ...snapshot } = profile
+    const { name, entityType, headline = '', location = '', affiliations = [], images = [] } = profile.profile
+    if (message.type === 'reader-profile-preview') {
+      const config = await pairing()
+      if (!config?.token) throw new Error('Connect the reader to Worldview first.')
+      const response = await fetch(endpoint(config.port, 'profile-groups'), { method: 'POST', credentials: 'omit', redirect: 'error', headers: { 'content-type': 'application/json', authorization: `Bearer ${config.token}` }, body: JSON.stringify({ entityType, url: profile.url }), signal: AbortSignal.timeout(5000) })
+      const value = await response.json()
+      if (!response.ok || !Array.isArray(value.groups)) throw new Error(value.error || 'Open the latest local Worldview app to load your groups.')
+      const jobs = affiliations.filter(row => row.kind === 'employment' && row.current)
+      const current = [...new Set(jobs.map(row => row.organization))]
+      if (current.length === 1 && headerEmployer?.organization === current[0] && headerEmployer.additional > 0) current[0] += ` + ${headerEmployer.additional} more`
+      const schools = [...new Set(affiliations.filter(row => row.kind === 'education').map(row => row.organization))]
+      const portrait = images.find(image => {
+        if (image?.isProfile !== true || image.subjectName !== name) return false
+        try {
+          const target = new URL(image.url)
+          return target.protocol === 'https:' && !target.username && !target.password && !target.port && /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(target.hostname) && !/(^|\.)(?:localhost|local|internal|invalid)$/i.test(target.hostname)
+        } catch { return false }
+      })
+      return { ok: true, preview: { url: profile.url, name, entityType, headline, location, current, schools, photoUrl: portrait?.url || '', role: jobs.find(row => row.role)?.role || '' }, groups: value.groups, existing: value.existing, workspaceFingerprint: value.workspaceFingerprint }
+    }
+    const quickAdd = message.type === 'reader-profile-add'
+    if (quickAdd && (message.url !== profile.url || name !== message.name || entityType !== message.entityType)) throw new Error('The profile changed. Reopen the extension to see the current contact.')
+    const experienceNotice = await readExperience(tabId, snapshot, headerEmployer?.organization || affiliations.find(row => row.kind === 'employment' && row.current)?.organization)
+    const result = await enqueue({ ...snapshot, saveProfileData: true, ...(quickAdd ? { quickAdd: true, ...(message.groupId ? { groupId: message.groupId } : {}) } : {}) })
+    if (experienceNotice && result) result.experienceNotice = experienceNotice
+    return { ok: true, result, ...(result?.profileDraft?.id ? { openUrl: localOrigin((await pairing())?.port) + '/#/people?capture=' + encodeURIComponent(result.profileDraft.id) } : {}) }
   }
   const article = await activeArticle(tabId)
   if (message.type === 'reader-profile') {
@@ -211,3 +348,15 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
 })
 chrome.tabs.onRemoved.addListener((tabId) => { void serial(async () => { const all = await tracked(), photos = await folkTracked(), wasFollowing = !!photos[tabId]; delete all[tabId]; delete photos[tabId]; await chrome.storage.session.set({ tracked: all, folkTracked: photos, ...(wasFollowing ? { folkStopReason: 'Photo following stopped because the chosen tab was closed or replaced.' } : {}) }) }) })
 chrome.tabs.onUpdated.addListener((tabId, change) => { const observedAt = Date.now(); if (change.status === 'loading' || change.url) void serial(async () => { const all = await tracked(), photos = await folkTracked(); if (all[tabId] && (change.status === 'loading' || all[tabId].url !== change.url)) { delete all[tabId]; await chrome.storage.session.set({ tracked: all }); await badge(tabId, '') } if (photos[tabId] && observedAt >= (photos[tabId].startedAt ?? 0)) { if (change.url && change.url !== photos[tabId].url) await stopFolk(tabId, 'Photo following stopped because the group URL changed.'); else if (change.status === 'loading') await reconcileFolk(tabId) } }) })
+
+if (chrome.alarms) {
+  chrome.alarms.onAlarm.addListener(alarm => {
+    if (alarm.name !== RETRY_ALARM) return
+    void serial(async () => {
+      const state = await chrome.storage.local.get(['outbox', 'retryStopped'])
+      if (state.outbox?.length && !state.retryStopped) await drain().catch(() => {})
+      await scheduleDelivery()
+    }).catch(() => {})
+  })
+  void serial(scheduleDelivery).catch(() => {})
+}

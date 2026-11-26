@@ -25,7 +25,8 @@ const values: Record<string, unknown> = {
   '/api/ai/status': { provider: null, configured: false },
   '/api/reading-capture': { available: true, clients: [] },
   '/api/connections/drive': { available: true, configured: false, connected: false },
-  '/api/connections/desktop': { available: true },
+  '/api/connections/notebooks': { granola: false, wispr: false },
+  '/api/connections/desktop': { available: true, bytes: 1048576 },
 }
 let root: Root, host: HTMLDivElement
 let fetchMock: ReturnType<typeof vi.fn<typeof fetch>>
@@ -45,7 +46,7 @@ afterEach(async () => { await act(async () => root.unmount()); host.remove(); aw
 
 it('starts with compact native disclosures, truthful readiness, and no setup side effects', async () => {
   await act(async () => root.render(<SourcesHub hash="#/sources" importActions={<button>Import files</button>} />))
-  expect(host.querySelectorAll('details.sources-hub-connection')).toHaveLength(10)
+  expect(host.querySelectorAll('details.sources-hub-connection')).toHaveLength(11)
   expect(host.querySelector('details[open]')).toBeNull()
   expect(mounts.voice).not.toHaveBeenCalled(); expect(mounts.cloud).not.toHaveBeenCalled()
   expect(connection('voice').textContent).toContain('Transcription ready')
@@ -59,7 +60,7 @@ it('starts with compact native disclosures, truthful readiness, and no setup sid
   expect(connection('desktop').textContent).toContain('Ready to download')
   expect(host.querySelector('button')?.getAttribute('aria-label')).toBe('Refresh connection status')
   expect([...host.querySelectorAll('button')].some((button) => button.textContent === 'Import files')).toBe(true)
-  expect(fetchMock).toHaveBeenCalledTimes(9)
+  expect(fetchMock).toHaveBeenCalledTimes(10)
   for (const [, options] of fetchMock.mock.calls) expect(options?.method ?? 'GET').toBe('GET')
 })
 
@@ -75,6 +76,14 @@ it('opens controls on demand and retains a draft when its native disclosure is c
   expect(host.querySelector('input')).toBe(input)
   expect(input.value).toBe('Unfinished voice note')
   expect(mounts.cloud).not.toHaveBeenCalled()
+})
+
+it.each([['MacIntel', 0, true], ['MacIntel', 5, false], ['Win32', 0, false]])('offers the installed Mac app on %s with %s touch points', async (platform, maxTouchPoints, canOpen) => {
+  vi.stubGlobal('navigator', Object.create(navigator, { platform: { value: platform }, maxTouchPoints: { value: maxTouchPoints } }))
+  await act(async () => root.render(<SourcesHub hash="#/sources?connection=desktop" />))
+  const panel = connection('desktop')
+  expect(Boolean(panel.querySelector('a[href="worldview-local://open"]'))).toBe(canOpen)
+  expect(panel.querySelector('a[href="/api/connections/desktop/download"]')?.textContent).toContain('Download Worldview for Mac')
 })
 
 it('opens and focuses the cloud disclosure from the Quick capture link without probing a provider', async () => {

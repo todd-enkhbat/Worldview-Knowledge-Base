@@ -17,3 +17,39 @@
 @media(prefers-reduced-motion:no-preference){.crm-contact-card{animation:crm-card-arrive 260ms ease-out both;transition:transform 180ms ease,border-color 180ms ease,box-shadow 180ms ease}.crm-contact-card:hover{transform:translateY(-3px);box-shadow:0 8px 22px #00000008;border-color:color-mix(in srgb,var(--crm-accent) 40%,var(--kb-line))}.crm-card-open .crm-avatar{transition:transform 220ms ease}.crm-card-open:hover .crm-avatar{transform:scale(1.045)}.crm-intro-art{animation:crm-card-arrive 420ms ease-out both}.crm-workspace .crm-button{transition:background 150ms ease,box-shadow 150ms ease,transform 150ms ease}.crm-workspace .crm-button:active:not(:disabled){transform:translateY(1px)}@keyframes crm-card-arrive{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:translateY(0)}}}
 @media(pointer:coarse){.crm-card-select{min-width:44px;min-height:44px}.crm-card-top{min-height:44px}}
 @media(max-width:600px){.crm-contact-gallery{grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px}.crm-contact-card{padding:12px}.crm-visual-intro{padding:15px;gap:10px}.crm-intro-art{display:none}.crm-visual-intro h3{font-size:15px}.crm-visual-intro p{font-size:10px}.crm-visual-intro .crm-button{font-size:10px;padding:7px}.crm-population-art{padding:12px}}
+
+.crm-company-profile {display:grid;gap:.6rem}
+.crm-company-profile header,.crm-company-contact {display:flex;align-items:center;gap:.65rem}
+.crm-company-profile h2,.crm-company-profile p {margin:0}
+.crm-company-contact {border:0;background:transparent;color:inherit;cursor:pointer;padding:.35rem}
+.crm-org-mark {border-radius:5px;object-fit:contain}
+.crm-website-enrichment {display:grid;gap:.6rem;margin:.8rem 0}
+.crm-website-enrichment label,.crm-website-option {display:grid;gap:.3rem}
+.crm-website-enrichment input {padding:.5rem;width:100%;border:1px solid var(--kb-line,#cdcfc9);border-radius:5px;background:transparent}
+.crm-website-enrichment .crm-link-button {margin-left:.4rem}
+.crm-introduction-paths article {padding:.6rem 0;border-top:1px solid var(--crm-border,#dbe3de)}
+.crm-introduction-paths small {display:block;margin:.25rem 0;color:var(--crm-muted,#53685a)}
+
+.crm-company-progress { display: grid; gap: 9px; margin-block: 18px; font-size: 13px; }
+.crm-company-progress strong { display: flex; align-items: center; gap: 8px; }
+.crm-company-progress progress { width: 100%; accent-color: var(--kb-accent, #ac8756); }
+.crm-company-progress small { color: var(--kb-muted); }
+.crm-reminder-tools { display:flex; gap:12px; flex-wrap:wrap; align-items:center; margin-top:18px; }
+.crm-reminder-tools nav { display:flex; flex-wrap:wrap; gap:3px; }
+.crm-reminder-tools nav button { font:inherit; font-size:12px; background:none; border:0; padding:7px 10px; color:var(--kb-muted); border-radius:5px; cursor:pointer; }
+.crm-reminder-tools nav button[aria-pressed=true] { color:var(--crm-accent); background:var(--crm-soft); font-weight:550; }
+.crm-reminder-tools .crm-search { flex:1 1 150px; max-width:320px; }
+.crm-task-list>article>div { min-width:0; flex:1; overflow-wrap:anywhere; }.crm-task-list>article>input { flex:none; align-self:flex-start; }
+.crm-reminder-people { display:flex; flex-wrap:wrap; align-items:center; gap:4px 9px; }.crm-reminder-people .crm-link-button { display:inline-flex; align-items:center; gap:4px; }
+.crm-reconnect article { flex-wrap:wrap; }.crm-reconnect article>div { min-width:min(100%,180px); flex:1; overflow-wrap:anywhere; }
+.crm-avatar.is-organization { border-radius:6px; }
+.crm-avatar.is-organization img { object-fit:contain; }
+.crm-card-top>svg:last-child { margin-left:auto; }
+.crm-organization-roster>section { border-top:1px solid var(--kb-line); padding:9px 0; }
+.crm-organization-roster>section>div { display:grid; grid-template-columns:repeat(auto-fill,minmax(min(180px,100%),1fr)); gap:2px 8px; }
+.crm-organization-roster h3 small { color:var(--kb-muted); font-weight:400; }
+.crm-organization-roster h4 { margin:0 0 7px; }
+.crm-roster-search { display:grid; gap:4px; margin:8px 0; font-size:11px; color:var(--kb-muted); }
+.crm-roster-search input { color:var(--kb-text); border:1px solid var(--kb-line); border-radius:5px; background:var(--kb-panel); padding:6px 9px; min-width:0; }
+.crm-company-profile header { min-width:0; }.crm-company-profile :is(h2,p,.crm-company-contact span) { overflow-wrap:anywhere; }
+.crm-company-contact { text-decoration:none; min-width:0; border-radius:5px; }.crm-company-contact:hover { background:var(--kb-hover); }

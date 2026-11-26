@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { ArrowRight, Planet, Leaf, Sparkle, UploadSimple } from '@phosphor-icons/react'
+import { ArrowRight, Planet, Leaf, UploadSimple } from '@phosphor-icons/react'
 import { useApp, useWorld } from '../app/store.ts'
 import { completeFirstRun, importWorld, useRepoStatus } from '../data/repo.ts'
 import { MS_PER_YEAR } from '../domain/constants.ts'
@@ -8,7 +8,6 @@ import { Overlay, trapKeys } from './DurabilityKit.tsx'
 
 function Welcome() {
   const writer = useRepoStatus((s) => s.writer)
-  const [start, setStart] = useState<'empty' | 'demo'>('empty')
   const [date, setDate] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -41,7 +40,7 @@ function Welcome() {
     setBusy(true)
     try {
       useApp.getState().setView({ world: 'field' })
-      await completeFirstRun({ T0, start })
+      await completeFirstRun({ T0, start: 'empty' })
     } catch (err) { setError(err instanceof Error ? err.message : String(err)); setBusy(false) }
   }
   async function restore(file: File) {
@@ -60,7 +59,6 @@ function Welcome() {
       <span className="welcome-eyebrow"><Leaf size={17} /> Your personal second brain</span>
       <h1 ref={heading} tabIndex={-1} id="welcome-title">Make room<br />for your mind.</h1>
       <p className="welcome-intro">Bring your thoughts, memories, and files together. Discover the connections in a living world that grows with you.</p>
-      <fieldset className="welcome-choices"><legend>How would you like to begin?</legend><label className={start === 'empty' ? 'is-selected' : ''}><input type="radio" name="start" checked={start === 'empty'} onChange={() => setStart('empty')} /><span><strong>Make it my own</strong><small>Start with a thought, a memory, or a file.</small></span></label><label className={start === 'demo' ? 'is-selected' : ''}><input type="radio" name="start" checked={start === 'demo'} onChange={() => setStart('demo')} /><span><strong>Look around first</strong><small>Explore an example world with connected notes.</small></span><Sparkle size={19} /></label></fieldset>
       <details className="welcome-time"><summary>Have older memories to bring in?</summary><label htmlFor="world-start">Earliest year or date in your world</label><input id="world-start" value={date} onChange={(e) => setDate(e.target.value)} placeholder="e.g. 1995" autoComplete="off" /><small>Optional. We leave 30 years of history by default. You can change this in Settings.</small></details>
       {error && <p className="product-error" role="alert">{error}</p>}
       {!writer && <p className="product-error" role="alert">Another tab is editing this world. Close it to continue here.</p>}

@@ -2,6 +2,20 @@
 
 Writing studio adds a local document editor alongside the existing quick-thought capture. It keeps rich drafts, page design, and original media in your workspace, then lets you explicitly save a retained version to Library. It runs without cloud AI, an editor subscription, or a remote conversion service. The existing 3D world and its spatial/physics behavior remain unchanged.
 
+## Read and write from an edition
+
+Open **Bookshelf → Add a book** and search for a title, author, or ISBN. Select the work, then the edition you have. The author’s name opens their saved works. Open the saved edition and write in its reading notebook. Your notes autosave to the same drafts you can reopen in Writing Studio. Goodreads shelves can be imported from a library CSV export. [Open Library catalog](https://openlibrary.org/dev/docs/api/search) · [Goodreads export](https://www.goodreads.com/review/import)
+
+Select **Virtù** and choose **Make concept**, or press **⌘/Ctrl + Shift + K**. Click the linked word to see each note and quotation where it appears. From the concept page, choose **Write about Virtù** to start your own note. **Open concept note** returns to it for later writing. Add spelling variants under **Concept aliases**. To record an example, select the whole passage, choose **Example of…**, and name its subject. An example can belong to Palantir even when the passage never mentions the company by name.
+
+Choose **Quote** on a selection to keep the words, edition and page or chapter together. For a text check, attach the edition’s text from Library and select its retained version. The **Quotes** section preserves the citation, check result, timestamps and a link to that version. A printed edition with a manually entered page can still be cited. An exact match checks the characters against the chosen file. The source’s attribution and the bibliographic details are recorded separately.
+
+**Sources & activity → Reading & writing activity** shows saved edits and reading or citation events in date order. **History** in the editor shows the draft’s creation and last edit, earlier checkpoints, and named versions. New edits are timestamped on autosave. Earlier drafts display the timestamps and checkpoints already retained.
+
+## Dictation and meeting notes
+
+For live dictation, focus the document body and use the shortcut configured in Wispr Flow. To bring existing notes into Worldview, open **Sources & activity → Granola & Wispr Flow**, choose a provider and complete its sign-in. Search or browse, inspect the note, then choose **Save to Library**. Wispr Flow offers meetings and scratchpad entries. Granola imports the accessible notes and summary. Worldview keeps provider timestamps and labels summaries separately. These connections use the providers’ official services. [Granola MCP](https://www.granola.ai/blog/granola-mcp) · [Wispr Flow MCP](https://github.com/Wispr-AI/wispr-flow-plugin)
+
 ## Start with a thought or a document
 
 Use **Today → Quick thought** for immediate plain capture, or choose **Writing studio** from Today, the workspace navigation, or the command menu. The writing desk shows your saved drafts and six starting forms:

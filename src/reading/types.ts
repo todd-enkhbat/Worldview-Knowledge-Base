@@ -14,9 +14,11 @@ export interface ReadingItem {
   favorite: boolean
   topicIds: string[]
   activeReadMs?: number
+  libraryVisible?: boolean
   following?: boolean
 }
 export interface ReadingHighlight {
+  topicId?: string
   id: string; sourceId: string; versionId: string; start: number; end: number; quote: string
   prefix: string; suffix: string; note: string; color: HighlightColor; createdAt: number; updatedAt: number
 }
@@ -30,7 +32,7 @@ export interface ReadingSavedView {
   id: string; name: string; query: string; filter: string; folderId: string | null; topic: string
   view: 'grid' | 'list'; sort: 'modified' | 'opened' | 'title'; createdAt: number
 }
-export interface ReadingTopic { id: string; name: string; createdAt: number }
+export interface ReadingTopic { id: string; name: string; createdAt: number; aliases?: string[]; updatedAt?: number }
 export interface ReadingEndpoint { kind: 'source' | 'topic'; id: string }
 export type ReadingRelation = 'related' | 'supports' | 'contradicts' | 'builds-on'
 export interface ReadingConnection { id: string; from: ReadingEndpoint; to: ReadingEndpoint; relation: ReadingRelation; createdAt: number }

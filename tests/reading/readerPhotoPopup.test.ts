@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { popupScript } from './popupRuntime.ts'
 import { readFileSync } from 'node:fs'
 import { createContext, Script } from 'node:vm'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -19,7 +20,7 @@ async function fixture(url = 'https://www.linkedin.com/in/ada-example/') {
     return { ok: true }
   })
   const chrome = { tabs: { query: async () => [{ id: 7, url }] }, runtime: { sendMessage: send } }
-  await new Script(`(async () => { ${readFileSync('extensions/worldview-reader/popup.js', 'utf8')}\n})()`).runInContext(createContext({ chrome, document, URL, confirm: () => true }))
+  await new Script(`(async () => { ${popupScript()}\n})()`).runInContext(createContext({ chrome, document, URL, confirm: () => true }))
   return { send, photo, folk, retry, note: document.getElementById('note') as HTMLTextAreaElement, button: document.getElementById('profile') as HTMLButtonElement, setFollowing: (value: boolean) => { following = value } }
 }
 async function settle() { await new Promise(resolve => setTimeout(resolve, 0)) }
@@ -29,7 +30,7 @@ it('gives contact photos their own action and confirmation without clearing a co
   expect(f.send).toHaveBeenCalledWith({ type: 'reader-profile', tabId: 7, token: '', note: f.note.value })
   expect(document.getElementById('photo-status')!.textContent).toContain('Photo saved locally for Ada Example')
   expect(f.note.value).toBe('Keep this unsent personal comment.')
-  expect(document.getElementById('state')!.textContent).toBe('Connected · choose what to keep')
+  expect(document.getElementById('state')!.textContent).toBe('Connected')
   expect((document.getElementById('stop') as HTMLButtonElement).disabled).toBe(true)
 })
 

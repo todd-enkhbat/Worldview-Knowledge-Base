@@ -17,6 +17,20 @@ Implemented November 23, 2026 in the existing working tree, preserving the prece
 
 Permanent source deletion atomically removes associated voice receipts and scrubs dependent page/claim bodies and reference nodes. Hashed withdrawal/replay decisions do not retain deleted prose. Older recovery backups remain independent retained copies. Async capture, transcription, generation, export and conversation work guard world/account replacement and recovery.
 
+## Reading-notebook audit follow-up
+
+The eight-project review compared ways to capture, retrieve, revise and reuse knowledge. The comparison below identifies what a reader can use in Worldview today and where the products differ. [Original source audit](research/second-brains/2026-11-23/README.md)
+
+| Audited reference | What carries through to Worldview | Scope |
+| --- | --- | --- |
+| Obsidian Skills and Basic Memory | Edition-linked reading notes, explicit concept and example links, aliases, linked and unlinked mentions, original passages, local search, a graph and Markdown export. | Worldview saves edits to its workspace database. Vault import and export transfer files. They do not continuously edit the original vault or run Obsidian plugins. |
+| GBrain and Karpathy’s LLM Wiki | Source versions, exact-text citation checks, history and maintained knowledge pages. A concept page gathers the reader’s notes and quotations as they accumulate. | A matching term is a mention. The reader chooses explicit relationships and controls changes to maintained pages. |
+| QMD | Local text search and optional QMD lexical and hybrid retrieval over indexed sources. Concept backlinks are available offline. | Book notes appear in Library searches on autosave. Publishing a retained version makes the writing available to source-based retrieval. |
+| Claude-Mem and Supermemory | Scoped read access, attributed passages, context limits and exclusion controls for supported clients. | Worldview’s shared interface is read-only. Hosted Supermemory and capture of another agent’s entire session are separate capabilities. |
+| Agent Second Brain | Local capture of notes and media, retained originals, and optional Telegram intake. | External delivery depends on the configured transport. No agent or cloud service is needed to use a reading notebook. |
+
+A reading note has one identity across the book, Library and Writing Studio. A marked concept links to its page in the graph. The page groups matches by original and distinguishes quotations, margin notes and the reader’s prose. Markdown export uses Obsidian wikilinks for supported concept names. Full document bundles retain the rich marks and their stable identities. [Reading workflow](WRITING-STUDIO.md) · [Obsidian backlinks](https://obsidian.md/help/plugins/backlinks) · [Obsidian internal links](https://obsidian.md/help/links)
+
 ## Downloaded code reused
 
 GBrain commit `47512aa50fa2be1ab3af55bf60c242a11be76392` supplies MIT `rrf-page-fusion.ts` (local narrow type adapter) and unchanged `supersede-interval.ts`. License and attribution are in `src/vendor/gbrain/`. Claude-Mem's Apache-2.0 context-budget design informed the independently implemented packet builder; reference license/NOTICE are retained in `src/vendor/claude-mem/`. MIT Obsidian format references informed the interchange implementation.

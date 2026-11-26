@@ -12,6 +12,7 @@ import { uploadWritingMedia, writingMediaHash } from '../../src/writing/media.ts
 import { exportWritingDocument, MAX_WRITING_EXPORT_MEDIA_BYTES } from '../../src/writing/export.ts'
 import { blobSink, exportArchive, importArchive, readArchive } from '../../src/data/archive.ts'
 import { exportDirectoryBundle, readDirectoryBundle, restoreDirectoryBundle, type BundleReader, type BundleWriter } from '../../src/data/directoryBundle.ts'
+import { emptyReading } from '../../src/reading/model.ts'
 import type { KnowledgeSnapshot } from '../../src/knowledge/types.ts'
 
 const png = new Uint8Array([137,80,78,71,13,10,26,10,0,0,0,1])
@@ -178,4 +179,22 @@ it('keeps merged table cells and partially measured column widths in HTML and Ma
   expect(html).toContain('min-width:140px')
   expect(md).toContain('<table>')
   expect(md).toContain('colspan="2"')
+})
+
+it('exports marked reading concepts as Obsidian links while preserving examples and rich passage identities', async () => {
+  const doc = document()
+  const mark = (id: string, relation = 'concept') => ({ type: 'writingConcept', attrs: { id, topicId: 'concept-1', relation, createdAt: 1, updatedAt: 1 } })
+  await getStore().putKv('reading.v1', { ...emptyReading(), topics: [{ id: 'concept-1', name: 'Virtù', createdAt: 1 }] })
+  doc.content = { type: 'doc', content: [{ type: 'paragraph', content: [
+    { type: 'text', text: 'Virtù', marks: [mark('one')] },
+    { type: 'text', text: ' or ' },
+    { type: 'text', text: 'civic skill', marks: [mark('two')] },
+    { type: 'text', text: '. A political example.', marks: [mark('three', 'example')] },
+  ] }] }
+  const exported = await exportWritingDocument(doc, 'bundle')
+  const entries = unzipSync(new Uint8Array(await exported.blob.arrayBuffer()))
+  expect(strFromU8(entries['document.md'])).toContain('[[Virtù]] or [[Virtù|civic skill]]')
+  expect(strFromU8(entries['document.md'])).toContain('Example of [[Virtù]]')
+  expect(strFromU8(entries['document.html'])).toContain('data-topic-id="concept-1" data-relation="example"')
+  expect(JSON.parse(strFromU8(entries['writing.json'])).document.content).toEqual(doc.content)
 })

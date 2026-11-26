@@ -20,7 +20,7 @@ export default defineConfig(({ mode }) => {
     server: { host: 'localhost', port: PORT, strictPort: true, watch: { ignored: ['**/data/**'] } },
     preview: { host: 'localhost', port: PORT, strictPort: true },
     worker: { format: 'es' as const },
-    build: { target: 'es2023', sourcemap: true, chunkSizeWarningLimit: 4096 },
+    build: { rollupOptions: { input: { main: 'index.html', helper: 'study-helper.html' } }, target: 'es2023', sourcemap: true, chunkSizeWarningLimit: 4096 },
     test: {
       environment: 'node',
       include: ['tests/**/*.test.ts', 'tests/**/*.test.tsx'],

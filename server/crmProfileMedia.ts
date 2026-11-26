@@ -1,15 +1,18 @@
-import { createHash } from 'node:crypto'
+import { rasterCompanyIcon } from './companyIcon.ts'
+import { createHash, randomUUID } from 'node:crypto'
 import { lookup as dnsLookup } from 'node:dns/promises'
-import { constants } from 'node:fs'
-import { mkdir, open, rm, writeFile } from 'node:fs/promises'
+import { constants, linkSync, rmSync } from 'node:fs'
+import { mkdir, open, writeFile } from 'node:fs/promises'
 import { request as httpRequest } from 'node:http'
 import { request as httpsRequest } from 'node:https'
 import { isIP } from 'node:net'
 import { join } from 'node:path'
 import { sniffImageMime } from '../src/data/attachments.ts'
-import type { CrmPerson } from '../src/crm/types.ts'
+import type { CrmPerson, CrmSourceRef } from '../src/crm/types.ts'
 import type { KnowledgeSnapshot, SourceVersion } from '../src/knowledge/types.ts'
 import { isPrivateAddress, type Lookup } from './fetchUrl.ts'
+import { profilePlatform, publicProfileUrl } from './crmProfileUrls.ts'
+export { profilePlatform, publicProfileUrl } from './crmProfileUrls.ts'
 import { CrmError, type SqliteCrmStore } from './crmStore.ts'
 import type { WorldDb } from './worldDb.ts'
 
@@ -33,14 +36,6 @@ export interface ProfileResource { url: string; bytes: Uint8Array; contentType: 
 export interface ProfileMediaOptions { db: WorldDb; store: SqliteCrmStore; blobDir: string; now?: () => number; fetch?: typeof fetch; lookup?: Lookup; authorize?: () => void; retainedPhoto?: { personId: string; url: string; sourceUrl: string; originalAssetId: string; label: string; photoOnly?: boolean } }
 const systemLookup: Lookup = async host => (await dnsLookup(host, { all: true, verbatim: true })).map(value => value.address)
 
-/** Credentials and nonstandard ports are never sent to a supplied profile or image host. */
-export function publicProfileUrl(value: unknown, base?: string): string | null {
-  if (!string(value).trim()) return null
-  try { const url = new URL(string(value), base); if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password || url.port && url.port !== (url.protocol === 'https:' ? '443' : '80') || url.href.length > 8192 || /(^|\.)(localhost|local|internal|test|invalid)$/i.test(url.hostname)) return null; url.hash = ''; return url.href } catch { return null }
-}
-export function profilePlatform(raw: string): string {
-  try { const host = new URL(raw).hostname.replace(/^www\./, '').toLowerCase(); return /(^|\.)linkedin\.com$/.test(host) ? 'linkedin' : /(^|\.)(twitter\.com|x\.com)$/.test(host) ? 'x' : /(^|\.)github\.com$/.test(host) ? 'github' : /(^|\.)instagram\.com$/.test(host) ? 'instagram' : /(^|\.)facebook\.com$/.test(host) ? 'facebook' : /(^|\.)youtube\.com$/.test(host) || host === 'youtu.be' ? 'youtube' : /(^|\.)bsky\.app$/.test(host) ? 'bluesky' : /(^|\.)substack\.com$/.test(host) ? 'substack' : /(^|\.)threads\.(net|com)$/.test(host) ? 'threads' : /(^|\.)tiktok\.com$/.test(host) ? 'tiktok' : 'website' } catch { return 'website' }
-}
 /** Comparison only: original user/import URL strings are never rewritten. */
 export function profileLinkIdentity(raw: string): string {
   const supplied = publicProfileUrl(raw) || (/^[\w.-]+\.[a-z]{2,}(?:[/?#]|$)/i.test(raw.trim()) ? publicProfileUrl(`https://${raw.trim()}`) : null)
@@ -180,10 +175,47 @@ export class CrmProfileMedia {
   private async retainPhoto(bytes: Uint8Array, current: () => void) {
     const mime = sniffImageMime(bytes.subarray(0, 4096)); check(mime && ['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/avif'].includes(mime), 'The photo source did not return a real PNG, JPEG, WebP, GIF or AVIF image. HTML and SVG are not saved as portraits.'); check(bytes.length > 0 && bytes.length <= MAX_PHOTO, 'Choose a photo up to 12 MiB.', 413)
     const id = `crm-avatar-${digest(bytes)}`, path = join(this.options.blobDir, id); current(); await mkdir(this.options.blobDir, { recursive: true }); current()
-    let created = false
-    try { await writeFile(path, bytes, { flag: 'wx', mode: 0o600 }); created = true } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW); try { const stat = await file.stat(); check(stat.isFile() && stat.size === bytes.length && digest(await file.readFile()) === digest(bytes), 'A retained portrait is damaged. Restore its original before downloading again.', 409) } finally { await file.close() } }
-    try { current() } catch (error) { if (created && !this.options.db.getAssetMeta(id)) await rm(path, { force: true }); throw error }
+    // Other records can receive the same logo concurrently. Publish a complete
+    // immutable file atomically so a second reader never opens a partial image.
+    const temporary = join(this.options.blobDir, '.crm-image-' + randomUUID())
+    try {
+      await writeFile(temporary, bytes, { flag: 'wx', mode: 0o600 })
+      current()
+      try { linkSync(temporary, path) }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+        const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW)
+        try {
+          const stat = await file.stat()
+          check(stat.isFile() && stat.size === bytes.length && digest(await file.readFile()) === digest(bytes), 'A retained portrait is damaged. Restore its original before downloading again.', 409)
+          current()
+        } finally { await file.close() }
+      }
+    } finally { rmSync(temporary, { force: true }) }
     return { id, mime: mime!, bytes: bytes.length }
+  }
+  async saveProfileImage(type: 'person' | 'company', id: string, url: string, sourceUrl: string, requestId: string, authorize?: () => void, importedLogoSource?: CrmSourceRef): Promise<'saved' | 'kept' | 'unavailable'> {
+    const collection = type === 'person' ? 'people' : 'companies', field = type === 'person' ? 'avatarAssetId' : 'logoAssetId'
+    const record = this.options.store.get(collection, id)
+    if (!record || record.archivedAt !== null || record.mergedIntoId) throw new CrmError('The selected record is unavailable.', 409)
+    if (record[field]) return 'kept'
+    const guard = this.guard()
+    const current = () => {
+      authorize?.(); guard()
+      check(this.options.store.get(collection, id)?.revision === record.revision, 'The record changed during the image download.', 409)
+    }
+    current()
+    if (folkSampleAvatar(url)) return 'unavailable'
+    const resource = await fetchProfileResource(profilePhotoRequestUrl(url), { ...this.options, maxBytes: MAX_PHOTO, current })
+    if (folkSampleAvatar(resource.url)) return 'unavailable'
+    const asset = await this.retainPhoto(type === 'company' ? await rasterCompanyIcon(resource.bytes) : resource.bytes, current)
+    current()
+    if (Array.isArray(record.portraitRejectedAssetIds) && record.portraitRejectedAssetIds.includes(asset.id)) return 'unavailable'
+    const observedAt = this.now()
+    this.options.db.putAssetMeta({ id: asset.id, kind: 'image', mime: asset.mime, bytes: asset.bytes, createdAt: observedAt, nodeId: null })
+    const provenance = { url, sourceUrl, label: importedLogoSource ? 'Company logo retained from Folk' : type === 'person' ? 'Captured profile photo' : 'Captured company logo', provider: importedLogoSource?.provider ?? 'profile-capture', ...(importedLogoSource ? { sourceRef: importedLogoSource } : {}), observedAt, originalAssetId: asset.id }
+    this.options.store.command({ requestId: `capture-image:${requestId}`, operation: 'update', collection, id, expectedRecordRevision: record.revision, patch: { [field]: asset.id, [type === 'person' ? 'portraitSource' : 'logoSource']: provenance } }, 'profile-media')
+    return 'saved'
   }
   async populatePerson(id: string, input: Record<string, unknown>): Promise<ProfileMediaResult> {
     const requestId = string(input.requestId); check(requestId && requestId.length <= 140, 'Provide a unique profile media request identity.'); const receiptKey = `profile-media:${digest(requestId)}`, fingerprint = digest(stable({ id, ...input })), prior = this.options.db.db.prepare('SELECT body FROM crm_state WHERE key=?').get(receiptKey) as { body: string } | undefined

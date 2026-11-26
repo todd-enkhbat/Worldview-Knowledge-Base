@@ -134,6 +134,7 @@ export interface NodeRecord {
   entity?: { kind: EntityKind }
   demon?: DemonBlock
   /** Where the record came from when not typed in the editor (Phase 4 omnibox). */
+  libraryOrigin?: 'saved' | 'example'
   provenance?: Provenance
   createdAt: number
   updatedAt: number

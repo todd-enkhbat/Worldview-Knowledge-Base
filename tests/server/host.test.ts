@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
@@ -40,6 +41,21 @@ const json = (body: unknown, cookie?: string) => ({
   body: JSON.stringify(body),
 })
 const sessionOf = (res: Response) => /wv_session=([^;]*)/.exec(res.headers.get('set-cookie') ?? '')?.[1] ?? ''
+
+it('loads the standalone server without frontend runtime packages', () => {
+  const result = spawnSync(process.execPath, ['--input-type=module', '--eval', `
+    import { registerHooks } from 'node:module'
+    const browserPackages = new Set(['react', 'react-dom', 'zustand'])
+    registerHooks({ resolve(specifier, context, next) {
+      if (browserPackages.has(specifier.split('/')[0])) {
+        throw new Error(specifier + ' imported by ' + context.parentURL)
+      }
+      return next(specifier, context)
+    } })
+    await import('./server/main.ts')
+  `], { cwd: new URL('../../', import.meta.url), encoding: 'utf8' })
+  expect(result.status, result.stderr || result.error?.message).toBe(0)
+})
 
 describe('passwords and sessions', () => {
   it('hashes with scrypt and verifies only the right password', async () => {

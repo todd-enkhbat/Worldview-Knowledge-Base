@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowSquareOut, BookOpen, LinkSimple, MagnifyingGlass, Plus, X } from '@phosphor-icons/react'
 import type { Editor } from '@tiptap/core'
+import { initializeBookshelf, useBookshelf } from '../bookshelf/store.ts'
 import { useKnowledge } from '../knowledge/index.ts'
 import { createTopic, useReading } from '../reading/store.ts'
 import { LocalTextIndex } from '../reading/search.ts'
@@ -16,6 +17,8 @@ export function WritingResearch({ document, editor, update, onClose, disabled }:
   latest.current = document
   useEffect(() => { alive.current = true; setBusy(false); return () => { alive.current = false } }, [])
   const corpus = useKnowledge(), reading = useReading(), writings = useWriting((state) => state.docs)
+  const books = useBookshelf(state => state.books)
+  useEffect(() => { void initializeBookshelf().catch(cause => { if (alive.current) setError(cause instanceof Error ? cause.message : String(cause)) }) }, [])
   const [limit, setLimit] = useState(40)
   const [tab, setTab] = useState<'highlights' | 'notes' | 'sources' | 'topics'>('highlights'), [query, setQuery] = useState(''), [topicName, setTopicName] = useState(''), [error, setError] = useState(''), [notice, setNotice] = useState(''), [busy, setBusy] = useState(false)
   const sources = useMemo(() => new Map(corpus.sources.filter((source) => !source.deleted && !source.excluded).map((source) => [source.id, source])), [corpus.sources])
@@ -27,7 +30,7 @@ export function WritingResearch({ document, editor, update, onClose, disabled }:
     ...quotes.map((entry) => ({ id: `quote:${entry.id}`, text: `${entry.quote} ${entry.note} ${sources.get(entry.sourceId)?.title ?? ''}` })),
     ...notes.map((entry) => ({ id: `note:${entry.id}`, text: `${entry.text} ${sources.get(entry.sourceId)?.title ?? ''}` })),
     ...[...sources.values()].map((entry) => ({ id: `source:${entry.id}`, text: `${entry.title} ${entry.tags.join(' ')} ${versions.get(entry.currentVersionId)?.text ?? ''}` })),
-    ...topics.map((entry) => ({ id: `topic:${entry.id}`, text: entry.name })),
+    ...topics.map((entry) => ({ id: `topic:${entry.id}`, text: [entry.name, ...(entry.terms ?? [])].join(' ') })),
   ]), [quotes, notes, sources, versions, topics])
   const matches = useMemo(() => index.search(query), [index, query])
   const citations = useMemo(() => citedSources(document.content), [document.content])
@@ -43,6 +46,13 @@ export function WritingResearch({ document, editor, update, onClose, disabled }:
   const shown = tab === 'highlights' ? quotes.filter((entry) => matches.has(`quote:${entry.id}`)) : tab === 'notes' ? notes.filter((entry) => matches.has(`note:${entry.id}`)) : []
   const resultCount = tab === 'sources' ? [...sources.values()].filter((source) => matches.has(`source:${source.id}`)).length : shown.length
   return <aside className="writing-design writing-research" aria-label="Research and topics"><header><h3><BookOpen size={17} />Your research</h3><button className="knowledge-icon-button" type="button" aria-label="Close research" onClick={onClose}><X size={18} /></button></header><p>Your sources and your own thoughts, ready to write with.</p><label className="writing-research-search"><MagnifyingGlass size={15} /><span className="knowledge-sr-only">Search saved research</span><input type="search" value={query} onChange={(event) => { setQuery(event.target.value); setLimit(40) }} placeholder="Find a passage or topic…" /></label><div className="writing-research-tabs" role="group" aria-label="Research type">{(['highlights', 'notes', 'sources', 'topics'] as const).map((value) => <button type="button" key={value} aria-pressed={tab === value} onClick={() => { setTab(value); setLimit(40) }}>{value[0].toUpperCase() + value.slice(1)}</button>)}</div>{error && <p className="knowledge-error" role="alert">{error}</p>}{notice && <p className="writing-research-notice" role="status">{notice}</p>}
+    <label className="writing-book-picker">Bookshelf edition
+      <select value={document.bookEditionId || ''} disabled={disabled} onChange={event => update({ bookEditionId: event.target.value || null })}>
+        <option value="">Choose an edition…</option>
+        {document.bookEditionId && !books.some(book => book.id === document.bookEditionId) && <option value={document.bookEditionId}>Linked edition unavailable</option>}
+        {books.filter(book => !book.archivedAt || book.id === document.bookEditionId).map(book => <option value={book.id} key={book.id}>{[book.title, book.authors.join(', '), book.catalog?.editionLabel, book.year, book.isbn].filter(Boolean).join(' · ')}</option>)}
+      </select>
+    </label>
     {tab === 'highlights' && shown.slice(0, limit).map((raw) => { const entry = raw as typeof quotes[number]; return <article className="writing-research-card" key={entry.id}><a href={`#/library?source=${encodeURIComponent(entry.sourceId)}&version=${encodeURIComponent(entry.versionId)}${entry.page ? `&page=${entry.page}` : ''}`}>{sources.get(entry.sourceId)?.title}<ArrowSquareOut size={12} /></a><blockquote>{entry.quote}</blockquote>{entry.note && <p>{entry.note}</p>}<button type="button" className="knowledge-text-button" disabled={!canInsert} onClick={() => cite(entry)}><Plus size={13} />Insert quotation{entry.page ? ` · page ${entry.page}` : ''}</button></article> })}
     {tab === 'notes' && shown.slice(0, limit).map((raw) => { const entry = raw as typeof notes[number]; return <article className="writing-research-card" key={entry.id}><a href={`#/library?source=${encodeURIComponent(entry.sourceId)}`}>{sources.get(entry.sourceId)?.title}<ArrowSquareOut size={12} /></a><p>{entry.text}</p><small>Your note</small><button className="knowledge-text-button" type="button" disabled={!canInsert} onClick={() => insert({ type: 'paragraph', content: [{ type: 'text', text: entry.text }] })}><Plus size={13} />Insert my note</button></article> })}
     {tab === 'sources' && [...sources.values()].filter((source) => matches.has(`source:${source.id}`)).slice(0, limit).map((source) => { const version = versions.get(source.currentVersionId); return <article className="writing-research-card" key={source.id}><a href={`#/library?source=${encodeURIComponent(source.id)}`}>{source.title}<ArrowSquareOut size={12} /></a><p>{version?.text.slice(0, 250) || 'Retained source'}</p>{citations.has(source.id) && <small>Cited in this draft</small>}<button className="knowledge-text-button" type="button" disabled={!canInsert || !version?.text.trim()} onClick={() => { if (version) cite({ sourceId: source.id, versionId: version.id, quote: version.text.slice(0, 400), start: 0, end: Math.min(version.text.length, 400) }) }}><Plus size={13} />Quote opening</button></article> })}

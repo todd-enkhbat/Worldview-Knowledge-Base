@@ -3,7 +3,7 @@ import { plainTextFromWriting, validateWritingContent } from './model.ts'
 import type { WritingNode } from './types.ts'
 
 export interface WritingAuthorshipMessage extends ParsedMessage {
-  role: 'human' | 'third-party'
+  role: 'human' | 'third-party' | 'assistant'
   start: number
   end: number
 }
@@ -26,7 +26,8 @@ export function writingAuthorshipMessages(content: WritingNode, authoredAt: numb
     cursor += text.length
   }
   function visit(node: WritingNode) {
-    if (node.type === 'writingCitation') { append(plainTextFromWriting(node), 'third-party'); return }
+    if (node.type === 'writingCitation' || node.marks?.some(mark => mark.type === 'writingQuote')) { append(plainTextFromWriting(node), 'third-party'); return }
+    if (node.marks?.some(mark=>mark.type==='writingAi')) {append(plainTextFromWriting(node),'assistant');return}
     if (!node.content) { append(plainTextFromWriting(node), 'human'); return }
     const separator = ['doc', 'blockquote'].includes(node.type) ? '\n\n' : ['orderedList', 'bulletList', 'listItem', 'table', 'tableCell', 'tableHeader'].includes(node.type) ? '\n' : node.type === 'tableRow' ? '\t' : ''
     node.content.forEach((child, index) => { if (index) append(separator, 'human'); visit(child) })

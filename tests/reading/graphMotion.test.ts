@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { fitGraphCamera, focusGraphCamera, graphCurve, graphPoint, graphTopology, GraphPresentation, layoutGraph, zoomGraphCamera, type GraphFrame, type GraphScheduler } from '../../src/reading/graphMotion.ts'
+import { fitGraphCamera, focusGraphCamera, focusGraphNeighborhood, graphCurve, graphPoint, graphTopology, GraphPresentation, layoutGraph, placeGraphLabels, zoomGraphCamera, type GraphFrame, type GraphScheduler } from '../../src/reading/graphMotion.ts'
 
 function clock() {
   let now = 0, next = 0
@@ -10,6 +10,20 @@ function clock() {
 const camera = { x: 500, y: 350, scale: 1 }
 
 describe('bounded graph presentation', () => {
+  it('places dense labels around real nodes without collisions or clipping', () => {
+    const point = { x: 120, y: 85 }
+    const nodes = ['active', 'neighbor', 'other', 'another'].map((key, index) => ({
+      key, title: 'Shared concept title', radius: 13, point, priority: 4 - index,
+    }))
+    const placements = placeGraphLabels(nodes, 240, 170)
+    expect([...placements.keys()]).toEqual(['active', 'neighbor'])
+    expect(placements.get('active')!.y).toBeGreaterThan(0)
+    expect(placements.get('neighbor')!.y).toBeLessThan(0)
+    const blocked = placeGraphLabels(nodes, 240, 170, [{ left: 0, top: 100, right: 240, bottom: 170 }])
+    expect([...blocked.keys()]).toEqual(['active'])
+    expect(blocked.get('active')!.y).toBeLessThan(0)
+  })
+
   it('keeps exact 2D pins, deterministic layouts and all source inputs unchanged', () => {
     const nodes = [{ key: 'source:a', kind: 'source' as const }, { key: 'source:b', kind: 'source' as const }, { key: 'topic:c', kind: 'topic' as const }]
     const edges = [{ id: 'saved-a-c', from: 'source:a', to: 'topic:c' }, { id: 'saved-b-c', from: 'source:b', to: 'topic:c' }]
@@ -28,6 +42,16 @@ describe('bounded graph presentation', () => {
     for (const node of nodes) expect(Math.hypot(expanded.get(node.key)!.x - first.get(node.key)!.x, expanded.get(node.key)!.y - first.get(node.key)!.y)).toBeLessThan(150)
     const large = Array.from({ length: 400 }, (_, i) => ({ key: `source:${i}`, kind: 'source' as const }))
     expect(layoutGraph(large, []).size).toBe(320)
+  })
+
+  it('keeps every visible neighbor inside the lens after selecting an off-center source', () => {
+    const center = { x: -220, y: 190 }, others = [{ x: -350, y: -140 }, { x: 150, y: -60 }, { x: -100, y: 230 }]
+    const camera = focusGraphNeighborhood(center, others, 650, 380, 2)
+    for (const point of [center, ...others]) {
+      const x = point.x * camera.scale + camera.x, y = point.y * camera.scale + camera.y
+      expect(x).toBeGreaterThan(60); expect(x).toBeLessThan(590)
+      expect(y).toBeGreaterThan(45); expect(y).toBeLessThan(335)
+    }
   })
 
   it('keeps the pointer-anchored world point stable while zooming and centers a focused node', () => {
@@ -84,4 +108,17 @@ describe('bounded graph presentation', () => {
     expect(timer.pending.size).toBe(0)
     expect(presentation.frame!.progress).toBe(1)
   })
+})
+
+it('reveals lower-ranked labels as the zoom budget grows and keeps disconnected groups distinct', () => {
+  const nodes = ['hub','note','essay','other','draft','book'].map((key,i) => ({
+    key, kind:'source' as const, title:key, point:{x:50+i*80,y:80}, priority:6-i, radius:6,
+  }))
+  expect([...placeGraphLabels(nodes, 540, 160, [], 2).keys()]).toEqual(['hub','note'])
+  expect(placeGraphLabels(nodes, 540, 160, [], 6).size).toBe(6)
+  const edges = [['hub','note'],['hub','essay'],['other','draft'],['other','book']]
+    .map(([from,to])=>({id:from+to,from,to}))
+  const placed=layoutGraph(nodes,edges)
+  const distance=(a:string,b:string)=>Math.hypot(placed.get(a)!.x-placed.get(b)!.x,placed.get(a)!.y-placed.get(b)!.y)
+  expect(distance('hub','note')).toBeLessThan(distance('hub','other'))
 })

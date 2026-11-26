@@ -6,18 +6,18 @@ const id = z.string().min(1).max(1000), time = z.number().finite().nonnegative()
 const name = z.string().min(1).max(160).refine((value) => !!value.trim())
 const color = z.enum(['yellow', 'blue', 'rose'])
 const endpoint = z.object({ kind: z.enum(['source', 'topic']), id })
-const item = z.object({ sourceId: id, folderId: id.nullable(), status: z.enum(['unread', 'reading', 'read']), progress: z.number().min(0).max(1), lastOpenedAt: time.nullable(), readAt: time.nullable(), position: z.number().finite().nonnegative(), favorite: z.boolean(), topicIds: z.array(id).max(10000), activeReadMs: offset.optional(), following: z.boolean().optional() })
-const highlight = z.object({ id, sourceId: id, versionId: id, start: offset, end: offset, quote: z.string().min(1).max(1000000), prefix: z.string().max(5000), suffix: z.string().max(5000), note: z.string().max(100000), color, createdAt: time, updatedAt: time }).refine((value) => value.end > value.start && value.quote.length === value.end - value.start)
+const item = z.object({ sourceId: id, folderId: id.nullable(), status: z.enum(['unread', 'reading', 'read']), progress: z.number().min(0).max(1), lastOpenedAt: time.nullable(), readAt: time.nullable(), position: z.number().finite().nonnegative(), favorite: z.boolean(), topicIds: z.array(id).max(10000), activeReadMs: offset.optional(), following: z.boolean().optional(), libraryVisible: z.boolean().optional() })
+const highlight = z.object({ id, topicId: id.optional(), sourceId: id, versionId: id, start: offset, end: offset, quote: z.string().min(1).max(1000000), prefix: z.string().max(5000), suffix: z.string().max(5000), note: z.string().max(100000), color, createdAt: time, updatedAt: time }).refine((value) => value.end > value.start && value.quote.length === value.end - value.start)
 export const pdfHighlightSchema = z.object({ id, sourceId: id, versionId: id, page: z.number().int().min(1).max(100000), quote: z.string().min(1).max(20000), prefix: z.string().max(5000).optional(), suffix: z.string().max(5000).optional(), rects: z.array(z.object({ x: z.number().finite().min(0).max(1), y: z.number().finite().min(0).max(1), width: z.number().finite().positive().max(1), height: z.number().finite().positive().max(1) }).refine((r) => r.x + r.width <= 1.001 && r.y + r.height <= 1.001)).min(1).max(200), note: z.string().max(100000), color, createdAt: time, updatedAt: time })
 const schema = z.object({
   schemaVersion: z.literal(1), revision: offset,
   folders: z.array(z.object({ id, name, parentId: id.nullable(), createdAt: time, deletedAt: time.nullable().optional() })),
   items: z.array(item), highlights: z.array(highlight),
   notes: z.array(z.object({ id, sourceId: id, text: z.string().min(1).max(100000), createdAt: time, updatedAt: time })),
-  topics: z.array(z.object({ id, name, createdAt: time })),
+  topics: z.array(z.object({ id, name, createdAt: time, aliases: z.array(name).max(50).optional(), updatedAt: time.optional() })),
   connections: z.array(z.object({ id, from: endpoint, to: endpoint, relation: z.enum(['related', 'supports', 'contradicts', 'builds-on']), createdAt: time })),
   pdfHighlights: z.array(pdfHighlightSchema).max(100000).optional(),
-  savedViews: z.array(z.object({ id, name, query: z.string().max(2000), filter: z.enum(['all', 'reading', 'read', 'highlights', 'favorites', 'articles', 'notes', 'documents']), folderId: id.nullable(), topic: z.string().max(1000), view: z.enum(['grid', 'list']), sort: z.enum(['modified', 'opened', 'title']), createdAt: time })).max(100).optional(),
+  savedViews: z.array(z.object({ id, name, query: z.string().max(2000), filter: z.enum(['all', 'reading', 'read', 'highlights', 'favorites', 'articles', 'notes', 'books', 'obsidian', 'documents']), folderId: id.nullable(), topic: z.string().max(1000), view: z.enum(['grid', 'list']), sort: z.enum(['modified', 'opened', 'title']), createdAt: time })).max(100).optional(),
 })
 export const emptyReading = (): ReadingSnapshot => ({ schemaVersion: 1, revision: 0, folders: [], items: [], highlights: [], notes: [], topics: [], connections: [] })
 export function defaultReadingItem(sourceId: string): ReadingItem { return { sourceId, folderId: null, status: 'unread', progress: 0, lastOpenedAt: null, readAt: null, position: 0, favorite: false, topicIds: [] } }
@@ -37,6 +37,7 @@ export function decodeReading(value: unknown): ReadingSnapshot {
     while (parent) { if (visited.has(parent) || !folders.has(parent)) throw invalid(); visited.add(parent); parent = folders.get(parent)!.parentId }
   }
   for (const entry of snapshot.items) if (entry.folderId && (!folders.has(entry.folderId) || folders.get(entry.folderId)!.deletedAt != null) || entry.topicIds.some((topic) => !topics.has(topic)) || new Set(entry.topicIds).size !== entry.topicIds.length) throw invalid()
+  if (snapshot.highlights.some(entry => entry.topicId && !topics.has(entry.topicId))) throw invalid()
   for (const connection of snapshot.connections) if (connection.from.kind === connection.to.kind && connection.from.id === connection.to.id || [connection.from, connection.to].some((end) => end.kind === 'topic' && !topics.has(end.id))) throw invalid()
   return snapshot
 }

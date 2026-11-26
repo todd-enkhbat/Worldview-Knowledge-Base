@@ -68,3 +68,10 @@
 @media (prefers-reduced-motion: no-preference) { .crm-google-setup, .crm-import-review { animation: crm-connection-enter 180ms ease-out; } .crm-connection-progress svg { animation: crm-connection-spin 1s linear infinite; } @keyframes crm-connection-enter { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } } @keyframes crm-connection-spin { to { transform: rotate(360deg); } } }
 @media (max-width: 760px) { .crm-calendar-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); } .crm-calendar-controls > button { grid-column: 1 / -1; } .crm-calendar-picker { padding: 18px; } .crm-connections-heading { align-items: flex-start; } .crm-connections-heading h2 { font-size: 23px; } }
 @media (max-width: 520px) { .crm-file-inputs, .crm-mapping-grid { grid-template-columns: 1fr; } .crm-calendar-overlay { padding: 10px; } .crm-calendar-picker { max-height: calc(100dvh - 20px); } .crm-calendar-events article { grid-template-columns: 35px 1fr; gap: 10px; } .crm-calendar-events article > button { grid-column: 2; justify-self: start; } .crm-calendar-search { flex-wrap: wrap; } .crm-calendar-search > input { flex-basis: 100%; } .crm-connection-section > header { align-items: flex-start; gap: 10px; } .crm-connection-section-title { align-items: flex-start; gap: 10px; } .crm-connections input, .crm-connections select, .crm-calendar-picker input, .crm-calendar-picker select { font-size: 16px; } }
+
+.crm-sync-options { display: grid; gap: .5rem; margin: .75rem 0; }
+.crm-sync-options label { display: flex; align-items: center; gap: .45rem; font-size: .85rem; }
+.crm-reconnect { margin: 1.25rem 0; }
+.crm-reconnect > header p, .crm-reconnect small { color: var(--ink-secondary, #666); font-size: .82rem; }
+.crm-reconnect article { display: flex; align-items: center; justify-content: space-between; gap: 1rem; border-top: 1px solid var(--line, #ddd); padding: .6rem 0; }
+.crm-reconnect article > div { display: grid; justify-items: start; gap: .25rem; }

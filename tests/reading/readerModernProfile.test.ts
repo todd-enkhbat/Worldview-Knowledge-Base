@@ -34,6 +34,17 @@ it('binds a root-href verification name only through the same bounded header’s
   expect(() => capture(unbounded)).toThrow('No single named')
 })
 
+it('captures the unique labelled LinkedIn portrait beside the verified identity and ignores other sections and hidden photos', () => {
+  const photo = '<a href="/" aria-label="Profile photo"><div><img aria-hidden="true" alt="" src="https://media.licdn.com/ada.jpg"></div></a>'
+  const otherPhoto = photo.replace('ada.jpg', 'another-person.jpg')
+  const html = modern('https://www.linkedin.com/').replace('<header>', '<section>' + photo + '<div>')
+    .replace('</header>', '</div></section>').replace('Recent activity', otherPhoto + 'Recent activity')
+  expect(capture(html).profile.images).toEqual([{ url: 'https://media.licdn.com/ada.jpg', label: 'Ada Example profile photo', isProfile: true, subjectName: 'Ada Example' }])
+  expect(capture(html.replace(photo, '')).profile.images).toEqual([])
+  expect(capture(html.replace(photo, photo + otherPhoto)).profile.images).toEqual([])
+  expect(capture(html.replace(photo, '<div hidden>' + photo + '</div>')).profile.images).toEqual([])
+})
+
 it('accepts a plain visible header name only when it uniquely agrees with the LinkedIn title and same-header exact Contact info', () => {
   const html = `<title>Ada Example | LinkedIn</title>${modern('https://www.linkedin.com/').replace('Ada Example <span>View Ada’s verifications</span>', 'Ada Example')}`
   expect(capture(html).profile).toMatchObject({ name: 'Ada Example', entityType: 'person' })
@@ -41,6 +52,22 @@ it('accepts a plain visible header name only when it uniquely agrees with the Li
   expect(() => capture(html.replace(`${source}overlay/contact-info/`, 'https://www.linkedin.com/in/someone-else/overlay/contact-info/'))).toThrow('No single named')
   const ambiguous = html.replace('<a href="https://www.linkedin.com/">Ada Example</a>', '<a href="https://www.linkedin.com/">Ada Example</a><a href="https://www.linkedin.com/">Ada Example</a>')
   expect(() => capture(ambiguous)).toThrow('No single named')
+})
+
+it('reads headline and location from the verified modern card and confirms a headline employer before Experience has loaded', () => {
+  const headline = 'McAfee Professor of Engineering at MIT; Founder; AI-Driven Scientific Discovery'
+  const employer = '<button>Massachusetts Institute of Technology <span>+ 3 more</span></button>'
+  const outside = '<aside><button>Massachusetts Institute of Technology + 3 more</button><p>Unrelated location</p></aside>'
+  const card = `<title>Ada Example | LinkedIn</title><main><section><div><div><a href="/"><h2>Ada Example</h2></a><p>· 2nd</p></div><p>${headline}</p><div><p>Cambridge, Massachusetts, United States</p><p>·</p><p><a href="${source}overlay/contact-info/">Contact info</a></p></div></div>${employer}<button>Caltech</button></section><section><h2>Activity</h2></section>${outside}</main>`
+  const result = capture(card)
+  expect(result.profile).toMatchObject({ headline, location: 'Cambridge, Massachusetts, United States', affiliations: [{ kind: 'employment', organization: 'Massachusetts Institute of Technology', role: 'McAfee Professor of Engineering', current: true }] })
+  expect(result).toMatchObject({ headerEmployer: { organization: 'Massachusetts Institute of Technology', additional: 3 } })
+  const wrapped = card.replace(`<p>${headline}</p>`, `<div><span>${headline}</span></div>`)
+    .replace(employer, '<button aria-label="Massachusetts Institute of Technology + 3 more"><img alt="">Open experience</button>')
+  expect(capture(wrapped)).toMatchObject({ profile: { headline, affiliations: [{ organization: 'Massachusetts Institute of Technology', role: 'McAfee Professor of Engineering' }] }, headerEmployer: { additional: 3 } })
+  for (const other of [card.replace(employer, ''), card.replace(headline, 'Former Professor at MIT'), card.replace(employer, '<button hidden>Massachusetts Institute of Technology</button>'), card.replace(employer, employer + '<button>Midwest Institute of Technology</button>')]) {
+    expect(capture(other).profile.affiliations).toEqual([])
+  }
 })
 
 it('withholds a dated organization-linked role when no named group employer is available', () => {

@@ -4,6 +4,8 @@ Worldview now has a local macOS application wrapper. It opens the same applicati
 
 ## Open your existing workspace
 
+Open an installed copy through Spotlight with **⌘ Space → Worldview → Return**. From Worldview in a Mac browser, choose **Sources → Desktop workspace → Open Worldview for Mac**. Right-click the running app in the Dock and choose **Options → Keep in Dock** to keep it there.
+
 Download **Worldview for Mac** from the desktop connection panel, unzip it, and open `Worldview.app`. Choose the folder containing `world.sqlite` and `blobs`; choosing the repository folder also recognizes its existing `data/world.sqlite` automatically. A folder without an existing database requires an explicit **Create new workspace** confirmation. Existing files are not overwritten or automatically imported just because their folder was opened.
 
 The app remembers the chosen folder in its private application preferences. **Worldview → Open Workspace…** changes it; **Show Workspace in Finder** reveals it. The in-app desktop connection panel offers the same controls.
@@ -12,13 +14,19 @@ On opening a workspace, the native launcher first checks the canonical `http://1
 
 When no matching service is running, the bundled Node runtime starts the normal local API against that selected folder. It binds to loopback IPv4 and serves the packaged client at the same origin. Cloud AI is explicitly disabled and provider keys are not inherited. Existing local model/tool paths can be reused from that workspace's `models` and `tools` directories. Optional external services retain their separate setup requirements.
 
-A different workspace occupying port 5173 requires an explicit separate-port choice. The app displays its actual local address; MCP configurations must use that address. The browser reader uses the canonical port 5173 and cannot silently redirect captures to a different vault. Closing the app stops a service it started, but leaves an existing shared browser service running.
+A different workspace occupying port 5173 requires an explicit separate-port choice. Use the local address displayed in the app for MCP configuration. The browser reader uses port 5173. On Mac, closing the workspace window leaves capture available in the Dock. Quitting Worldview stops the local service if Worldview started it. An independently running service stays available.
+
+## Floating profile capture
+
+In **People**, click **Capture profile**. While browsing, you can also right-click Worldview in the Dock and choose **Quick Capture**, or press **⌘⌥⇧W** while the app is running. Click **Add to Worldview** while a profile is selected in Dia. Check the source and person or company, pick a group if you want one, and save. macOS may ask for permission to control Dia. The chevron next to **Add to Worldview** opens the in-app browser option directly. Paste a profile URL there to use Worldview’s own browser session. **People → Review captures** opens saved drafts and the URL collector.
+
+**People → Companies → Fill company details** checks all companies for official websites, descriptions and logos. The scan saves its progress locally and resumes when the workspace reopens. New company records are queued as they are collected. Public lookups use organization names and published URLs. Ambiguous matches can be resolved by collecting the official page yourself.
 
 ## Local files and security
 
 The folder's `world.sqlite` and retained `blobs` remain authoritative. Opening a workspace does not import, reset, migrate between browser origins, or rewrite the user's 3D records. Normal schema migration and verified backup/recovery controls remain in the app's existing storage layer.
 
-The renderer has context isolation, process sandboxing, web security, and no Node integration. The preload exposes only native workspace information, a folder picker, and revealing the current folder. IPC checks the local window and frame origin; it does not expose arbitrary files, paths, shell commands, or raw Electron APIs. Main-frame navigation is confined to the selected local origin. External HTTP(S) links open in the ordinary browser; unsupported schemes are refused. Microphone permission is limited to the local app's explicit audio request and still requires the operating system's consent. Camera and unrelated permissions are denied.
+The renderer has context isolation, process sandboxing, web security, and no Node integration. The workspace preload exposes native workspace information, a folder picker, showing the current folder, and opening the floating capture control. IPC checks the local window and frame origin; it does not expose arbitrary files, paths, shell commands, or raw Electron APIs. Main-frame navigation is confined to the selected local origin. External HTTP(S) links open in the ordinary browser; unsupported schemes are refused. Microphone permission is limited to the local app's explicit audio request and still requires the operating system's consent. Camera and unrelated permissions are denied.
 
 The application bundle contains public built assets, application source/runtime dependencies, the official Electron runtime, and a checksum-verified official Node executable. It excludes `.env.local`, personal SQLite databases, original blob directories, and local service credentials. Google OAuth credentials, if configured, stay in the selected workspace's private connection file rather than in the application download.
 
@@ -40,7 +48,7 @@ The installed development packages are pinned to Electron **45.4.1** and `@elect
 
 The native icon and 192/512 px maskable web icons derive from the supplied NASA Earth photograph, without adding a NASA logo. The globe remains within the maskable safe area. The generated `.icns` and build intermediates remain under ignored `data/desktop`; web icons live under `public/brand`.
 
-Packaging builds and verifies a canonical app in a temporary directory, creates an atomic ZIP, then copies the app to the local release folder. Only generated Finder display metadata may be removed during this process; quarantine and security provenance attributes are not cleared. The fixed download endpoint serves only the built public archive and rejects foreign origins and arbitrary file paths.
+Packaging builds the app in a temporary directory and starts its bundled Node service with an empty test workspace. It checks that the service serves the workspace page and local API, verifies the app signature, creates an atomic ZIP, and copies the build to the local release folder. Only generated Finder display metadata may be removed during this process; quarantine and security provenance attributes are not cleared. The fixed download endpoint serves only the built public archive and rejects foreign origins and arbitrary file paths.
 
 Outputs:
 
@@ -63,3 +71,11 @@ Implementation: [native main process](../electron/main.cjs), [preload](../electr
 Official references: [Electron security](https://www.electronjs.org/docs/latest/tutorial/security/), [context isolation](https://www.electronjs.org/docs/latest/tutorial/context-isolation/), and [application packaging](https://www.electronjs.org/docs/latest/tutorial/application-distribution/).
 
 The native launcher keeps its current service alive until a replacement is ready and native navigation succeeds. A service failure or unsaved-writing navigation cancellation restores the preceding workspace/context. Microphone checks and requests both enforce the local audio-only boundary; rejected OS prompts and workspace changes deny the pending request. See [launcher regressions](../tests/desktop/main.test.ts). The [static-server check](../tests/desktop/server.test.ts) verifies that canonical static paths and fallback HTML remain inside the bundled client directory; desktop downloads reject symbolic-link archives. Electron documents the paired permission handlers in its [session API](https://www.electronjs.org/docs/latest/api/session).
+
+## Apple Photos in Maps
+
+Choose **Connect Apple Photos** in Maps and respond to the macOS Photos permission dialog. Worldview reads the visible library’s geotagged images, their capture dates, original filenames and album names. Hidden assets are skipped. The scan runs in batches against a stable selection. Opening an individual photo on the map requests a small local preview.
+
+Optional visual indexing uses Apple Vision to suggest subject labels from previews already on the Mac. Search covers saved metadata and these labels. Worldview keeps the resulting index in the selected workspace. Access can be changed in **System Settings → Privacy & Security → Photos**.
+
+Mac packaging compiles the PhotoKit connector with the Command Line Tools and Node-API headers. For a development checkout, run `node scripts/desktop/build-photo-places.mjs` before starting Electron. A packaged app carries the compiled connector.

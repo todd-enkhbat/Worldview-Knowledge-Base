@@ -67,3 +67,31 @@ it('matches a LinkedIn school People page to its existing institution without cr
   const draft = await capture.stage({ requestId: 'school-capture', url: 'https://www.linkedin.com/school/example-university/people/', title: 'Example University', text: 'Example University\nWhere they studied\nOther University 20', profile: { entityType: 'company', name: 'Example University', affiliations: [] } })
   expect(draft.matches).toMatchObject([{ id: 'school', collection: 'companies' }]); expect(draft.targetId).toBe('school'); expect(draft.profile.affiliations).toEqual([]); expect(db.crm.rows('companies')).toHaveLength(1)
 })
+
+it('enriches a named company from its official homepage and keeps unrelated websites out of the record', async () => {
+  const { enrichWebsite } = await import('../../server/crmWebsiteEnrichment.ts')
+  const site = 'https://northstar.example.org/'
+  const homepage = '<head><title>Northstar | Ventures</title><meta name="description" content="Seed investor"/><link rel="apple-touch-icon" href="/logo.png"/></head><main><h1>Investing in founders</h1><a href="https://www.linkedin.com/company/northstar/">Our company</a><a href="https://www.linkedin.com/company/unrelated/">Portfolio</a></main>'
+  const fetcher = vi.fn<typeof fetch>(async () => new Response(homepage, { headers: { 'content-type': 'text/html' } }))
+  const collect = new CrmProfileCollection({ db, capture, blobDir: directory, fetch: fetcher, lookup: publicLookup })
+  db.crm.command({ operation: 'create', collection: 'companies', requestId: 'company', record: { id: 'c1', name: 'Northstar', description: 'Private investment notes' } })
+  const services = { collect, capture, store: db.crm, media: null }
+  const args = { type: 'company', url: site, targetId: 'c1', requestId: 'company-site' }
+  const result = await enrichWebsite(services, args, () => {})
+  expect(result).toMatchObject({ status: 'saved', record: { id: 'c1', description: 'Private investment notes', urls: [site, 'https://www.linkedin.com/company/northstar/'] } })
+  expect(await enrichWebsite(services, args, () => {})).toMatchObject({ status: 'saved', record: { id: 'c1' } })
+  expect(db.crm.rows('companies')).toHaveLength(1)
+  expect(fetcher).toHaveBeenCalledOnce()
+})
+
+it('identifies a new official homepage by its business identity and fills sparse company schema with homepage metadata', async () => {
+  const { profileFromHtml } = await import('../../server/crmProfileExtract.ts')
+  const sourceUrl = 'https://get-orchid.example/'
+  const head = '<meta property="og:site_name" content="Orchid Labs"><meta name="description" content="We build optical instruments."><link rel="icon" href="/vector.svg"><link rel="icon" href="/orchid.png">'
+  const home = '<head>' + head + '</head><main><h1>Our instruments</h1><a href="https://linkedin.com/company/orchid-labs/">Orchid on LinkedIn</a></main>'
+  expect(profileFromHtml(home, sourceUrl).profile).toMatchObject({ name: 'Orchid Labs', entityType: 'company', description: 'We build optical instruments.', images: [{url:'https://get-orchid.example/orchid.png'}] })
+  expect(() => profileFromHtml(home.replace('/company/orchid-labs', '/company/some-portfolio-company'), sourceUrl)).toThrow('single verified')
+  const schema = '<script type="application/ld+json">'+JSON.stringify({'@type':'Organization', name:'Orchid Labs', url: sourceUrl})+'</script>'
+  const structured = '<head>'+head+schema+'</head><main>Instrument makers</main>'
+  expect(profileFromHtml(structured, sourceUrl).profile).toMatchObject({ description: 'We build optical instruments.', images: [{url:'https://get-orchid.example/orchid.png'}] })
+})

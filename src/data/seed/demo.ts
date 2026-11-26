@@ -561,6 +561,7 @@ export function buildDemoWorld(T0: number, now: number, opts: BuildDemoOptions =
     const temporalOrigin = originFor(spec, T0, now, scale)
     const record: NodeRecord = {
       id: ids.get(spec.key)!,
+      libraryOrigin: 'example',
       slug: '',
       archetype: spec.archetype,
       title: spec.title,

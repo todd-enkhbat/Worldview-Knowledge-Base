@@ -1,3 +1,4 @@
+import {docTarget,extractApplicationTab} from './applicationDoc.ts'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { constants } from 'node:fs'
 import { mkdir, open, readFile, rename, rm, writeFile } from 'node:fs/promises'
@@ -64,10 +65,14 @@ export class GoogleDriveConnection {
   }
   private scope() { const epoch = this.epoch, generation = this.options.db.getReplacementGeneration(); return () => check(epoch === this.epoch && generation === this.options.db.getReplacementGeneration() && !this.options.db.getKv('importInProgress'), 'The connection or workspace changed. Review this operation again.', 409) }
   private async provider(url: string, init: RequestInit = {}, authenticated = true, beforeSend?: () => void): Promise<Response> {
-    const parsed = new URL(url); check(parsed.protocol === 'https:' && ['www.googleapis.com', 'oauth2.googleapis.com'].includes(parsed.hostname), 'This Google endpoint is not permitted.')
+    const parsed = new URL(url); check(parsed.protocol === 'https:' && (['www.googleapis.com', 'oauth2.googleapis.com'].includes(parsed.hostname) || parsed.hostname==='docs.googleapis.com' && /^\/v1\/documents\/[a-zA-Z0-9_-]+$/.test(parsed.pathname) && !init.method), 'This Google endpoint is not permitted.')
     const headers = new Headers(init.headers); if (authenticated) headers.set('authorization', `Bearer ${await this.access()}`)
     beforeSend?.()
     const response = await (this.options.fetch ?? fetch)(url, { ...init, headers, redirect: 'error', signal: AbortSignal.timeout(30000) })
+    if (response.status===403 && parsed.hostname==='docs.googleapis.com'){
+      const detail=await response.clone().json().catch(()=>null)
+      if(detail?.error?.details?.some((d:{reason?:string})=>d.reason==='SERVICE_DISABLED'))fail('The Google Docs API is disabled for this OAuth client. Enable it in your Google Cloud project to preview a specific tab, or import a text file you export from that tab.',403)
+    }
     if (!response.ok) { if (response.status === 401) fail('Google authorization expired. Disconnect and reconnect your account.', 401); if ([409, 412].includes(response.status)) fail('The Google file changed. Select it again before updating; no retry was sent.', 409); fail(`Google could not complete this request (HTTP ${response.status}). Check its file permissions or reconnect.`, response.status === 403 ? 403 : 502) }
     return response
   }
@@ -81,6 +86,23 @@ export class GoogleDriveConnection {
     check(typeof token.access_token === 'string' && token.access_token.length <= 10000, 'Google did not issue a usable access token.', 502)
     if (typeof token.scope === 'string') check(token.scope.split(/\s+/).every((scope) => scope === GOOGLE_DRIVE_SCOPE), 'Google returned broader permissions than this bridge requested. Reconnect using a dedicated client.', 403)
     const next = { ...state, tokens: { access: token.access_token as string, refresh: state.tokens!.refresh, expiresAt: this.now() + Math.max(60, Math.min(86400, Number(token.expires_in) || 3600)) * 1000 } }; await this.persist(next); current(); return next.tokens.access
+  }
+  async applicationTab(link:string,account:string) {
+    const current=this.scope(), target=docTarget(link)
+    if(account){
+      const profile=await (await this.provider('https://www.googleapis.com/drive/v3/about?fields=user(emailAddress)')).json()
+      if(profile.user?.emailAddress?.toLowerCase()!==account.toLowerCase())throw Error('The selected-file connection belongs to a different account. Connect the requested Drive account for read-only discovery.')
+    }
+    const raw=await this.provider('https://docs.googleapis.com/v1/documents/'+target.id+'?includeTabsContent=true')
+    const bytes=await this.bytes(raw,8*1024*1024)
+    const doc=extractApplicationTab(JSON.parse(Buffer.from(bytes).toString('utf8')),target.tab)
+    current()
+    return {...doc,source:target.source,confirmation:false,date:''}
+  }
+  async discoveryClient() {
+    const config = await this.load()
+    if (!config.clientId) throw Error('Configure a Google OAuth client under Sources → Google Drive first.')
+    return { id:config.clientId, secret:config.clientSecret, desktop:config.clientType !== 'web', redirects:config.redirectUris || [] }
   }
   async status() { const state = await this.load(), desktop = state.clientType !== 'web', selection = this.selection; return { available: true, configured: !!state.clientId, connected: !!state.tokens, connectionRevision: this.epoch, authorizationRevision: this.authorizationRevision, authorizationResult: this.authorizationResult, pickerMode: desktop ? 'desktop' : 'web', pickerConfigured: desktop ? !!state.clientId : !!state.pickerKey && !!state.appId, ...(selection && selection.epoch === this.epoch && selection.generation === this.options.db.getReplacementGeneration() && selection.expiresAt > this.now() ? { selection: { id: selection.id, fileIds: selection.fileIds } } : {}), scope: GOOGLE_DRIVE_SCOPE, connectedAt: state.connectedAt ?? null, importLimit: DRIVE_IMPORT_LIMIT, exportLimit: DRIVE_EXPORT_LIMIT, setupUrl: 'https://console.cloud.google.com/auth/overview/personal', credentialsStored: 'private-local-service-file', aiRequired: false } }
   async configure(input: Record<string, unknown>) {

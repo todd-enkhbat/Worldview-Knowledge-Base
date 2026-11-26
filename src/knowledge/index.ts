@@ -372,7 +372,7 @@ function passagesFor(source: KnowledgeSource, version: SourceVersion, parsed: Pa
 // Only the serial command queue sets this while assembling a source version.
 let activeSnapshot: KnowledgeSnapshot | null = null
 
-async function addVersion(snapshot: KnowledgeSnapshot, source: KnowledgeSource, parsed: ParsedSource, originalBlobId: string, originalName: string, origin: SourceVersion['origin']): Promise<boolean> {
+async function addVersion(snapshot: KnowledgeSnapshot, source: KnowledgeSource, parsed: ParsedSource, originalBlobId: string, originalName: string, origin: SourceVersion['origin'], trackOriginalChanges = false): Promise<boolean> {
   const identity = portableIdentity(parsed)
   if (identity) assertPortableImportAllowed(snapshot, [parsed])
   const contentHash = identity?.contentHash ?? await knowledgeHash(JSON.stringify({ text: parsed.text, messages: parsed.messages.map(({ id, parentId, role, authoredAt, start, end }) => ({ id, parentId, role, authoredAt, start, end })) }))
@@ -382,7 +382,7 @@ async function addVersion(snapshot: KnowledgeSnapshot, source: KnowledgeSource, 
     if (identity.isCurrent && source.currentVersionId !== existingVersion.id) { source.currentVersionId = existingVersion.id; source.updatedAt = Math.max(source.updatedAt, identity.sourceUpdatedAt); source.title = parsed.title; return true }
     return false
   }
-  if (!identity && current?.contentHash === contentHash && current.text === parsed.text) return false
+  if (!identity && current?.contentHash === contentHash && current.text === parsed.text && (!trackOriginalChanges || current.originalBlobId === originalBlobId)) return false
   const metadata = { ...(parsed.metadata ?? {}) }
   delete metadata.portableIdentity; delete metadata.portablePassages; delete metadata.portableInvestigations
   const version: SourceVersion = { id: identity?.versionId ?? crypto.randomUUID(), sourceId: source.id, contentHash, originalBlobId, originalName, text: parsed.text, createdAt: identity?.createdAt ?? Date.now(), authoredAt: parsed.authoredAt, origin, previousVersionId: identity ? identity.previousVersionId : current?.id, metadata }
@@ -640,7 +640,7 @@ function legacyRole(node: NodeRecord): Authorship {
 }
 
 /** Publish already-retained capture bytes through the same version/projection commands. */
-export function ingestRetainedSource(parsed: ParsedSource, opts: { originalBlobId: string; originalName: string; origin?: SourceVersion['origin']; aiGenerated?: boolean; project?: boolean; shouldWrite?: () => boolean }): Promise<KnowledgeSource> {
+export function ingestRetainedSource(parsed: ParsedSource, opts: { originalBlobId: string; originalName: string; origin?: SourceVersion['origin']; trackOriginalChanges?: boolean; aiGenerated?: boolean; project?: boolean; shouldWrite?: () => boolean }): Promise<KnowledgeSource> {
   return serial(async () => {
     if (opts.shouldWrite && !opts.shouldWrite()) throw new Error('This capture changed while its transcript was being prepared.')
     const snapshot = await readWriteSnapshot()
@@ -653,7 +653,7 @@ export function ingestRetainedSource(parsed: ParsedSource, opts: { originalBlobI
     const imported = sourceForParsed(snapshot, parsed, { occupiedNodeIds: [...world.nodes.keys(), ...world.trash.keys(), ...world.excluded.keys()] })
     const source = imported.source
     if (imported.created && !portableIdentity(parsed)) source.tags = topicWords(parsed.text)
-    const changed = await addVersion(snapshot, source, parsed, opts.originalBlobId, opts.originalName, opts.origin ?? 'capture')
+    const changed = await addVersion(snapshot, source, parsed, opts.originalBlobId, opts.originalName, opts.origin ?? 'capture', opts.trackOriginalChanges)
     if (opts.shouldWrite && !opts.shouldWrite()) throw new Error('This capture changed before its transcript could be published.')
     if (changed || imported.policyChanged) {
       if (opts.project !== false) source.pendingProjection = true

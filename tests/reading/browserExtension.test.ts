@@ -11,19 +11,21 @@ function area() {
 
 it('limits permissions to explicit tabs plus local service access and queues offline captures without leaking tokens to content scripts', async () => {
   const manifest = JSON.parse(readFileSync('extensions/worldview-reader/manifest.json', 'utf8'))
-  expect(manifest.permissions).toEqual(['activeTab', 'scripting', 'storage'])
+  expect(manifest.permissions).toEqual(['activeTab', 'scripting', 'storage', 'alarms'])
   expect(manifest.content_scripts).toBeUndefined(); expect(manifest.externally_connectable).toBeUndefined()
   expect(manifest.host_permissions).toEqual(['http://localhost/*', 'http://127.0.0.1/*'])
   const local = area(), session = area(), listeners: Record<string, (...args: unknown[]) => unknown> = {}
   const extensionId = 'a'.repeat(32), popup = `chrome-extension://${extensionId}/popup.html`
-  const chrome = { storage: { local, session }, runtime: { id: extensionId, getURL: (path: string) => `chrome-extension://${extensionId}/${path}`, onMessage: { addListener: (callback: (...args: unknown[]) => unknown) => { listeners.message = callback } } }, action: { setBadgeText: vi.fn(async () => {}), setBadgeBackgroundColor: vi.fn(async () => {}) }, tabs: { get: async () => ({ active: true, url: article.url }), sendMessage: vi.fn(async () => ({ ok: true })), onRemoved: { addListener: (callback: (...args: unknown[]) => unknown) => { listeners.removed = callback } }, onUpdated: { addListener: (callback: (...args: unknown[]) => unknown) => { listeners.updated = callback } } }, scripting: { executeScript: vi.fn(async () => [{ result: article }]) } }
+  const alarms = { get: vi.fn(async () => null), clear: vi.fn(async () => true), create: vi.fn(async () => {}), onAlarm: { addListener: (callback: (...args: unknown[]) => unknown) => { listeners.alarm = callback } } }
+  const chrome = { alarms, storage: { local, session }, runtime: { id: extensionId, getURL: (path: string) => `chrome-extension://${extensionId}/${path}`, onMessage: { addListener: (callback: (...args: unknown[]) => unknown) => { listeners.message = callback } } }, action: { setBadgeText: vi.fn(async () => {}), setBadgeBackgroundColor: vi.fn(async () => {}) }, tabs: { get: async () => ({ active: true, url: article.url }), sendMessage: vi.fn(async () => ({ ok: true })), onRemoved: { addListener: (callback: (...args: unknown[]) => unknown) => { listeners.removed = callback } }, onUpdated: { addListener: (callback: (...args: unknown[]) => unknown) => { listeners.updated = callback } } }, scripting: { executeScript: vi.fn(async () => [{ result: article }]) } }
   const fetcher = vi.fn<typeof fetch>(async () => { throw new Error('Local service is offline') })
   const script = readFileSync('extensions/worldview-reader/background.js', 'utf8').replace(/^import .*$/m, 'const extractArticle = () => {}; const extractFolkPhotos = () => {}; const extractProfile = () => {}')
   expect(script).not.toMatch(/^await /m)
   new Script(script).runInContext(createContext({ chrome, fetch: fetcher, AbortSignal, crypto, URL, TextEncoder, structuredClone, console }))
   const send = (message: Record<string, unknown>, sender: Record<string, unknown> = { id: extensionId, url: popup }) => new Promise<Record<string, unknown>>((resolve) => listeners.message(message, sender, resolve))
   expect(local.setAccessLevel).toHaveBeenCalledWith({ accessLevel: 'TRUSTED_CONTEXTS' })
-  expect(await send({ type: 'reader-pair', token })).toMatchObject({ ok: true })
+  expect(await send({ type: 'reader-pair', token, port: 80 })).toMatchObject({ ok: false })
+  expect(await send({ type: 'reader-pair', token, port: 5174 })).toMatchObject({ ok: true })
   expect(await send({ type: 'reader-follow', tabId: 7 })).toMatchObject({ ok: true, result: { queued: true } })
   const tracked = (session.values.tracked as Record<number, { nonce: string }>)[7]
   const progress = { type: 'reading-progress', nonce: tracked.nonce, url: article.url, progress: { fraction: .3, position: 120, activeMs: 15000, following: true } }
@@ -34,7 +36,10 @@ it('limits permissions to explicit tabs plus local service access and queues off
   expect(await send({ ...progress, nonce: 'forged' }, { id: extensionId, url: article.url, tab: { id: 7 } })).toMatchObject({ ok: false })
   expect(local.values.outbox).toHaveLength(2)
   fetcher.mockImplementation(async (_url, options) => { const payload = JSON.parse(String(options?.body)); return new Response(JSON.stringify({ sourceId: 'source', versionId: 'version', sequence: payload.sequence })) })
-  expect(await send({ type: 'reader-retry' })).toMatchObject({ ok: true })
+  expect(alarms.create).toHaveBeenCalledWith('worldview-pending-captures', { delayInMinutes: 1, periodInMinutes: 1 })
+  listeners.alarm({ name: 'worldview-pending-captures' })
+  await send({ type: 'reader-status' })
+  expect(fetcher.mock.calls.every(([address]) => String(address).startsWith('http://127.0.0.1:5174/'))).toBe(true)
   expect(local.values.outbox).toEqual([])
   const responsesToContent = await send(progress, { id: extensionId, url: article.url, tab: { id: 7 } })
   expect(JSON.stringify(responsesToContent)).not.toContain(token)
@@ -118,7 +123,7 @@ it('claims an approved connection without exposing its handoff secret or bearer 
   approved = true
   const status = await send({ type: 'reader-status' })
   expect(status).toMatchObject({ paired: true, pendingConnection: false })
-  expect(local.values.pairing).toEqual({ token }); expect(local.values.pendingConnection).toBeUndefined()
+  expect(local.values.pairing).toEqual({ token, port: 5173 }); expect(local.values.pendingConnection).toBeUndefined()
   expect(JSON.stringify(status)).not.toContain(token); expect(JSON.stringify(status)).not.toContain(secret)
   await local.set({ outbox: [{ sequence: 10, title: 'Broken quote', url: article.url }, { sequence: 11, title: 'Retained next capture', url: article.url }] })
   expect(await send({ type: 'reader-discard-one', sequence: 10 })).toMatchObject({ ok: true })

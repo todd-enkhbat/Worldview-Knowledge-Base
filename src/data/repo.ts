@@ -589,7 +589,7 @@ export function createNode(draft: NodeDraftInput, opts: CreateNodeOptions = {}):
     const { store, now: clock } = repo()
     const now = clock()
     const given = Object.fromEntries(Object.entries(draft).filter(([, v]) => v !== undefined)) as NodeDraftInput
-    const base = makeNodeDraft(draft.archetype, { ...given, title: draft.title.trim() }, { now })
+    const base = makeNodeDraft(draft.archetype, { libraryOrigin: 'saved', ...given, title: draft.title.trim() }, { now })
     const slugs = allRecords().map((r) => r.slug)
     let record: NodeRecord = {
       ...base,
@@ -652,7 +652,7 @@ export function addNodes(drafts: readonly NodeDraftInput[], opts: { label?: stri
       for (const draft of drafts) {
         if (draft.id && (w.nodes.has(draft.id) || w.trash.has(draft.id))) continue
         const given = Object.fromEntries(Object.entries(draft).filter(([, v]) => v !== undefined)) as NodeDraftInput
-        const base = makeNodeDraft(draft.archetype, { ...given, title: draft.title.trim() }, { now })
+        const base = makeNodeDraft(draft.archetype, { libraryOrigin: 'saved', ...given, title: draft.title.trim() }, { now })
         const slug = slugify(draft.slug ?? base.title, slugs)
         slugs.push(slug)
         let record: NodeRecord = {

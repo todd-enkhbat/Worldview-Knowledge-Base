@@ -2,7 +2,7 @@ import { Blob as NodeBlob, File as NodeFile } from 'node:buffer'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { createMemoryStore } from '../../src/data/memoryStore.ts'
 import { closeRepo, completeFirstRun, getStore, initRepo, useRepoStatus } from '../../src/data/repo.ts'
-import { archiveBook, archiveBookCollection, BOOKSHELF_KV, createBook, createBookCollection, createBookFromSource, decodeBookshelf, emptyBookshelf, getBookshelfOriginalReferences, initializeBookshelf, renameBookCollection, resetBookshelf, restoreBookRevision, saveBookSnapshot, updateBook, useBookshelf } from '../../src/bookshelf/store.ts'
+import { archiveBook, archiveBookCollection, BOOKSHELF_KV, createBook, createBookCollection, createBookFromSource, decodeBookshelf, emptyBookshelf, getBookshelfOriginalReferences, initializeBookshelf, renameBookCollection, resetBookshelf, restoreBookRevision, saveBookSnapshot, saveAttribution, removeAttribution, updateBook, useBookshelf } from '../../src/bookshelf/store.ts'
 import { readBookshelfOriginal, uploadBookshelfCover } from '../../src/bookshelf/media.ts'
 import { exportBookshelfJSON, importBookshelfFile } from '../../src/bookshelf/portability.ts'
 
@@ -82,4 +82,71 @@ it('links a retained article once and preserves the user’s edited details on s
   expect(useBookshelf.getState().books).toHaveLength(1)
   expect(await getStore().listNodes()).toEqual([])
   resetReading(); resetKnowledge()
+})
+
+it('keeps different editions and articles with identical titles while preserving personal details on edition retries', async () => {
+  const catalog = { workId: 'OL1W', editionId: 'OL2M', authors: [{ id: 'OL5A', name: 'A Writer' }], editionLabel: 'First edition', publisher: 'Press', language: 'eng', coverId: null }
+  const book = await createBook({ title: 'A story', authors: ['A Writer'], catalog, notes: 'First notes' })
+  const same = await createBook({ title: 'Retitled edition', authors: ['A Writer'], catalog })
+  const next = await createBook({ title: 'A story', authors: ['A Writer'], catalog: { ...catalog, editionId: 'OL3M' } })
+  const csv = 'Book Id,Title,Author,Exclusive Shelf,My Review\n333,Another title,A Writer,read,A note\n444,Another title,A Writer,read,Second edition'
+  const file = new NodeFile([csv], 'goodreads_library_export.csv', { type: 'text/csv' }) as unknown as File
+  await createBook({ title: 'A story', authors: ['A Writer'], kind: 'article' })
+  expect(same.id).toBe(book.id); expect(same.notes).toBe('First notes')
+  expect(next.id).not.toBe(book.id)
+  expect((await importBookshelfFile(file)).receipt.added).toBe(2)
+  expect((await importBookshelfFile(file)).receipt.skipped).toBe(2)
+  const historical = await createBook({ title: 'A legacy book' })
+  expect((await updateBook(historical.id, { catalog: { ...catalog, editionId: 'OL45M' } }, historical.updatedAt)).catalog?.editionId).toBe('OL45M')
+  expect(useBookshelf.getState().books).toHaveLength(6)
+})
+
+
+it('links a selected edition to an existing equivalent ISBN while retaining the original details in history', async () => {
+  const original = await createBook({ title: 'Personal title', isbn: '0-14-032724-X', notes: 'Mine', rating: 5 })
+  const catalog = { workId: 'OL1W', editionId: 'OL7M', authors: [], editionLabel: 'Paper', publisher: '', language: '', coverId: null }
+  const linked = await createBook({ title: 'Catalog title', isbn: '9780140327243', catalog, pages: 145 })
+  expect(linked).toMatchObject({ id: original.id, title: 'Personal title', notes: 'Mine', rating: 5, pages: 145, catalog })
+  expect(useBookshelf.getState().books).toHaveLength(1)
+  expect(useBookshelf.getState().history.at(-1)?.book.catalog).toBeUndefined()
+  const invalid = await createBook({ title: 'Mistyped ISBN', isbn: '0140327241' })
+  expect(invalid.id).not.toBe(linked.id)
+})
+
+it('pins an existing edition to a retained text version and prevents duplicate and stale assignments', async () => {
+  const { attachBookText } = await import('../../src/bookshelf/store.ts')
+  const db = getStore()
+  await db.putKv('knowledge.v1', {
+    sources: [{ id: 's1', title: 'Owned text', currentVersionId: 'v2' }, { id: 's2', title: 'Different text', currentVersionId: 'v3' }],
+    versions: [{ id: 'v1', sourceId: 's1', text: 'First edition' }, { id: 'v2', sourceId: 's1', text: 'Revised edition' }, { id: 'v3', sourceId: 's2', text: 'Other edition' }, { id: 'v4', sourceId: 's2', text: ' ' }],
+  })
+  const book = await createBook({ title: 'Catalog edition', notes: 'My notes' }), second = await createBook({ title: 'Other copy' })
+  await expect(attachBookText(book.id,'s1','v3',book.updatedAt)).rejects.toThrow(/unavailable/)
+  await expect(attachBookText(book.id,'s2','v4',book.updatedAt)).rejects.toThrow(/unavailable/)
+  const linked = await attachBookText(book.id,'s1','v1',book.updatedAt)
+  expect(linked).toMatchObject({ id: book.id, sourceId: 's1', sourceVersionId: 'v1', notes: 'My notes' })
+  expect((await attachBookText(book.id,'s1','v1',book.updatedAt)).updatedAt).toBe(linked.updatedAt)
+  await expect(attachBookText(second.id,'s1','v1',second.updatedAt)).rejects.toThrow(/already attached/)
+  await expect(attachBookText(book.id,'s1','v2',book.updatedAt)).rejects.toThrow(/changed/)
+  expect((await attachBookText(second.id,'s1','v2',second.updatedAt)).id).toBe(second.id)
+  expect((await createBookFromSource('s1')).id).toBe(second.id)
+  const snapshot = decodeBookshelf(await db.getKv(BOOKSHELF_KV))
+  expect(snapshot.books).toHaveLength(2)
+  expect(snapshot.history.find((entry) => entry.bookId === book.id && entry.label === 'Before attaching retained text')?.book.sourceVersionId).toBeUndefined()
+})
+
+it('keeps an attribution for an unshelved work through duplicate clicks, removal and portable import', async () => {
+  const entry = { title: 'New work', author: 'Another author', name: 'Reading Circle', kind: 'Institution' as const,
+    relation: 'Recommended' as const, scope: 'work' as const, url: 'https://example.org/list', isbn: '', editionId: '' }
+  await Promise.all([saveAttribution(entry), saveAttribution(entry)])
+  const saved = useBookshelf.getState().attributions!
+  expect(saved).toHaveLength(1)
+  expect(useBookshelf.getState().books).toHaveLength(0)
+  const exportFile = new NodeFile([await (await exportBookshelfJSON()).text()], 'bookshelf.json', { type: 'application/json' }) as unknown as File
+  await removeAttribution(saved[0].id)
+  expect(useBookshelf.getState().attributions).toEqual([])
+  await importBookshelfFile(exportFile)
+  await importBookshelfFile(exportFile)
+  expect(useBookshelf.getState().attributions).toEqual(saved)
+  expect(useBookshelf.getState().books).toHaveLength(0)
 })

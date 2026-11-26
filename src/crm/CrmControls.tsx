@@ -1,21 +1,32 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { X } from '@phosphor-icons/react'
-import { getStore, getWorldGeneration, isRepoReady } from '../data/repo.ts'
+import { getStore, getWorldGeneration, isRepoReady, useRepoStatus } from '../data/repo.ts'
 
-export function CrmAvatar({ name, assetId, size = 30 }: { name: string; assetId?: string | null; size?: number }) {
-  const [portrait, setPortrait] = useState({ assetId: '', url: '' })
+const portraitPalette = [['#e5ebe4','#405b47'],['#eee4d9','#76553a'],['#e4e8ef','#4f607d'],['#efe2e2','#895856'],['#e9e4ee','#725d84'],['#e6e9df','#65704e']]
+const raster = new Set(['image/png','image/jpeg','image/webp','image/gif','image/avif'])
+export function CrmAvatar({ name, assetId, size = 30, organization = false }: { name: string; assetId?: string | null; size?: number; organization?:boolean }) {
+  const ready = useRepoStatus(s=>s.ready)
+  const store = assetId && isRepoReady() ? getStore() : null, generation = getWorldGeneration()
+  const [portrait, setPortrait] = useState<{assetId:string; url:string; store:typeof store; generation:number} | null>(null)
   useEffect(() => {
-    if (!assetId || !isRepoReady()) return
-    let alive = true, objectUrl = ''; const store = getStore(), generation = getWorldGeneration()
-    void store.getBlob(assetId).then((blob) => { if (alive && blob?.type.startsWith('image/') && isRepoReady() && store === getStore() && generation === getWorldGeneration()) { objectUrl = URL.createObjectURL(blob); setPortrait({ assetId, url: objectUrl }) } }).catch(() => {})
-    return () => { alive = false; if (objectUrl) URL.revokeObjectURL(objectUrl) }
-  }, [assetId])
-  const initials = name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase()
-  const url = portrait.assetId === assetId ? portrait.url : ''
-  const palette = [['#e5ebe4','#405b47'],['#eee4d9','#76553a'],['#e4e8ef','#4f607d'],['#efe2e2','#895856'],['#e9e4ee','#725d84'],['#e6e9df','#65704e']]
+    if (!assetId || !store) return
+    let alive = true, objectUrl = ''
+    void (async () => {
+      const blob = await store.getBlob(assetId)
+      if (!blob) return
+      const mime = blob.type && blob.type !== 'application/octet-stream' ? blob.type : (await store.getAssetMeta(assetId))?.mime
+      if (!alive || !mime || !raster.has(mime) || !isRepoReady() || store !== getStore() || generation !== getWorldGeneration()) return
+      objectUrl = URL.createObjectURL(mime === blob.type ? blob : blob.slice(0,blob.size,mime))
+      setPortrait({assetId,url:objectUrl,store,generation})
+    })().catch(()=>{})
+    return () => { alive=false; if(objectUrl) URL.revokeObjectURL(objectUrl) }
+  }, [assetId,store,generation,ready])
+  const parts = name.trim().split(/\s+/u).filter(Boolean)
+  const initials = [parts[0], parts.length > 1 ? parts.at(-1) : ''].map(part=>Array.from(part || '')[0] || '').join('').toLocaleUpperCase()
   const index = [...name].reduce((hash, part) => (Math.imul(hash, 31) + part.charCodeAt(0)) | 0, 0) >>> 0
-  const [background, color] = palette[index % palette.length]
-  return <span className="crm-avatar" style={{ width: size, height: size, fontSize: Math.max(10, size * .32), '--crm-avatar-background': background, '--crm-avatar-color': color } as CSSProperties} aria-hidden="true">{url ? <img src={url} alt="" onError={() => setPortrait({ assetId: '', url: '' })} /> : initials || '·'}</span>
+  const [background, color] = portraitPalette[index % portraitPalette.length]
+  const url = portrait && portrait.assetId === assetId && portrait.store === store && portrait.generation === generation ? portrait.url : ''
+  return <span className={'crm-avatar' + (organization ? ' is-organization' : '')} style={{width:size,height:size,fontSize:Math.max(10,size*.32),'--crm-avatar-background':background,'--crm-avatar-color':color} as CSSProperties} aria-hidden="true">{url ? <img src={url} alt="" onError={()=>setPortrait(null)} /> : initials || '·'}</span>
 }
 export function CrmDialog({ title, children, onClose, wide = false }: { title: string; children: ReactNode; onClose: () => void; wide?: boolean }) {
   const ref = useRef<HTMLDialogElement>(null), close = useRef(onClose)

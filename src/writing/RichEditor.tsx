@@ -1,3 +1,5 @@
+import { SelectionConcepts, type ConceptActions } from './SelectionConcepts.tsx'
+import type { ConceptTerm } from './concepts.ts'
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { EditorContent, useEditor, useEditorState, type Editor } from '@tiptap/react'
 import type { ChainedCommands } from '@tiptap/core'
@@ -13,6 +15,7 @@ export interface RichEditorProps {
   documentId: string
   content: WritingNode
   onChange: (content: WritingNode) => void
+  variant?: 'document' | 'notebook'
   editable?: boolean
   preview?: boolean
   header?: ReactNode
@@ -20,7 +23,8 @@ export interface RichEditorProps {
   onReady?: (editor: Editor) => void
   onUpload?: (files: File[], editor: Editor) => Promise<void>
   onInsertEmbed?: (editor: Editor) => void
-  topics?: { id: string; label: string }[]
+  topics?: ConceptTerm[]
+  conceptActions?: ConceptActions
 }
 type SlashState = { from: number; to: number; query: string; active: number }
 type MenuCommand = { id: string; label: string; hint: string; run: (editor: Editor) => void }
@@ -39,7 +43,9 @@ function signature(content: WritingNode): string {
 export function RichEditor(props: RichEditorProps) { return <EditorSession key={props.documentId} {...props} /> }
 export default RichEditor
 
-function EditorSession({ content, onChange, editable = true, preview = false, header, footer, onReady, onUpload, onInsertEmbed, topics = [] }: RichEditorProps) {
+function EditorSession({ content, onChange, variant = 'document', editable = true, preview = false, header, footer, onReady, onUpload, onInsertEmbed, topics = [], conceptActions }: RichEditorProps) {
+  const notebook = variant === 'notebook'
+  const hasConcepts = !!conceptActions
   const initial = useRef<WritingNode | null>(null)
   if (!initial.current) { try { initial.current = validateWritingContent(normalizedWritingJSON(content)) } catch { initial.current = emptyWritingContent() } }
   const saved = useRef(initial.current), bookmark = useRef<Bookmark | null>(null), touched = useRef(false)
@@ -51,10 +57,12 @@ function EditorSession({ content, onChange, editable = true, preview = false, he
   const [dialog, setDialog] = useState<'link' | 'embed' | 'footnote' | null>(null), [url, setUrl] = useState('')
   const urlInput = useRef<HTMLInputElement | HTMLTextAreaElement>(null), fileInput = useRef<HTMLInputElement>(null)
   const topicsRef = useRef(topics)
+  const conceptButton = useRef<HTMLButtonElement>(null)
+  const selectionMenu = useRef<HTMLDivElement>(null)
   useLayoutEffect(() => { topicsRef.current = topics }, [topics])
-  const extensions = useMemo(() => writingExtensions({ topics: () => topicsRef.current }), [])
+  const extensions = useMemo(() => writingExtensions({ topics: () => topicsRef.current, placeholder: notebook ? 'Write a reading note…' : undefined }), [notebook])
   const dialogId = useId()
-  const [slash, setSlash] = useState<SlashState | null>(null), [bubble, setBubble] = useState<{ top: number; left: number } | null>(null), [slashPosition, setSlashPosition] = useState<{ top: number; left: number } | null>(null)
+  const [slash, setSlash] = useState<SlashState | null>(null), [bubble, setBubble] = useState<{ top: number; bottom: number; center: number } | null>(null), [slashPosition, setSlashPosition] = useState<{ top: number; left: number } | null>(null)
   const [showSections, setShowSections] = useState(false), [sectionVersion, setSectionVersion] = useState(0)
   const sectionOpen = useRef(false)
   useLayoutEffect(() => { sectionOpen.current = showSections }, [showSections])
@@ -65,7 +73,10 @@ function EditorSession({ content, onChange, editable = true, preview = false, he
     if (current.isDestroyed || !callbacks.current.canEdit) { setBubble(null); setSlashMenu(null); return }
     const { selection } = current.state
     if (!selection.empty && !('node' in selection)) {
-      try { const start = current.view.coordsAtPos(selection.from), end = current.view.coordsAtPos(selection.to); setBubble({ top: Math.max(8, start.top - 46), left: Math.max(12, Math.min(window.innerWidth - 225, (start.left + end.left) / 2 - 105)) }) } catch { setBubble(null) }
+      try {
+        const start = current.view.coordsAtPos(selection.from), end = current.view.coordsAtPos(selection.to)
+        setBubble({ top: start.top, bottom: end.bottom, center: (start.left + end.left) / 2 })
+      } catch { setBubble(null) }
     } else setBubble(null)
     if (!selection.empty || !selection.$from.parent.isTextblock || current.isActive('codeBlock')) { setSlashMenu(null); return }
     const text = selection.$from.parent.textBetween(0, selection.$from.parentOffset, '\n', '\ufffc'), match = /^\/([\w -]{0,35})$/.exec(text)
@@ -76,6 +87,30 @@ function EditorSession({ content, onChange, editable = true, preview = false, he
     setSlashMenu(next)
     try { const rect = current.view.coordsAtPos(selection.from); setSlashPosition({ top: Math.min(window.innerHeight - 285, Math.max(8, rect.bottom + 8)), left: Math.max(12, Math.min(window.innerWidth - 285, rect.left)) }) } catch { setSlashPosition({ top: 140, left: 20 }) }
   }, [setSlashMenu])
+  useLayoutEffect(() => {
+    const menu = selectionMenu.current
+    if (!menu || !bubble) return
+    function position() {
+      if (!menu || !bubble || getComputedStyle(menu).position !== 'fixed') return
+      // Anchor to the visible modal as well as the viewport. Subtract the actual
+      // fixed positioning origin when an ancestor establishes its own coordinate space.
+      const modal = menu.closest('dialog[open]')?.getBoundingClientRect()
+      const left = Math.max(0, modal?.left ?? 0) + 8, right = Math.min(window.innerWidth, modal?.right ?? window.innerWidth) - 8
+      const top = Math.max(0, modal?.top ?? 0) + 8, bottom = Math.min(window.innerHeight, modal?.bottom ?? window.innerHeight) - 8
+      menu.style.maxWidth = Math.max(0, right - left) + 'px'
+      menu.style.maxHeight = Math.max(0, bottom - top) + 'px'
+      menu.style.left = '0px'; menu.style.top = '0px'
+      const rect = menu.getBoundingClientRect()
+      const x = Math.max(left, Math.min(right - rect.width, bubble.center - rect.width / 2))
+      const preferredY = bubble.top - rect.height - 6
+      const y = Math.max(top, Math.min(bottom - rect.height, preferredY >= top ? preferredY : bubble.bottom + 6))
+      menu.style.left = (x - rect.left) + 'px'; menu.style.top = (y - rect.top) + 'px'
+    }
+    position()
+    const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(position) : null
+    observer?.observe(menu)
+    return () => { observer?.disconnect(); menu.style.removeProperty('max-width'); menu.style.removeProperty('max-height'); menu.style.removeProperty('left'); menu.style.removeProperty('top') }
+  }, [bubble, dialog])
   useLayoutEffect(() => { callbacks.current = { onChange, onReady, onUpload, onInsertEmbed, canEdit: editable && !preview } }, [onChange, onReady, onUpload, onInsertEmbed, editable, preview])
   useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
 
@@ -97,12 +132,27 @@ function EditorSession({ content, onChange, editable = true, preview = false, he
     extensions, content: saved.current, editable: editable && !preview,
     immediatelyRender: false, shouldRerenderOnTransaction: false,
     editorProps: {
-      attributes: { class: 'writing-rich-body', role: 'textbox', 'aria-label': 'Document body', 'aria-multiline': 'true', 'aria-readonly': String(!editable || preview), spellcheck: 'true' },
+      attributes: { class: 'writing-rich-body', role: 'textbox', 'aria-label': notebook ? 'Reading note' : 'Document body', 'aria-multiline': 'true', 'aria-readonly': String(!editable || preview), spellcheck: 'true' },
       transformPastedHTML(html) {
         if (/<(?:img|iframe|video|audio|object|embed|svg)\b/i.test(html)) setNotice('Pasted remote media was omitted. Upload a local file or use a video link.')
         return sanitizeWritingPasteHTML(html)
       },
-      handleKeyDown(_view, event) { if (event.key === 'Escape' && !slashState.current) setBubble(null); return slashHandler.current?.(event) ?? false },
+      handleDOMEvents: {contextmenu(view,event) {
+        if(view.state.selection.empty || !activeEditor.current) return false
+        event.preventDefault();updateOverlays(activeEditor.current);requestAnimationFrame(()=>conceptButton.current?.focus());return true
+      }},
+      handleKeyDown(_view, event) {
+        if (conceptButton.current && !event.isComposing) {
+          if ((event.metaKey || event.ctrlKey) && event.shiftKey && !event.altKey && event.key.toLowerCase() === 'k') {
+            event.preventDefault(); conceptButton.current.click(); return true
+          }
+          if ((event.altKey || event.shiftKey) && event.key === 'F10' || event.key === 'ContextMenu') {
+            event.preventDefault(); conceptButton.current.focus(); return true
+          }
+        }
+        if (event.key === 'Escape' && !slashState.current) setBubble(null)
+        return slashHandler.current?.(event) ?? false
+      },
       handlePaste(_view, event) {
         const files = [...(event.clipboardData?.files ?? [])]
         if (!files.length) return false
@@ -152,6 +202,9 @@ function EditorSession({ content, onChange, editable = true, preview = false, he
     },
   }, [])
 
+  useEffect(() => {
+    if (editor && !editor.isDestroyed) editor.view.dispatch(editor.state.tr.setMeta('writing:topic-terms', true))
+  }, [editor, topics])
   useEffect(() => {
     if (!editable || preview) { setDialog(null); setBubble(null); setSlashMenu(null); setShowSections(false) }
     if (!editor || editor.isDestroyed) return
@@ -213,7 +266,7 @@ function EditorSession({ content, onChange, editable = true, preview = false, he
     { id: 'h2', label: 'Heading 2', hint: 'A smaller section', run: (current) => current.chain().focus().setHeading({ level: 2 }).run() },
     { id: 'bullet', label: 'Bullet list', hint: 'Collect a few ideas', run: (current) => current.chain().focus().toggleBulletList().run() },
     { id: 'ordered', label: 'Numbered list', hint: 'One step at a time', run: (current) => current.chain().focus().toggleOrderedList().run() },
-    { id: 'quote', label: 'Quote', hint: 'Give words room', run: (current) => current.chain().focus().setBlockquote().run() },
+    { id: 'quote', label: 'Blockquote', hint: 'Indent a passage', run: (current) => current.chain().focus().setBlockquote().run() },
     { id: 'table', label: 'Table', hint: 'Compare and organize', run: (current) => current.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run() },
     { id: 'divider', label: 'Divider', hint: 'A quiet pause', run: (current) => current.chain().focus().setHorizontalRule().run() },
     { id: 'footnote', label: 'Footnote', hint: 'Keep an aside', run: footnote },
@@ -238,17 +291,25 @@ function EditorSession({ content, onChange, editable = true, preview = false, he
     if (slash) { node.setAttribute('aria-controls', `${dialogId}-slash`); node.setAttribute('aria-autocomplete', 'list'); if (matchingCommands.length) node.setAttribute('aria-activedescendant', `${dialogId}-slash-${matchingCommands[Math.min(slash.active, matchingCommands.length - 1)].id}`); else node.removeAttribute('aria-activedescendant') }
     else { node.removeAttribute('aria-controls'); node.removeAttribute('aria-autocomplete'); node.removeAttribute('aria-activedescendant') }
   }, [editor, slash, dialogId, matchingCommands])
-  useEffect(() => { if (!editor) return; const reposition = () => { if (!editor.isDestroyed && editor.isFocused) updateOverlays(editor); else setBubble(null) }; document.addEventListener('scroll', reposition, true); window.addEventListener('resize', reposition); return () => { document.removeEventListener('scroll', reposition, true); window.removeEventListener('resize', reposition) } }, [editor, updateOverlays])
+  useEffect(() => { if (!editor) return; const reposition = () => { if (!editor.isDestroyed && (editor.isFocused || conceptButton.current?.closest('.writing-selection-menu')?.contains(document.activeElement))) updateOverlays(editor); else setBubble(null) }; document.addEventListener('scroll', reposition, true); window.addEventListener('resize', reposition); return () => { document.removeEventListener('scroll', reposition, true); window.removeEventListener('resize', reposition) } }, [editor, updateOverlays])
   const sections = showSections && editor && !editor.isDestroyed ? writingSections(editor) : []
   void sectionVersion
-  return <div className={`writing-rich-editor ${preview ? 'is-preview' : ''}`}>
-    {!preview && <WritingToolbar editor={editor} disabled={!editable} uploading={uploading} canUpload={!!onUpload} remember={() => { if (editor) remember(editor) }} apply={apply} onLink={openLink} onFootnote={footnote} showSections={showSections} onSections={() => setShowSections((value) => !value)} onPickMedia={pickMedia} onEmbed={() => {
+  return <div className={`writing-rich-editor ${notebook ? 'is-notebook' : ''} ${preview ? 'is-preview' : ''}`}>
+    {!preview && <WritingToolbar notebook={notebook} hasConcepts={hasConcepts} editor={editor} disabled={!editable} uploading={uploading} canUpload={!!onUpload} remember={() => { if (editor) remember(editor) }} apply={apply} onLink={openLink} onFootnote={footnote} showSections={showSections} onSections={() => setShowSections((value) => !value)} onPickMedia={pickMedia} onEmbed={() => {
       if (!editor) return
       remember(editor)
       if (callbacks.current.onInsertEmbed) { restore(editor); callbacks.current.onInsertEmbed(editor) }
       else { setDialog('embed'); setUrl(''); setError('') }
     }} />}
-    {bubble && editable && !preview && !dialog && <div className="writing-selection-menu" role="toolbar" aria-label="Selection formatting" style={bubble} onPointerDownCapture={() => { if (editor) remember(editor) }}>{[['Bold', TextB, () => apply((chain) => chain.toggleBold())], ['Italic', TextItalic, () => apply((chain) => chain.toggleItalic())], ['Highlight', TextUnderline, () => apply((chain) => chain.toggleHighlight({ color: '#fff2a8' }))], ['Link', LinkIcon, openLink]].map(([label, Icon, action]) => { const Symbol = Icon as typeof TextB; return <button key={String(label)} type="button" aria-label={`Selection ${label}`} aria-pressed={label === 'Bold' ? editor?.isActive('bold') : label === 'Italic' ? editor?.isActive('italic') : label === 'Highlight' ? editor?.isActive('highlight') : undefined} title={String(label)} onMouseDown={(event) => event.preventDefault()} onClick={action as () => void}><Symbol size={17} aria-hidden="true" /></button> })}</div>}
+    {bubble && editable && !preview && !dialog && <div ref={selectionMenu} className={`writing-selection-menu ${hasConcepts ? 'has-concepts' : ''}`} role="toolbar" aria-label="Selection formatting" onPointerDownCapture={() => { if (editor) remember(editor) }} onKeyDown={event => {
+      if (event.key === 'Escape' && !event.defaultPrevented) { event.preventDefault(); editor?.commands.focus(undefined, { scrollIntoView: false }); setBubble(null) }
+    }}>
+      {editor && conceptActions && <SelectionConcepts editor={editor} actions={conceptActions} primaryRef={conceptButton} onMessage={setNotice} />}
+      {(!notebook || !hasConcepts) && <div className="writing-selection-format">{[['Bold', TextB, () => apply((chain) => chain.toggleBold())], ['Italic', TextItalic, () => apply((chain) => chain.toggleItalic())], ['Highlight', TextUnderline, () => apply((chain) => chain.toggleHighlight({ color: '#fff2a8' }))], ['Link', LinkIcon, openLink]].map(([label, Icon, action]) => {
+        const Symbol = Icon as typeof TextB
+        return <button key={String(label)} type="button" aria-label={`Selection ${label}`} aria-pressed={label === 'Bold' ? editor?.isActive('bold') : label === 'Italic' ? editor?.isActive('italic') : label === 'Highlight' ? editor?.isActive('highlight') : undefined} title={String(label)} onMouseDown={event => event.preventDefault()} onClick={action as () => void}><Symbol size={17} aria-hidden="true" /></button>
+      })}</div>}
+    </div>}
     {slash && slashPosition && editable && !preview && <div className="writing-slash-menu" id={`${dialogId}-slash`} role="listbox" aria-label="Insert a block" style={slashPosition}><span className="writing-slash-label">Insert a block</span>{matchingCommands.length ? matchingCommands.map((command, index) => <button key={command.id} id={`${dialogId}-slash-${command.id}`} type="button" role="option" aria-selected={Math.min(slash.active, matchingCommands.length - 1) === index} onMouseDown={(event) => event.preventDefault()} onClick={() => executeSlash(command)}><strong>{command.label}</strong><small>{command.hint}</small></button>) : <p>No matching blocks.</p>}<span className="writing-slash-help">↑ ↓ to choose · Enter to insert · Esc to close</span></div>}
     {showSections && !preview && <section className="writing-section-order" aria-label="Reorder document sections"><header><strong>Sections</strong><span>Drag a handle or use the arrows.</span><button type="button" aria-label="Close section ordering" onClick={() => setShowSections(false)}><X size={15} aria-hidden="true" /></button></header>{sections.map((section, index) => <div key={`${section.from}:${section.title}`} onDragOver={(event) => { if (draggedSection.current !== null) event.preventDefault() }} onDrop={(event) => { event.preventDefault(); if (editor && draggedSection.current !== null) moveWritingSection(editor, draggedSection.current, index); draggedSection.current = null }}><button type="button" draggable={editable} disabled={!editable} aria-label={`Drag section ${section.title}`} title="Drag this section" onDragStart={(event) => { draggedSection.current = index; event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', section.title) }} onDragEnd={() => { draggedSection.current = null }}><DotsSixVertical size={18} aria-hidden="true" /></button><span>{section.title}</span><button type="button" disabled={!editable || index === 0} aria-label={`Move ${section.title} up`} onClick={() => { if (editor) moveWritingSection(editor, index, index - 1) }}><ArrowUp size={16} aria-hidden="true" /></button><button type="button" disabled={!editable || index === sections.length - 1} aria-label={`Move ${section.title} down`} onClick={() => { if (editor) moveWritingSection(editor, index, index + 1) }}><ArrowDown size={16} aria-hidden="true" /></button></div>)}</section>}
     {uploadProgress && <div className="writing-upload-progress" role="status"><span>Retaining {uploadProgress.name}</span><progress aria-label="Media files retained" value={uploadProgress.complete} max={uploadProgress.total} /><small>{uploadProgress.complete} of {uploadProgress.total} saved locally</small></div>}
@@ -260,7 +321,7 @@ function EditorSession({ content, onChange, editable = true, preview = false, he
   </div>
 }
 
-function WritingToolbar({ editor, disabled, uploading, canUpload, remember, apply, onLink, onFootnote, showSections, onSections, onPickMedia, onEmbed }: { editor: Editor | null; disabled: boolean; uploading: boolean; canUpload: boolean; remember: () => void; apply: (action: (chain: ChainedCommands) => ChainedCommands) => void; onLink: () => void; onFootnote: () => void; showSections: boolean; onSections: () => void; onPickMedia: (kind: 'image' | 'video' | 'audio') => void; onEmbed: () => void }) {
+function WritingToolbar({ notebook, hasConcepts, editor, disabled, uploading, canUpload, remember, apply, onLink, onFootnote, showSections, onSections, onPickMedia, onEmbed }: { notebook: boolean; hasConcepts: boolean; editor: Editor | null; disabled: boolean; uploading: boolean; canUpload: boolean; remember: () => void; apply: (action: (chain: ChainedCommands) => ChainedCommands) => void; onLink: () => void; onFootnote: () => void; showSections: boolean; onSections: () => void; onPickMedia: (kind: 'image' | 'video' | 'audio') => void; onEmbed: () => void }) {
   const [expanded, setExpanded] = useState(false)
   const state = useEditorState({ editor, selector: ({ editor: current }) => current ? {
     bold: current.isActive('bold'), italic: current.isActive('italic'), underline: current.isActive('underline'), strike: current.isActive('strike'), code: current.isActive('code'), bullet: current.isActive('bulletList'), ordered: current.isActive('orderedList'), link: current.isActive('link'),
@@ -274,6 +335,12 @@ function WritingToolbar({ editor, disabled, uploading, canUpload, remember, appl
   function icon(label: string, Icon: typeof TextB, action: () => void, pressed?: boolean, unavailable = false) {
     return <button type="button" className="writing-format-button" aria-label={label} title={label} aria-pressed={pressed} disabled={off || unavailable} onMouseDown={(event) => event.preventDefault()} onClick={action}><Icon size={18} aria-hidden="true" /></button>
   }
+  if (notebook) return <div className="writing-notebook-toolbar" role="group" aria-label="Note formatting" onPointerDownCapture={remember}>
+    {icon('Bold', TextB, () => apply(chain => chain.toggleBold()), state?.bold)}
+    {icon('Italic', TextItalic, () => apply(chain => chain.toggleItalic()), state?.italic)}
+    {icon('Bullet list', ListBullets, () => apply(chain => chain.toggleBulletList()), state?.bullet)}
+    {hasConcepts && !disabled && <small>Select words to make a concept.</small>}
+  </div>
   const fonts = [{ value: '', label: 'Document font' }, { value: 'Georgia, serif', label: 'Georgia' }, { value: 'Times New Roman, serif', label: 'Times New Roman' }, { value: 'Inter, sans-serif', label: 'Inter' }, { value: 'Arial, sans-serif', label: 'Arial' }, { value: 'JetBrains Mono, monospace', label: 'JetBrains Mono' }]
   const sizes = ['', '8px', '10px', '11px', '12px', '14px', '16px', '18px', '20px', '24px', '28px', '32px', '40px', '48px', '64px', '72px', '96px']
   return <div className={`writing-rich-toolbar ${expanded ? 'is-expanded' : ''}`} role="group" aria-label="Document formatting" onPointerDownCapture={remember} onFocusCapture={remember}>
@@ -284,7 +351,7 @@ function WritingToolbar({ editor, disabled, uploading, canUpload, remember, appl
         if (block !== 'quote' && editor?.isActive('blockquote')) chain = chain.lift('blockquote')
         return block === 'quote' ? chain.setParagraph().setBlockquote() : block === 'code' ? chain.setCodeBlock() : block.startsWith('h') ? chain.setHeading({ level: Number(block.slice(1)) as 1 | 2 | 3 }) : chain.setParagraph()
       })
-    }}><option value="paragraph">Normal text</option><option value="h1">Heading 1</option><option value="h2">Heading 2</option><option value="h3">Heading 3</option>{state?.block && /^h[4-6]$/.test(state.block) && <option value={state.block}>Heading {state.block.slice(1)}</option>}<option value="quote">Quote</option><option value="code">Code block</option></select><select aria-label="Font family" disabled={off} value={state?.family ?? ''} onChange={(event) => { const value = event.target.value; apply((chain) => value ? chain.setFontFamily(value) : chain.unsetFontFamily()) }}>{state?.family && !fonts.some((font) => font.value === state.family) && <option value={state.family}>{state.family}</option>}{fonts.map((font) => <option key={font.value} value={font.value}>{font.label}</option>)}</select><select aria-label="Font size" className="writing-font-size" disabled={off} value={state?.size ?? ''} onChange={(event) => { const value = event.target.value; apply((chain) => value ? chain.setFontSize(value) : chain.unsetFontSize()) }}>{state?.size && !sizes.includes(state.size) && <option value={state.size}>{state.size.replace('px', '')}</option>}{sizes.map((size) => <option key={size} value={size}>{size ? size.replace('px', '') : 'Size'}</option>)}</select></div>
+    }}><option value="paragraph">Normal text</option><option value="h1">Heading 1</option><option value="h2">Heading 2</option><option value="h3">Heading 3</option>{state?.block && /^h[4-6]$/.test(state.block) && <option value={state.block}>Heading {state.block.slice(1)}</option>}<option value="quote">Blockquote</option><option value="code">Code block</option></select><select aria-label="Font family" disabled={off} value={state?.family ?? ''} onChange={(event) => { const value = event.target.value; apply((chain) => value ? chain.setFontFamily(value) : chain.unsetFontFamily()) }}>{state?.family && !fonts.some((font) => font.value === state.family) && <option value={state.family}>{state.family}</option>}{fonts.map((font) => <option key={font.value} value={font.value}>{font.label}</option>)}</select><select aria-label="Font size" className="writing-font-size" disabled={off} value={state?.size ?? ''} onChange={(event) => { const value = event.target.value; apply((chain) => value ? chain.setFontSize(value) : chain.unsetFontSize()) }}>{state?.size && !sizes.includes(state.size) && <option value={state.size}>{state.size.replace('px', '')}</option>}{sizes.map((size) => <option key={size} value={size}>{size ? size.replace('px', '') : 'Size'}</option>)}</select></div>
     <div className="writing-toolbar-group">{icon('Bold', TextB, () => apply((chain) => chain.toggleBold()), state?.bold)}{icon('Italic', TextItalic, () => apply((chain) => chain.toggleItalic()), state?.italic)}{icon('Underline', TextUnderline, () => apply((chain) => chain.toggleUnderline()), state?.underline)}{icon('Strikethrough', TextStrikethrough, () => apply((chain) => chain.toggleStrike()), state?.strike)}{icon('Inline code', Code, () => apply((chain) => chain.toggleCode()), state?.code)}<label className="writing-text-color" title="Text color"><span>A</span><input type="color" aria-label="Text color" disabled={off} value={/^#[a-f\d]{6}$/i.test(state?.color ?? '') ? state!.color : '#292624'} onChange={(event) => { const value = event.target.value; apply((chain) => chain.setColor(value)) }} /></label><select className="writing-highlight-color" aria-label="Highlight color" disabled={off} value={state?.highlight ?? ''} onChange={(event) => { const value = event.target.value; apply((chain) => value ? chain.unsetBackgroundColor().setHighlight({ color: value }) : chain.unsetHighlight().unsetBackgroundColor()) }}>{state?.highlight && !['#fff2a8', '#bfdbfe', '#fecdd3', '#bbf7d0'].includes(state.highlight) && <option value={state.highlight}>Custom highlight</option>}<option value="">Highlight</option><option value="#fff2a8">Yellow</option><option value="#bfdbfe">Blue</option><option value="#fecdd3">Rose</option><option value="#bbf7d0">Green</option></select></div>
     <div className="writing-toolbar-group writing-toolbar-secondary">{icon('Bullet list', ListBullets, () => apply((chain) => chain.toggleBulletList()), state?.bullet)}{icon('Numbered list', ListNumbers, () => apply((chain) => chain.toggleOrderedList()), state?.ordered)}{icon('Align left', TextAlignLeft, () => apply((chain) => chain.setTextAlign('left')), state?.alignment === 'left')}{icon('Align center', TextAlignCenter, () => apply((chain) => chain.setTextAlign('center')), state?.alignment === 'center')}{icon('Align right', TextAlignRight, () => apply((chain) => chain.setTextAlign('right')), state?.alignment === 'right')}{icon('Justify text', TextAlignJustify, () => apply((chain) => chain.setTextAlign('justify')), state?.alignment === 'justify')}</div>
     <div className="writing-toolbar-group">{icon('Edit link', LinkIcon, onLink, state?.link)}{icon('Unlink', LinkBreak, () => apply((chain) => chain.extendMarkRange('link').unsetLink()), undefined, !state?.link)}{icon('Insert divider', Minus, () => apply((chain) => chain.setHorizontalRule()))}</div>

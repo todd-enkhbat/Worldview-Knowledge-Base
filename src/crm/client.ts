@@ -4,8 +4,8 @@ import { canonicalJson, hashText } from '../data/hash.ts'
 import type { CrmBase, CrmCollection, CrmCollectionMap, CrmCommand, CrmCommandResult, CrmCompany, CrmField, CrmFieldValue, CrmGroup, CrmHistory, CrmInteraction, CrmMembership, CrmNote, CrmPerson, CrmRelationship, CrmTask } from './types.ts'
 
 export interface CrmListResult<T = CrmBase> { revision: number; collection: CrmCollection; rows: T[]; total: number; nextOffset: number | null }
-export interface CrmDetail<T = CrmPerson> { revision: number; collection: CrmCollection; record: T; canonicalId?: string; related: { companies: CrmCompany[]; memberships: CrmMembership[]; groups: CrmGroup[]; fields: CrmField[]; fieldValues: CrmFieldValue[]; notes: CrmNote[]; interactions: CrmInteraction[]; tasks: CrmTask[]; relationships: CrmRelationship[]; history: CrmHistory[] } }
-export interface CrmStatus { available: boolean; workspaceFingerprint?: string; revision: number; counts: Record<CrmCollection, { active: number; total: number }>; pendingCandidates: number; pendingProposals: number; dueTasks: number; cloudEnrichment: false; sendingEnabled: false }
+export interface CrmDetail<T = CrmPerson> { revision: number; collection: CrmCollection; record: T; canonicalId?: string; related: { companies: CrmCompany[]; affiliationOrganizations?: CrmCompany[]; companyRoster?: import('./types.ts').CrmCompanyRoster; introductionPaths?: import('./types.ts').CrmIntroductionPath[]; memberships: CrmMembership[]; groups: CrmGroup[]; fields: CrmField[]; fieldValues: CrmFieldValue[]; notes: CrmNote[]; interactions: CrmInteraction[]; tasks: CrmTask[]; relationships: CrmRelationship[]; history: CrmHistory[] } }
+export interface CrmStatus { available: boolean; workspaceFingerprint?: string; lastBrowserSave?: { id: string; kind: 'person' | 'company'; name: string } | null; revision: number; counts: Record<CrmCollection, { active: number; total: number }>; pendingCandidates: number; pendingProposals: number; dueTasks: number; cloudEnrichment: false; sendingEnabled: false }
 export const crmMessage = (cause: unknown) => cause instanceof Error ? cause.message : String(cause)
 const CHANGED = 'worldview:crm-changed'
 export function notifyCrmChanged() { window.dispatchEvent(new Event(CHANGED)) }
@@ -17,6 +17,21 @@ export async function crmGet<T>(path: string, options: { signal?: AbortSignal } 
   const value = await response.json() as T & { error?: string }; assertScope(scope)
   if (!response.ok) throw new Error(value.error ?? 'People could not load. Your saved records are unchanged.')
   return value
+}
+export interface OrganizationEnrichmentResult { id: string; name: string; status: 'updated' | 'unchanged' | 'unresolved' }
+export async function enrichPersonOrganizations(personId: string, requestId: string, offset: number) {
+  const scope = workspaceScope(); assertScope(scope)
+  if (!useRepoStatus.getState().writer) throw new Error('Open the writer window to enrich organizations.')
+  const response = await fetch(`/api/crm/people/${encodeURIComponent(personId)}/enrich-organizations`, {
+    method: 'POST', credentials: 'same-origin',
+    headers: { 'content-type': 'application/json', 'x-wv-client': 'people-workspace' },
+    body: JSON.stringify({ requestId, offset }),
+  })
+  const page = await response.json() as { results: OrganizationEnrichmentResult[]; total: number; nextOffset: number | null; error?: string }
+  assertScope(scope)
+  if (!response.ok) throw new Error(page.error || 'Could not check these organizations.')
+  notifyCrmChanged()
+  return page
 }
 interface RetryEntry { requestId: string; pending?: Promise<CrmCommandResult> }
 const retries = new Map<string, RetryEntry>()

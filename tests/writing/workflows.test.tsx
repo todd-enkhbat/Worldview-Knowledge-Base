@@ -15,6 +15,7 @@ import * as writingStore from '../../src/writing/store.ts'
 import { normalizedWritingJSON, writingExtensions } from '../../src/writing/extensions.ts'
 import { emptyWritingContent, plainTextFromWriting, validateWritingContent, writingFromPlainText } from '../../src/writing/model.ts'
 import { readWritingHistory } from '../../src/writing/history.ts'
+import WritingStudio from '../../src/writing/WritingStudio.tsx'
 import { WritingResearch } from '../../src/writing/WritingResearch.tsx'
 import { WritingHistoryPanel } from '../../src/writing/WritingHistory.tsx'
 import type { WritingDocument, WritingDocumentPatch } from '../../src/writing/types.ts'
@@ -189,4 +190,22 @@ it('ignores an older history refresh after a newer retained snapshot has become 
   await until(() => host.textContent?.includes('The newer visible snapshot') === true)
   await act(async () => pending.resolve(undefined))
   expect(host.textContent).toContain('The newer visible snapshot')
+})
+
+it('resumes the latest writing and creates a blank draft directly while keeping templates available', async () => {
+  const first = await writingStore.createWritingDocument({ title: 'First article' })
+  const next = await writingStore.createWritingDocument({ title: 'Second article' })
+  await writingStore.updateWritingDocument(next.id, { subtitle: 'Revised edition' })
+  await act(async () => root.render(<WritingStudio hash="#/write" />))
+  expect(host.querySelector('.writing-resume')?.getAttribute('href')).toBe('#/write?doc=' + next.id)
+  expect(host.querySelector('.writing-files a[href="#/write?doc=' + first.id + '"]')).not.toBeNull()
+  const templates = host.querySelector<HTMLDetailsElement>('.writing-templates')!
+  expect(templates.open).toBe(false)
+  expect(templates.textContent).toContain('Research note')
+  const initialCount = writingStore.useWriting.getState().docs.length
+  await click('New draft')
+  const created = writingStore.useWriting.getState().docs.at(-1)!
+  expect(location.hash).toBe('#/write?doc=' + created.id)
+  expect(created.format).toBe('note')
+  expect(writingStore.useWriting.getState().docs.length).toBe(initialCount + 1)
 })

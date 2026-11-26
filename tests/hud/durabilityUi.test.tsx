@@ -62,7 +62,7 @@ afterEach(async () => {
 })
 
 describe('FirstRun', () => {
-  it('validates the optional date and creates the selected example world', async () => {
+  it('validates the optional date before opening an empty personal world', async () => {
     render(<FirstRun />)
     expect(text()).toContain('Make room')
     expect(text()).toContain('for your mind.')
@@ -80,22 +80,17 @@ describe('FirstRun', () => {
     expect(useWorld.getState().settings).toBeNull()
 
     typeInto(date, '1990-03-14')
-    const example = [...document.body.querySelectorAll<HTMLInputElement>('input[type="radio"]')].find((el) => el.closest('label')?.textContent?.includes('Look around first'))!
-    act(() => example.click())
-    expect(example.checked).toBe(true)
     await act(async () => button(/Step into your world/).click())
     await settle(() => useWorld.getState().settings?.firstRunComplete === true)
     const s = useWorld.getState().settings
     expect(s?.T0).toBe(Date.UTC(1990, 2, 14))
-    expect(useWorld.getState().nodes.size).toBeGreaterThan(10)
+    expect(useWorld.getState().nodes.size).toBe(0)
     expect(useApp.getState().panels.chat).toBe(false)
     expect(document.body.querySelector('[role="dialog"]')).toBeNull()
   })
 
   it('starts an empty personal world without requiring a date', async () => {
     render(<FirstRun />)
-    const personal = [...document.body.querySelectorAll<HTMLInputElement>('input[type="radio"]')].find((el) => el.closest('label')?.textContent?.includes('Make it my own'))!
-    expect(personal.checked).toBe(true)
     expect(document.body.querySelector<HTMLInputElement>('#world-start')?.value).toBe('')
     const before = Date.now()
     await act(async () => button(/Step into your world/).click())

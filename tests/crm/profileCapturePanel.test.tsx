@@ -42,7 +42,7 @@ it('requires an explicit new-record choice and keeps the same request identity a
 })
 it('shows pending source captures and opens their review without changing a contact', async () => {
   await act(async () => root.render(<ProfileCapturePanel disabled={false} onClose={() => {}} />))
-  expect(document.body.textContent).toContain('Save profile or company'); expect(document.body.textContent).toContain('Ready to review 1')
+  expect(document.body.textContent).toContain('Review profile fields in People'); expect(document.body.textContent).toContain('Ready to review 1')
   await act(async () => host.querySelector<HTMLButtonElement>('.crm-capture-inbox button')!.click()); expect(document.body.textContent).toContain('Choose what to keep'); expect(mocks.post).not.toHaveBeenCalled()
 })
 

@@ -1,4 +1,6 @@
+import { buildPhotoPlaces } from './build-photo-places.mjs'
 import { packager } from '@electron/packager'
+import { checkBundle } from './check-bundle.mjs'
 import { cp, mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join, resolve, dirname, relative } from 'node:path'
@@ -20,11 +22,16 @@ await Promise.all([
   cp(join(root, 'scripts'), join(stage, 'runtime/scripts'), { recursive: true, verbatimSymlinks: true, filter: (path) => !path.includes('/desktop/staging') && !path.includes('/__pycache__') && !path.endsWith('.pyc') }),
   cp(join(root, 'extensions/worldview-reader'), join(stage, 'runtime/extensions/worldview-reader'), { recursive: true, verbatimSymlinks: true }),
 ])
+buildPhotoPlaces(join(stage, 'electron/photo-places.node'))
 await mkdir(join(stage, 'runtime/node/bin'), { recursive: true })
 await cp(join(nodeRoot, 'bin/node'), join(stage, 'runtime/node/bin/node'))
 await cp(join(nodeRoot, 'LICENSE'), join(stage, 'runtime/node/LICENSE'))
 await cp(join(nodeRoot, 'worldview-runtime.json'), join(stage, 'runtime/node/worldview-runtime.json'))
-const roots = ['@modelcontextprotocol/sdk', 'sqlite-vec', 'zod', 'fflate', '@huggingface/transformers']
+const shortcut=spawnSync('/usr/bin/xcrun',['clang','-O2',join(root,'electron/helper-shortcut.c'),'-framework','Carbon','-o',join(stage,'electron/helper-shortcut')],{stdio:'inherit'})
+if(shortcut.status!==0)throw Error('The macOS shortcut checker could not be built.')
+const ocr=spawnSync('/usr/bin/xcrun',['swiftc','-O',join(root,'electron/helper-ocr.swift'),'-o',join(stage,'electron/helper-ocr')],{stdio:'inherit'})
+if(ocr.status!==0)throw Error('The local screen recognition helper could not be built.')
+const roots = ['sharp', '@modelcontextprotocol/sdk', 'sqlite-vec', 'zod', 'fflate', '@huggingface/transformers']
 const packages = new Map()
 async function dependency(name, from = root, optional = false) {
   let folder
@@ -48,7 +55,8 @@ await writeFile(join(stage, 'runtime/package.json'), JSON.stringify({ name: 'wor
 await writeFile(join(stage, 'package.json'), JSON.stringify({ name: 'worldview-desktop', productName: 'Worldview', version: '0.1.0', main: 'electron/main.cjs', private: true }, null, 2)+'\n')
 await mkdir(out, { recursive: true })
 const temporaryOutput = await mkdtemp(join(tmpdir(), 'worldview-desktop-build-'))
-const targets = await packager({ dir: stage, out: temporaryOutput, name: 'Worldview', appBundleId: 'org.mindcorpus.worldview', appCategoryType: 'public.app-category.productivity', icon: existsSync(resolve('data/desktop/Worldview.icns')) ? resolve('data/desktop/Worldview.icns') : undefined, platform: 'darwin', arch: process.arch, electronVersion: '45.4.1', asar: false, prune: false, overwrite: true, darwinDarkModeSupport: true, extendInfo: { NSMicrophoneUsageDescription: 'Record an explicit voice note for local transcription in your selected Worldview workspace.' } })
+const targets = await packager({ dir: stage, out: temporaryOutput, name: 'Worldview', appBundleId: 'org.mindcorpus.worldview', protocols: [{ name: 'Open Worldview', schemes: ['worldview-local'] }], appCategoryType: 'public.app-category.productivity', icon: existsSync(resolve('data/desktop/Worldview.icns')) ? resolve('data/desktop/Worldview.icns') : undefined, platform: 'darwin', arch: process.arch, electronVersion: '45.4.1', asar: false, prune: false, overwrite: true, darwinDarkModeSupport: true, extendInfo: { NSContactsUsageDescription: 'Match contact names to existing people in your local CRM. Worldview checks names only.', NSPhotoLibraryUsageDescription: 'Show the locations and dates of the photos you choose to share in your local Worldview map.', NSAppleEventsUsageDescription: 'Read the visible profile in the Dia tab you select for Add to Worldview.', NSMicrophoneUsageDescription: 'Record an explicit voice note for local transcription in your selected Worldview workspace.' } })
+for (const target of targets) await checkBundle(join(target, 'Worldview.app'))
 const report = { schemaVersion: 1, builtAt: new Date().toISOString(), electron: '45.4.1', node: JSON.parse(await readFile(join(nodeRoot, 'worldview-runtime.json'), 'utf8')), platform: process.platform, arch: process.arch, directories: [join(out, 'Worldview-darwin-' + process.arch)], runtimeDependencies: Object.fromEntries([...packages.values()].map((value) => [`${value.name}@${value.version}`, value.version])), privateDataIncluded: false, cloudAi: 'off' }
 for (const target of targets) { const app = join(target, 'Worldview.app'), destination = join(out, 'Worldview-darwin-' + process.arch), zip = join(out, `Worldview-mac-${process.arch}.zip`), temporary = `${zip}.tmp`; spawnSync('/usr/bin/xattr', ['-d', 'com.apple.FinderInfo', app], { stdio: 'ignore' }); const signed = spawnSync('/usr/bin/codesign', ['--force', '--deep', '--sign', '-', app], { stdio: 'inherit' }); if (signed.status !== 0) throw new Error('The local ad-hoc app signature could not be created.'); const verified = spawnSync('/usr/bin/codesign', ['--verify', '--deep', '--strict', app], { stdio: 'inherit' }); if (verified.status !== 0) throw new Error('The local app signature did not verify.'); const compressed = spawnSync('/usr/bin/ditto', ['-c', '-k', '--sequesterRsrc', '--keepParent', app, temporary], { stdio: 'inherit' }); if (compressed.status !== 0) throw new Error('The desktop app was packaged, but its download archive could not be created.'); await rename(temporary, zip); await rm(destination, { recursive: true, force: true }); await cp(target, destination, { recursive: true, verbatimSymlinks: true }); console.log(`Packaged desktop app: ${join(destination, 'Worldview.app')}`); console.log(`Desktop download: ${zip}`) }
 

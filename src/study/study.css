@@ -1,0 +1,113 @@
+.study-desk,
+.study-lookup {
+  font:
+    15px/1.5 'Alte Haas',
+    var(--font-sans, system-ui);
+  color: var(--kb-text, #252824);
+  max-width: 860px;
+  margin-inline: auto;
+  min-width: 0;
+}
+.study-desk h2 {
+  font-size: clamp(27px, 4vw, 40px);
+  letter-spacing: -0.045em;
+}
+.study-desk h3,
+.study-lookup h3 {
+  font-size: 20px;
+  margin: 10px 0 4px;
+}
+.study-desk button,
+.study-lookup button {
+  border: 1px solid var(--kb-line, #ccc);
+  background: var(--kb-panel, #fff);
+  color: inherit;
+  padding: 6px 12px;
+  border-radius: 7px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 14px;
+}
+.study-desk label,
+.study-lookup label {
+  display: grid;
+  gap: 3px;
+  font-size: 13px;
+}
+.study-desk label:has(input[type='checkbox']) {
+  display: flex;
+  align-items: center;
+}
+.study-desk input:not([type='checkbox']),
+.study-desk select,
+.study-desk textarea,
+.study-lookup input,
+.study-lookup select {
+  width: 100%;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--kb-line, #ccc);
+  color: inherit;
+  background: var(--kb-panel, #fff);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 15px;
+}
+.study-desk details,
+.study-answer,
+.study-edit,
+.study-card {
+  padding-block: 14px;
+  border-bottom: 1px solid var(--kb-line, #ccc);
+}
+.study-desk summary {
+  cursor: pointer;
+}
+.study-tools,
+.study-lookup form {
+  display: flex;
+  gap: 8px;
+  align-items: end;
+  flex-wrap: wrap;
+  margin: 12px 0;
+}
+.study-tools input:not([type='checkbox']),
+.study-tools select {
+  width: auto;
+  max-width: 100%;
+}
+.study-lookup form label {
+  flex: 1;
+}
+.study-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr));
+  gap: 8px;
+}
+.study-fields label {
+  text-transform: capitalize;
+}
+.study-pair {
+  display: grid;
+  gap: 8px;
+  margin-block: 12px;
+}
+.study-pair button {
+  justify-self: start;
+}
+.study-answer p,
+.study-lookup blockquote {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.study-lookup li {
+  padding-block: 3px;
+}
+.study-lookup article {
+  max-height: 45dvh;
+  overflow: auto;
+}
+.study-desk small,
+.study-lookup small {
+  color: var(--kb-muted, #636964);
+}

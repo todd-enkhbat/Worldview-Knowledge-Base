@@ -57,12 +57,42 @@ describe('paired browser article capture over HTTP', () => {
     const response = await fetch(`${f.base}/download`, { headers: f.management })
     expect(response.status).toBe(200); expect(response.headers.get('content-disposition')).toContain('WorldviewReader.zip')
     const files = unzipSync(new Uint8Array(await response.arrayBuffer()))
-    expect(Object.keys(files).sort()).toEqual(['README.md', 'background.js', 'content.js', 'folk-content.js', 'extract.js', 'manifest.json', 'popup.css', 'popup.html', 'popup.js'].map((name) => `WorldviewReader/${name}`).sort())
+    expect(Object.keys(files).sort()).toEqual(['README.md', 'background.js', 'content.js', 'folk-content.js', 'extract.js', 'group-icon.js', 'worldview-128.png', 'manifest.json', 'popup.css', 'popup.html', 'popup.js'].map((name) => `WorldviewReader/${name}`).sort())
     expect(strFromU8(files['WorldviewReader/folk-content.js'])).toContain('MutationObserver')
-    expect(JSON.parse(strFromU8(files['WorldviewReader/manifest.json'])).permissions).toEqual(['activeTab', 'scripting', 'storage'])
+    expect(JSON.parse(strFromU8(files['WorldviewReader/manifest.json'])).permissions).toEqual(['activeTab', 'scripting', 'storage', 'alarms'])
     expect(Object.keys(files).some((path) => /token|\.env|sqlite|blobs/.test(path))).toBe(false)
     const hosted = await fixture('accounts')
     expect((await fetch(hosted.base, { headers: hosted.management })).status).toBe(403)
+  })
+  it('shows an extension save in an already connected desktop workspace and links the same record and group', async () => {
+    const f = await fixture('host'), paired = await f.pair(), api = f.base.replace('/reading-capture', '')
+    const group = { id: 'local-group', name: 'Reading group', entityType: 'person' }
+    const command = await fetch(api + '/crm/command', { method: 'POST', headers: f.management, body: JSON.stringify({ operation: 'create', collection: 'groups', requestId: 'add-group', record: group }) })
+    expect(command.ok).toBe(true)
+    const controller = new AbortController(), desktop = await fetch(api + '/world/changes?client=open-mac-window', { signal: controller.signal })
+    const reader = desktop.body!.getReader()
+    try {
+      const send = await f.capture(paired.token, { saveProfileData: true, quickAdd: true, sequence: 1, groupId: group.id, url: 'https://example.org/profile', title: 'Reader Profile', text: 'Reader Profile', profile: { entityType: 'person', name: 'Reader Profile' } })
+      expect(send.ok).toBe(true)
+      const receipt = await send.json()
+      expect(receipt.quickAdd.status).toBe('saved')
+      expect(new URL(receipt.reviewUrl).origin).toBe(new URL(f.base).origin)
+      let frames = ''
+      const timeout = setTimeout(() => controller.abort(), 5000)
+      try {
+        while (!frames.includes('"from":"reader-profile"')) {
+          const { value, done } = await reader.read()
+          if (done) break
+          frames += new TextDecoder().decode(value)
+        }
+      } finally { clearTimeout(timeout) }
+      expect(frames).toContain('"keys":["crm.v1"]')
+      const status = await (await fetch(api + '/crm/status', { headers: f.management })).json()
+      expect(status.workspaceFingerprint).toBe(receipt.workspaceFingerprint)
+      expect(status.lastBrowserSave).toEqual({ id: receipt.quickAdd.recordId, kind: 'person', name: 'Reader Profile' })
+      const visible = await (await fetch(api + '/crm/people?groupId=' + group.id, { headers: f.management })).json()
+      expect(visible.rows.map((row: { id: string }) => row.id)).toEqual([receipt.quickAdd.recordId])
+    } finally { controller.abort(); reader.releaseLock() }
   })
   it('requires local management authorization and never returns token hashes or old tokens', async () => {
     const f = await fixture()

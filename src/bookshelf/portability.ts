@@ -22,13 +22,22 @@ export function parseBookshelfCsv(text: string): { books: (CreateBookInput & { c
   if (!header.includes('title')) throw new Error('Your CSV needs a Title column. Author, Status, Rating, Notes, and Collections are optional.')
   const books: (CreateBookInput & { collectionNames?: string[] })[] = [], errors: { row: number; message: string }[] = []
   rows.forEach((cells, index) => {
-    const get = (...names: string[]) => { for (const name of names) { const at = header.indexOf(name); if (at >= 0) return (cells[at] ?? '').trim() } return '' }
+    const get = (...names: string[]) => { for (const name of names) { const at = header.indexOf(name); if (at >= 0 && cells[at]?.trim()) return cells[at].trim() } return '' }
     try {
       const statusText = get('status', 'exclusiveshelf').toLocaleLowerCase().replace(/[-_]/g, ' '), status = ['wish', 'wishlist', 'want to buy', 'want to read', 'to buy'].includes(statusText) ? 'wish' : ['reading', 'currently reading'].includes(statusText) ? 'reading' : ['read', 'finished'].includes(statusText) ? 'read' : 'unread'
       const number = (value: string) => value ? Number(value.replace(/^=/, '').replace(/^"|"$/g, '')) : null
       const date = (value: string) => { if (!value) return null; const clean = value.replaceAll('/', '-'); if (/^\d{4}-\d{2}-\d{2}$/.test(clean)) return clean; const time = Date.parse(value); if (!Number.isFinite(time)) throw new Error('A reading date is invalid. Use YYYY-MM-DD.'); return new Date(time).toISOString().slice(0, 10) }
-      const details: CreateBookInput = { title: get('title'), subtitle: get('subtitle'), authors: get('authors', 'author').split(';').map((value) => value.trim()).filter(Boolean), kind: get('kind', 'type').toLowerCase() === 'article' ? 'article' : 'book', format: ['digital', 'ebook', 'e book', 'web'].includes(get('format').toLowerCase()) ? 'digital' : get('format').toLowerCase() === 'both' ? 'both' : 'print', status, rating: number(get('rating', 'myrating')) ?? 0, recommendedBy: get('recommendedby', 'recommender'), notes: get('notes', 'myreview', 'review'), url: get('url', 'link'), isbn: get('isbn13', 'isbn').replace(/^="|"$/g, ''), year: number(get('year', 'originalpublicationyear', 'yearpublished')), pages: number(get('pages', 'numberofpages')), startedAt: date(get('started', 'startedat', 'datestarted')), finishedAt: date(get('finished', 'finishedat', 'dateread')) }
-      const book = createShelfBook(details), collectionNames = get('collections', 'shelves', 'bookshelves').split(';').map((name) => name.trim()).filter(Boolean)
+      const goodreadsId = get('bookid')
+      const goodreads = header.includes('exclusiveshelf') && /^[1-9]\d{0,17}$/.test(goodreadsId)
+      const split = (value: string, delimiter: RegExp) => value.split(delimiter).map((entry) => entry.trim()).filter(Boolean)
+      const authors = [...new Set([...split(get('authors', 'author'), /;/), ...split(get('additionalauthors'), /[,;]/)])]
+      const cleanIsbn = (value: string) => value.replace(/^="|"$/g, '').trim()
+      const fields = [
+        ['Private notes', get('privatenotes')], ['Publisher', get('publisher')], ['Date added on Goodreads', get('dateadded')],
+        ['Read count', get('readcount')], ['Owned copies', get('ownedcopies')], ['Binding', get('binding')],
+      ].filter(([, value]) => !!value).map(([label, value]) => ({ id: crypto.randomUUID(), label, value }))
+      const details: CreateBookInput = { title: get('title'), subtitle: get('subtitle'), authors, fields, ...(goodreads ? { goodreadsId } : {}), kind: get('kind', 'type').toLowerCase() === 'article' ? 'article' : 'book', format: ['digital', 'ebook', 'e book', 'web'].includes(get('format', 'binding').toLowerCase()) ? 'digital' : get('format', 'binding').toLowerCase() === 'both' ? 'both' : 'print', status: goodreads && statusText === 'to read' ? 'wish' : status, rating: number(get('rating', 'myrating')) ?? 0, recommendedBy: get('recommendedby', 'recommender'), notes: get('notes', 'myreview', 'review'), url: get('url', 'link'), isbn: cleanIsbn(get('isbn13')) || cleanIsbn(get('isbn')), year: number(get('year', 'yearpublished', 'originalpublicationyear')), pages: number(get('pages', 'numberofpages')), startedAt: date(get('started', 'startedat', 'datestarted')), finishedAt: date(get('finished', 'finishedat', 'dateread')) }
+      const book = createShelfBook(details), collectionNames = [...new Set([...split(get('collections', 'shelves'), /;/), ...split(get('bookshelves'), /[,;]/)])]
       if (collectionNames.some((name) => name.length > 160)) throw new Error('Collection names must fit within 160 characters.')
       books.push({ ...details, design: book.design, collectionNames })
     } catch (cause) { errors.push({ row: index + 2, message: cause instanceof Error ? cause.message : String(cause) }) }
@@ -40,7 +49,7 @@ const fromBase64 = (value: string) => { if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-
 export async function exportBookshelfJSON(snapshot: BookshelfSnapshot = useBookshelf.getState()): Promise<Blob> {
   const store = getStore(), generation = getWorldGeneration(), current = () => { if (!isRepoReady() || getStore() !== store || getWorldGeneration() !== generation) throw new Error('The workspace changed before export completed.') }
   // Import receipts are retained by world backups. Omitting their raw files avoids recursive JSON-in-JSON exports.
-  const clean = decodeBookshelf({ schemaVersion: 1, revision: snapshot.revision, books: snapshot.books, shelves: snapshot.shelves, history: snapshot.history, imports: [] }), assets: { id: string; mime: string; bytes: number; base64: string }[] = []
+  const clean = decodeBookshelf({ schemaVersion: 1, revision: snapshot.revision, attributions: snapshot.attributions, books: snapshot.books, shelves: snapshot.shelves, history: snapshot.history, imports: [] }), assets: { id: string; mime: string; bytes: number; base64: string }[] = []
   let total = 0
   for (const id of getBookshelfOriginalReferences(clean)) { const file = await readBookshelfOriginal(id, { store, generation }); current(); total += file.bytes.length; if (total > 64 * 1024 * 1024) throw new Error('This portable JSON exceeds 64 MiB of original covers. Use a verified world backup for the full library.'); assets.push({ id, mime: file.mime, bytes: file.bytes.length, base64: base64(file.bytes) }) }
   const json = JSON.stringify({ format: 'worldview-bookshelf.v1', exportedAt: new Date().toISOString(), snapshot: clean, assets }, null, 2)

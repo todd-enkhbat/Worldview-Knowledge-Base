@@ -3,7 +3,7 @@ import type { SavedInvestigation } from '../workspace/collections.ts'
 import type { NodeRecord } from '../domain/types.ts'
 import { noteFileName } from '../data/obsidian.ts'
 import { extractVaultLinks, parseVaultMetadata, resolveVaultLink } from './vault.ts'
-import { validateWorkspaceContext } from '../workspace/state.ts'
+import { validateWorkspaceContext } from '../workspace/context.ts'
 
 export interface PortableSource { source: KnowledgeSource; versions: SourceVersion[]; passages: KnowledgePassage[] }
 export interface PortableKnowledge { format: 'worldview-portable'; schemaVersion: 1; exportedAt: number; sources: PortableSource[]; investigations: SavedInvestigation[] }

@@ -26,3 +26,13 @@ it('discards a late portrait read after switching people', async () => {
   await act(async () => release(new Blob(['png'], { type: 'image/png' })))
   expect(host.querySelector('img')).toBeNull(); expect(host.textContent).toBe('GE')
 })
+it('handles a broken stored portrait and never tries a remote image to fill the gap', async () => {
+  await getStore().putBlob({meta:{id:portraitId,kind:'image',mime:'image/png',bytes:3,createdAt:1,nodeId:null},data:new Blob(['png'],{type:'image/png'})})
+  const remote = vi.fn()
+  vi.stubGlobal('fetch',remote)
+  await act(async()=>root.render(<CrmAvatar name="Ada Marie Example" assetId={portraitId} />))
+  await act(async()=>host.querySelector('img')!.dispatchEvent(new Event('error')))
+  expect(host.querySelector('img')).toBeNull()
+  expect(host.textContent).toBe('AE')
+  expect(remote).not.toHaveBeenCalled()
+})

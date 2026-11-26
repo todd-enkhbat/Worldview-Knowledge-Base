@@ -3,13 +3,30 @@ import { createContext, Script } from 'node:vm'
 import { createRequire } from 'node:module'
 import { expect, it, vi } from 'vitest'
 import { extractProfile } from '../../extensions/worldview-reader/extract.js'
+import { profileFromHtml } from '../../server/crmProfileExtract.ts'
 
 const { JSDOM } = createRequire(import.meta.url)('jsdom') as { JSDOM: new (html: string, options?: { url?: string }) => { window: { document: Document; close(): void } } }
 
 function capture(body: string, url = 'https://www.linkedin.com/in/ada-example/') {
-  const page = new JSDOM(`<!doctype html><title>Profile source</title>${body}`, { url })
+  const page = new JSDOM(`<!doctype html>${body.includes('<title>') ? '' : '<title>Profile source</title>'}${body}`, { url })
   try { return extractProfile(page.window.document) } finally { page.window.close() }
 }
+
+it('keeps two dated jobs at the same employer from a personal website in both capture paths', () => {
+  const url = 'https://ada.example.org/about'
+  const employer = { '@type': 'Organization', name: 'Example Studio', url: 'https://studio.example.org/', logo: '/studio-logo.png' }
+  const schema = { '@type': 'Person', name: 'Ada Example', url, jobTitle: 'Design director', worksFor: [
+    { '@type': 'EmployeeRole', roleName: 'Design director', startDate: '2021', description: 'Leads the design team.', worksFor: employer },
+    { '@type': 'OrganizationRole', roleName: 'Designer', startDate: '2018', endDate: '2021', description: 'Designed the first release.', worksFor: employer },
+  ] }
+  const html = '<main><h1>Ada Example</h1><p>Design director at Example Studio</p></main><script type="application/ld+json">' + JSON.stringify(schema) + '</script>'
+  for (const result of [capture(html, url), profileFromHtml(html, url)]) {
+    expect(result.profile.affiliations).toHaveLength(2)
+    expect(result.profile.affiliations?.[0]).toMatchObject({ organization: 'Example Studio', organizationUrl: employer.url, role: 'Design director', startDate: '2021', current: true, description: 'Leads the design team.' })
+    expect(result.profile.affiliations?.[1]).toMatchObject({ organization: 'Example Studio', role: 'Designer', startDate: '2018', endDate: '2021', description: 'Designed the first release.' })
+    expect(result.profile.affiliations?.[1]?.current).not.toBe(true)
+  }
+})
 
 it('collects visible LinkedIn education and employment with source excerpts, excluding related people and form values', () => {
   const result = capture(`<main><section><h1>Ada Example</h1><div class="text-body-medium">Research engineer</div><span class="text-body-small inline t-black--light">New York, NY</span><img alt="Ada Example" src="https://images.example/ada.jpg"></section>
@@ -60,11 +77,11 @@ it('refuses unbound articles, Folk pages and unnamed LinkedIn details pages', ()
 
 const token = `wvread_${'a'.repeat(43)}`, extensionId = 'a'.repeat(32), profile = { url: 'https://ada.example/', title: 'Ada Example', text: 'Ada Example — Columbia University.', html: '<article><h1>Ada Example</h1></article>', profile: { entityType: 'person', name: 'Ada Example', affiliations: [] } }
 function area() { const values: Record<string, unknown> = {}; return { values, setAccessLevel: vi.fn(async () => {}), get: async (keys: string | string[]) => Object.fromEntries((Array.isArray(keys) ? keys : [keys]).filter(key => key in values).map(key => [key, structuredClone(values[key])])), set: async (next: Record<string, unknown>) => { Object.assign(values, structuredClone(next)) }, remove: async () => {} } }
-function worker(extracted = profile) {
+function worker(extracted: Omit<typeof profile, 'profile'> & { profile: Record<string, unknown>; headerEmployer?: { organization: string; additional: number } } = profile) {
   const local = area(), session = area(), listeners: Record<string, (...args: unknown[]) => unknown> = {}
-  const tab = { active: true, url: extracted.url }, fetcher = vi.fn<typeof fetch>(async (_url, init) => { const payload = JSON.parse(String(init?.body)); return Response.json({ sequence: payload.sequence, profileDraft: { id: 'capture-ada', status: 'pending', profile: payload.profile, source: { originalAssetId: 'crm-file-original' } } }) })
-  const chrome = { storage: { local, session }, runtime: { id: extensionId, getURL: (path: string) => `chrome-extension://${extensionId}/${path}`, onMessage: { addListener: (callback: (...args: unknown[]) => unknown) => { listeners.message = callback } } }, tabs: { get: async () => ({ ...tab }), onRemoved: { addListener: () => {} }, onUpdated: { addListener: () => {} } }, scripting: { executeScript: vi.fn(async () => [{ result: extracted }]) } }
-  const script = readFileSync('extensions/worldview-reader/background.js', 'utf8').replace(/^import .*$/m, 'const extractArticle = () => {}; const extractFolkPhotos = () => {}; const extractProfile = () => {}')
+  const tab = { active: true, url: extracted.url, status: 'complete' }, fetcher = vi.fn<typeof fetch>(async (_url, init) => { const payload = JSON.parse(String(init?.body)); return Response.json({ sequence: payload.sequence, profileDraft: { id: 'capture-ada', status: 'pending', profile: payload.profile, source: { originalAssetId: 'crm-file-original' } } }) })
+  const chrome = { storage: { local, session }, runtime: { id: extensionId, getURL: (path: string) => `chrome-extension://${extensionId}/${path}`, onMessage: { addListener: (callback: (...args: unknown[]) => unknown) => { listeners.message = callback } } }, tabs: { get: async () => ({ ...tab }), update: vi.fn(async (_id: number, change: { url: string }) => { tab.url = change.url }), goBack: vi.fn(async () => { tab.url = extracted.url }), onRemoved: { addListener: () => {} }, onUpdated: { addListener: () => {} } }, scripting: { executeScript: vi.fn(async () => [{ result: extracted }]) } }
+  const script = readFileSync('extensions/worldview-reader/background.js', 'utf8').replace(/^import .*$/m, 'const extractArticle = () => {}; const extractFolkPhotos = () => {}; const extractProfile = () => {}; const captureLinkedInExperience = () => {}')
   new Script(script).runInContext(createContext({ chrome, fetch: fetcher, AbortSignal, crypto, URL, TextEncoder, structuredClone }))
   const send = (message: Record<string, unknown>, sender: Record<string, unknown> = { id: extensionId, url: `chrome-extension://${extensionId}/popup.html` }) => new Promise<Record<string, unknown>>(resolve => listeners.message(message, sender, resolve))
   return { local, session, fetcher, tab, chrome, send }
@@ -109,4 +126,141 @@ it('forwards serialized extraction errors and treats a missing injection result 
   f.chrome.scripting.executeScript.mockResolvedValueOnce([{ result: undefined }] as never)
   expect(await f.send({ type: 'reader-profile-data', tabId: 7 })).toMatchObject({ ok: false, error: expect.stringContaining('could not identify') })
   expect(f.local.values.outbox).toBeUndefined(); expect(f.fetcher).not.toHaveBeenCalled()
+})
+
+it('identifies a personal website using its named portrait and declared profile links', () => {
+  const result = capture('<meta name="description" content="Designer in Cambridge."><main><h1>Ada Example</h1><img alt="Ada Example" src="/ada.jpg"><p>Designer.</p><a rel="me" href="https://www.instagram.com/ada/">Instagram</a></main>', 'https://ada.example/')
+  expect(result.profile).toMatchObject({ name: 'Ada Example', description: 'Designer in Cambridge.', images: [expect.objectContaining({ url: 'https://ada.example/ada.jpg', isProfile: true })], urls: ['https://ada.example/', 'https://www.instagram.com/ada/'] })
+})
+
+it('opens a read-only preview and refuses to add a different subject if the page changes', async () => {
+  const f = worker(); await f.send({ type: 'reader-pair', token })
+  f.fetcher.mockResolvedValueOnce(Response.json({ groups: [{ id: 'founders', name: 'Founders' }] }))
+  const preview = await f.send({ type: 'reader-profile-preview', tabId: 7 })
+  expect(preview).toMatchObject({ preview: { name: 'Ada Example' }, groups: [{ id: 'founders' }] })
+  expect(f.local.values.outbox).toBeUndefined()
+  expect((await f.send({ type: 'reader-profile-add', tabId: 7, url: profile.url, name: 'Someone Else', entityType: 'person', groupId: 'founders' })).ok).toBe(false)
+  expect(f.fetcher).toHaveBeenCalledTimes(1)
+  expect(JSON.parse(String(f.fetcher.mock.calls[0][1]?.body))).toEqual({ entityType: 'person', url: profile.url })
+})
+
+it('previews only a subject-bound public HTTPS photo, current role, distinct organizations and schools', async () => {
+  const extracted = { ...profile, headerEmployer: { organization: 'Example Labs', additional: 3 }, profile: { ...profile.profile,
+    headline: 'Scientist at Example Labs', location: 'Cambridge', affiliations: [
+      { kind: 'employment', organization: 'Example Labs', current: true, role: 'Scientist' },
+      { kind: 'employment', organization: 'Old Labs', role: 'Fellow' },
+      { kind: 'education', organization: 'Example University' }, { kind: 'education', organization: 'Example University' },
+    ], images: [
+      { url: 'https://images.example/unrelated', isProfile: true, subjectName: 'Another Person' },
+      { url: 'https://127.0.0.1/private', isProfile: true, subjectName: 'Ada Example' },
+      { url: 'https://media.licdn.com/ada.jpg', isProfile: true, subjectName: 'Ada Example' },
+    ],
+  } }
+  const f = worker(extracted); await f.send({ type: 'reader-pair', token })
+  f.fetcher.mockResolvedValueOnce(Response.json({ groups: [] }))
+  expect((await f.send({ type: 'reader-profile-preview', tabId: 7 })).preview).toEqual({ url: profile.url, name: 'Ada Example', entityType: 'person', headline: 'Scientist at Example Labs', location: 'Cambridge', role: 'Scientist', current: ['Example Labs + 3 more'], schools: ['Example University'], photoUrl: 'https://media.licdn.com/ada.jpg' })
+})
+
+it('remembers a group only upon confirmed quick-add delivery, including retry and saving without a group', async () => {
+  const f = worker(); await f.send({ type: 'reader-pair', token })
+  const add = { type: 'reader-profile-add', tabId: 7, url: profile.url, name: 'Ada Example', entityType: 'person' }
+  const receipt = (status: string) => f.fetcher.mockImplementationOnce(async (_url, init) => {
+    const body = JSON.parse(String(init?.body))
+    return Response.json({ sequence: body.sequence, profileDraft: { id: 'draft-ada', source: { originalAssetId: 'source' } }, quickAdd: { status, recordId: 'person-ada' } })
+  })
+  f.fetcher.mockRejectedValueOnce(new Error('offline'))
+  await f.send({ ...add, groupId: 'founders' })
+  expect(f.local.values['lastProfileGroup:person']).toBeUndefined()
+  expect(f.local.values.outbox).toHaveLength(1)
+  receipt('saved'); await f.send({ type: 'reader-retry' })
+  expect(f.local.values['lastProfileGroup:person']).toBe('founders')
+  expect(f.local.values.outbox).toEqual([])
+  receipt('review'); await f.send({ ...add, groupId: 'review-needed' })
+  expect(f.local.values['lastProfileGroup:person']).toBe('founders')
+  receipt('saved'); await f.send(add)
+  expect(f.local.values['lastProfileGroup:person']).toBe('')
+  expect(f.local.values['lastProfileGroup:company']).toBeUndefined()
+})
+
+it('captures a dated top-level role when LinkedIn renders the logo link and description as nested items', () => {
+  const result = capture('<main><h1>Ada Example</h1><section><h2>Experience</h2><ul><li><a href="/company/acme/"><img src="https://images.example/acme.png" alt="Acme logo"></a><div>Founder</div><div>Acme · Full-time</div><div>Jan 2020 – Present</div><ul><li><p>Building software with partners.</p></li></ul></li></ul></section></main>')
+  expect(result.profile.affiliations).toEqual([expect.objectContaining({ organization: 'Acme', role: 'Founder', current: true, organizationLogoUrl: 'https://images.example/acme.png' })])
+})
+
+it('resolves a branded investment firm homepage from its title, domain and own LinkedIn link without capturing portfolio firms', () => {
+  const html = '<title>8VC | A different kind of VC firm.</title><meta property="og:description" content="An investment firm"><link rel="apple-touch-icon" href="/webclip.png"><main><h1>Build a better world</h1><a href="https://www.linkedin.com/company/portfolio-example/">A portfolio firm</a></main><footer><a href="https://www.linkedin.com/company/8vc/">LinkedIn</a></footer>'
+  expect(capture(html, 'https://www.8vc.com/').profile).toMatchObject({ name: '8VC', entityType: 'company', description: 'An investment firm', urls: ['https://www.8vc.com/', 'https://www.linkedin.com/company/8vc/'], images: [{ url: 'https://www.8vc.com/webclip.png', subjectName: '8VC', isProfile: true }] })
+  const loading = capture(html.replace('<main>', '<main style="opacity:0">').replace('Build a better world', 'Unrendered private text'), 'https://www.8vc.com/')
+  expect(loading.text).toContain('An investment firm')
+  expect(loading.html).not.toContain('Unrendered private text')
+  expect(() => capture(html, 'https://8vc.unrelated.example/')).toThrow('No single named')
+  expect(() => capture(html.replace('/company/8vc/', '/company/unrelated/'), 'https://8vc.com/')).toThrow('No single named')
+})
+
+it('keeps preview stationary and captures the same person’s additional Experience rows, their source and the original profile', async () => {
+  const url = 'https://www.linkedin.com/in/ada-example/', expanded = url + 'details/experience/?isSelfProfile=false'
+  const extracted = { ...profile, url }
+  const f = worker(extracted); await f.send({ type: 'reader-pair', token })
+  f.fetcher.mockResolvedValueOnce(Response.json({ groups: [] }))
+  await f.send({ type: 'reader-profile-preview', tabId: 7 })
+  expect(f.chrome.scripting.executeScript).toHaveBeenCalledTimes(1)
+  expect(f.chrome.tabs.update).not.toHaveBeenCalled()
+  const job = { kind: 'employment', role: 'Scientist', organization: 'Example Lab', startDate: '2020', current: true }
+  const old = { kind: 'employment', role: 'Fellow', organization: 'Example University', startDate: '2015', endDate: '2019' }
+  f.chrome.scripting.executeScript.mockResolvedValueOnce([{ result: extracted }])
+    .mockResolvedValueOnce([{ result: { roles: [job], continuation: expanded } }] as never)
+    .mockResolvedValueOnce([{ result: { roles: [job, old] } }] as never)
+  expect((await f.send({ type: 'reader-profile-data', tabId: 7 })).ok).toBe(true)
+  expect(f.chrome.tabs.update).toHaveBeenCalledWith(7, { url: expanded })
+  expect(f.chrome.tabs.goBack).toHaveBeenCalledWith(7)
+  const sent = JSON.parse(String(f.fetcher.mock.calls.at(-1)?.[1]?.body))
+  expect(sent).toMatchObject({ url, profile: { affiliations: [job, old] } })
+  expect(sent.text).toContain(url + 'details/experience/')
+  expect(sent.html).toContain('Fellow · Example University')
+})
+
+it('persists verified main-page roles when full Experience cannot load and aborts on a user’s different-profile navigation', async () => {
+  const url = 'https://www.linkedin.com/in/ada-example/', continuation = url + 'details/experience/', extracted = { ...profile, url }
+  const job = { kind: 'employment', role: 'Scientist', organization: 'Example Lab', startDate: '2020', current: true }
+  const setup = async () => {
+    const f = worker(extracted); await f.send({ type: 'reader-pair', token })
+    f.chrome.scripting.executeScript.mockResolvedValueOnce([{ result: extracted }]).mockResolvedValueOnce([{ result: { roles: [job], continuation } }] as never)
+    return f
+  }
+  const f = await setup()
+  f.chrome.tabs.goBack.mockRejectedValueOnce(new Error('Cannot find a next page in history.'))
+  f.chrome.scripting.executeScript.mockResolvedValueOnce([{ result: { roles: [] } }] as never)
+  expect(await f.send({ type: 'reader-profile-data', tabId: 7 })).toMatchObject({ ok: true, result: { experienceNotice: expect.stringContaining('unavailable') } })
+  expect(JSON.parse(String(f.fetcher.mock.calls[0][1]?.body)).profile.affiliations).toEqual([job])
+  expect(f.chrome.tabs.update).toHaveBeenLastCalledWith(7, { url })
+  const moved = await setup()
+  moved.chrome.scripting.executeScript.mockImplementationOnce(async () => { moved.tab.url = 'https://www.linkedin.com/in/different/'; return [{ result: { roles: [] } }] as never })
+  expect((await moved.send({ type: 'reader-profile-data', tabId: 7 })).ok).toBe(false)
+  expect(moved.chrome.tabs.goBack).not.toHaveBeenCalled()
+  expect(moved.fetcher).not.toHaveBeenCalled()
+})
+
+it('binds university directory education to the named faculty member in Reader and URL collection', () => {
+  const url = 'https://engineering.example.edu/people_individual/ren-park/'
+  const publisher = { '@type': 'Organization', name: 'Department of Engineering', url }
+  const body = '<title>Ren Park – Engineering</title><script type="application/ld+json">' + JSON.stringify(publisher) + '</script><nav>Directory links</nav><main><h1>People</h1><h2>Ren Park</h2><p>Assistant: <a href="mailto:assistant@example.edu">assistant@example.edu</a></p><h3>Education</h3><ul>' +
+    '<li>Postdoctoral Scholar, 2004–2005; Unrelated Research Institute</li>' +
+    '<li>Ph.D. (Dr. rer. nat.) 2004 in Materials Science (Chemistry), Example Institute for Metals Research at the University of Example</li>' +
+    '<li>M.S. 2001 in Engineering Mechanics, Example Tech</li>' +
+    '<li>B.S. equiv./pre-diploma 2000 in Chemical Engineering, University of Example</li>' +
+    '<li>Ph.D. candidate 2028 in Chemistry, Other University</li></ul><h3>Related News</h3><p>Other faculty and publications</p></main><footer>Department contact</footer>'
+  const expected = [
+    { kind: 'education', degree: 'Ph.D. (Dr. rer. nat.)', field: 'Materials Science (Chemistry)', endDate: '2004', organization: 'University of Example', description: 'Example Institute for Metals Research' },
+    { kind: 'education', degree: 'M.S.', field: 'Engineering Mechanics', endDate: '2001', organization: 'Example Tech' },
+    { kind: 'education', degree: 'B.S. equiv./pre-diploma', field: 'Chemical Engineering', endDate: '2000', organization: 'University of Example' },
+  ]
+  for (const draft of [capture(body, url), profileFromHtml(body, url)]) {
+    expect(draft.profile).toMatchObject({ name: 'Ren Park', entityType: 'person', urls: [url], affiliations: expected })
+    expect(draft.profile.affiliations?.every(row => row.excerpt)).toBe(true)
+    expect(draft.text).toContain('Example Institute for Metals Research')
+    expect(JSON.stringify(draft)).not.toMatch(/assistant@|Department contact|faculty and publications|Unrelated Research Institute|Other University/)
+  }
+  const unbound = body.replace('<h2>Ren Park</h2>', '<h2>Someone Else</h2>')
+  expect(() => capture(unbound, url)).toThrow('No single named')
+  expect(() => profileFromHtml(unbound, url)).toThrow('No single verified')
 })

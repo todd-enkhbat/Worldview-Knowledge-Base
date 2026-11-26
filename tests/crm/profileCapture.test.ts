@@ -152,3 +152,72 @@ describe('private profile capture and review', () => {
     expect(db.crm.get('people', 'ada')).toEqual(before); expect(capture.detail(draft.id).status).toBe('pending')
   })
 })
+
+it('links multiple workplaces and schools with provenance, creates one group membership, and moves an ended role out of the team', async () => {
+  db.crm.command({ requestId: 'group', operation: 'create', collection: 'groups', record: { id: 'investors', name: 'Investors', entityType: 'person' } })
+  const work = { kind: 'employment', organization: '8VC', role: 'Partner', startDate: '2021', current: true, organizationUrl: 'https://www.linkedin.com/company/8vc', organizationLogoUrl: 'https://images.example.org/8vc.png' }
+  const profile = { ...input().profile, affiliations: [work, { ...work, organization: 'NewCo', organizationUrl: 'https://newco.org', organizationLogoUrl: '' }, ...input().profile.affiliations] }
+  const stage = await capture.stage({ ...input(), profile })
+  const submission = { requestId: 'save-work', fields: ['name', 'urls', 'affiliations'], createNew: true, groupId: 'investors' }
+  const first = await capture.apply(stage.id, submission)
+  await capture.apply(stage.id, submission)
+  const employers = db.crm.rows('companies')
+  const eight = employers.find(row => row.name === '8VC')!, school = employers.find(row => row.organizationType === 'school')!
+  expect(employers).toHaveLength(3)
+  expect(eight.logoUrl).toBe(work.organizationLogoUrl)
+  expect(db.crm.rows('memberships')).toHaveLength(1)
+  expect((first.record as CrmPerson).companyIds).toHaveLength(2)
+  expect(db.crm.detail('companies', eight.id).companyRoster?.current.map(row => row.id)).toEqual([first.record.id])
+  expect(db.crm.detail('companies', school.id).companyRoster?.education.map(row => row.id)).toEqual([first.record.id])
+  const changed = await capture.stage({ ...input(), profile: { ...profile, affiliations: [{ ...work, current: false, endDate: '2025' }] } })
+  await capture.apply(changed.id, { requestId: 'end-work', targetId: first.record.id, fields: ['affiliations'], expectedRecordRevision: first.record.revision })
+  expect(db.crm.get('people', first.record.id)?.companyIds).not.toContain(eight.id)
+  const company = db.crm.detail('companies', eight.id)
+  expect(company.companyRoster?.former.map(row => row.id)).toEqual([first.record.id])
+  expect(company.companyRoster?.current).toHaveLength(0)
+  expect(db.crm.get('people', first.record.id)?.affiliations).toHaveLength(3)
+})
+it('rolls back the person, organizations and membership if the selected group cannot accept the capture', async () => {
+  const draft = await capture.stage(input())
+  await expect(capture.apply(draft.id, { requestId: 'bad-group', fields: ['name', 'affiliations'], createNew: true, groupId: 'does-not-exist' })).rejects.toThrow('compatible')
+  expect(db.crm.rows('people')).toHaveLength(0)
+  expect(db.crm.rows('companies')).toHaveLength(0)
+  expect(capture.detail(draft.id).status).toBe('pending')
+})
+it('rechecks identity at commit when simultaneous captures discover the same new person', async () => {
+  const one = await capture.stage(input()), two = await capture.stage({ ...input(), title: 'Newer page' })
+  const apply = (id: string) => capture.apply(id, { requestId: crypto.randomUUID(), createNew: true, fields: ['name', 'urls'] })
+  const results = await Promise.allSettled([apply(one.id), apply(two.id)])
+  expect(results.filter(result => result.status === 'fulfilled')).toHaveLength(1)
+  expect(db.crm.rows('people')).toHaveLength(1)
+})
+it('replaces a same-source header with the dated role and keeps distinct historical roles and descriptions', async () => {
+  const existing = { kind: 'employment', role: 'Research Fellow', current: true, organization: 'Example University' }
+  const school = { id: 'school', name: 'Example University', urls: ['https://www.linkedin.com/school/example-university'] }
+  db.crm.command({ requestId: 'preserve-school', operation: 'create', collection: 'companies', record: school })
+  const supplied = input()
+  const first = await capture.stage({ ...supplied, profile: { ...supplied.profile, affiliations: [existing] } })
+  const saved = await capture.apply(first.id, { requestId: 'header-only', createNew: true, fields: ['name','urls','affiliations'] })
+  const current = { ...existing, description: 'Leads the computing program.', startDate: '2021', organizationUrl: 'https://linkedin.com/school/1503/' }
+  const old = { ...current, description: 'Taught the introductory course.', startDate: '2012', endDate: '2018', current: false }
+  const second = await capture.stage({ ...input(), profile: { ...supplied.profile, affiliations: [existing,current,old] } })
+  const retained = await capture.apply(second.id, { requestId: 'full-career', targetId: saved.record.id, expectedRecordRevision: saved.record.revision, fields: ['affiliations'] })
+  const roles = (retained.record as CrmPerson).affiliations!
+  expect(roles.map(role => [role.description,role.organizationId])).toEqual([[current.description,school.id],[old.description,school.id]])
+  expect(roles[0].evidence.some(item => item.sourceRef?.originalAssetId === first.source.originalAssetId)).toBe(true)
+  expect(db.crm.rows('companies')).toHaveLength(1)
+})
+
+it('links a Michigan Tech degree to the verified Michigan Technological University employer in the same captured career', async () => {
+  db.crm.command({ operation: 'create', requestId: 'mtu', collection: 'companies', record: { id: 'mtu', name: 'Michigan Technological University', domain: 'mtu.edu', urls: ['https://www.mtu.edu/'], organizationType: 'school' } })
+  const draft = await capture.stage({ requestId: 'career', url: 'https://faculty.example.org/bio', title: 'Faculty profile', text: 'M.S., Michigan Tech. Previously a professor at Michigan Technological University.', profile: {
+    entityType: 'person', name: 'Faculty Member', affiliations: [
+      { kind: 'employment', organization: 'Michigan Technological University', role: 'Professor', endDate: '2010' },
+      { kind: 'education', organization: 'Michigan Tech', degree: 'M.S.' },
+    ],
+  } })
+  const { record } = await capture.apply(draft.id, { requestId: 'career-save', createNew: true, fields: ['name','affiliations'] })
+  expect((record as CrmPerson).affiliations?.map(row => [row.organization, row.organizationId])).toEqual([['Michigan Technological University','mtu'],['Michigan Tech','mtu']])
+  expect(db.crm.rows('companies')).toHaveLength(1)
+  expect(db.crm.detail('companies','mtu').companyRoster).toMatchObject({ former: [{ id: record.id }], education: [{ id: record.id }] })
+})

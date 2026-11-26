@@ -14,6 +14,8 @@ The [personal workspace update](docs/PERSONAL-WORKSPACE.md) adds a physical-styl
 
 ## Run locally
 
+On a Mac with Worldview installed, press **⌘ Space**, type **Worldview**, and press **Return**. Open **People → Capture profile** to bring up the floating capture button. In the browser workspace, **Sources → Desktop workspace** has links to open or download the Mac app. [Mac app guide](docs/DESKTOP.md)
+
 Use Node 26 or newer, then run `npm ci` and `npm run dev`. Open [localhost:5173](http://localhost:5173). Keep this origin and port: browser storage belongs to it. The local service stores SQLite and original files under `data/`; existing browser worlds keep their current storage until explicitly migrated in Settings.
 
 `npm run check` runs TypeScript, ESLint and the test suite. `npm run build` creates the production build. Environment options are documented in `.env.example`; provider credentials belong only on the server. Cloud AI is off by default (`AI_PROVIDER=none`). Capture, reading, search, local transcription and exports work without paid API access. To opt in later, explicitly set `AI_PROVIDER=openai` with `OPENAI_API_KEY`, or choose Anthropic, in `.env.local`. Local QMD and Whisper setup use `node scripts/qmd-setup.ts` and `node scripts/setup-whisper.ts`. Sources & activity contains the QMD, Telegram and AI connection controls. Telegram requires a dedicated bot token and explicit sender/chat allowlists; cloud generation requires active API credit.

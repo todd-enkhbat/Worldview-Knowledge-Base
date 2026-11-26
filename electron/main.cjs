@@ -1,6 +1,6 @@
 const { app, BrowserWindow, dialog, ipcMain, Menu, shell, session, systemPreferences } = require('electron')
 const { spawn } = require('node:child_process')
-const { cloudAiIsOff, sameWorkspace } = require('./policy.cjs')
+const { cloudAiIsOff, sameWorkspace, parseRecordLink } = require('./policy.cjs')
 const { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } = require('node:fs')
 const { join, resolve, basename } = require('node:path')
 
@@ -8,13 +8,63 @@ const base = app.isPackaged ? app.getAppPath() : resolve(__dirname, '..')
 const runtime = app.isPackaged ? join(base, 'runtime') : base
 const node = app.isPackaged ? join(base, 'runtime/node/bin/node') : join(base, `data/tools/desktop-node/26.5.0-${process.platform}-${process.arch}/bin/node`)
 let window = null, server = null, origin = '', workspace = '', stopping = false, changing = false
+let floatingCapture = null, workspaceReady = false, pendingRecord = null
+const defaultShortcut = 'CommandOrControl+Alt+Shift+W'
+let registeredShortcut = '', releaseShortcut = null
+const preferenceFile = () => join(app.getPath('userData'),'helper-preferences.json')
+function readHelperPreferences() { try { return JSON.parse(readFileSync(preferenceFile(),'utf8')) } catch { return {} } }
+function writeHelperPreferences(values) {
+  const file = preferenceFile()
+  writeFileSync(file+'.tmp',JSON.stringify({...readHelperPreferences(),...values}),{mode:0o600})
+  renameSync(file+'.tmp',file)
+}
+async function helperShortcut(value) {
+  if(value === undefined) return registeredShortcut || defaultShortcut
+  if(value === registeredShortcut) return value
+  if(typeof value !== 'string' || value.length > 90 || !/^(?:(?:CommandOrControl|CmdOrCtrl|Command|Control|Alt|Option|Shift|Super)\+)+(?:[a-z0-9]|F(?:[1-9]|1[0-9]|2[0-4])|Space|Up|Down|Left|Right)$/i.test(value)) throw Error('Use a modifier and a letter or number, such as Alt+Shift+D.')
+  const shortcuts = require('electron').globalShortcut
+  const {reserveShortcut,shortcutIdentity}=require('./shortcut-reservation.cjs')
+  if(registeredShortcut && shortcutIdentity(registeredShortcut).id===shortcutIdentity(value).id)return registeredShortcut
+  const release=await reserveShortcut(app,value)
+  try{if(!shortcuts.register(value,() => void showFloatingCapture(true)))throw Error('That shortcut is already in use. Choose another.')}
+  catch(error){release();throw error}
+  releaseShortcut?.();releaseShortcut=release
+  if(registeredShortcut) shortcuts.unregister(registeredShortcut)
+  registeredShortcut = value
+  writeHelperPreferences({shortcut:value})
+  return value
+}
+async function showFloatingCapture(fromShortcut) {
+  if (!workspaceReady || stopping) return
+  floatingCapture ||= require('./floating-capture.cjs').createFloatingCapture({
+    electron: require('electron'), runtime, context: () => ({ origin, workspace }),
+    loadRecord: showWorkspace, preferences:{read:readHelperPreferences,write:writeHelperPreferences,shortcut:helperShortcut},
+  })
+  const selection = fromShortcut === true && systemPreferences.isTrustedAccessibilityClient?.(false) ? await require('./helper-native.cjs').selectedWord() : ''
+  if(workspaceReady && !stopping) floatingCapture?.show(selection)
+}
 const ownedChildren = new Set()
 const arg = (name) => { const index = process.argv.indexOf(name); return index >= 0 ? process.argv[index + 1] : undefined }
 const profile = arg('--profile')
 if (profile) app.setPath('userData', resolve(profile))
 const locked = app.requestSingleInstanceLock()
 if (!locked) { app.quit() } else {
-  app.on('second-instance', () => { if (window) { if (window.isMinimized()) window.restore(); window.focus() } })
+  app.on('second-instance', reopenWorkspace)
+  if (process.platform === 'darwin') {
+    app.on('activate', reopenWorkspace)
+    app.on('open-url', (event, url) => {
+      const record = parseRecordLink(url)
+      if (record) {
+        event.preventDefault()
+        if (workspaceReady) void openSavedRecord(record)
+        else pendingRecord = record
+        return
+      }
+      if (url !== 'worldview-local://open' && url !== 'worldview-local://open/') return
+      event.preventDefault()
+      reopenWorkspace()
+    })
+  }
   app.whenReady().then(start).catch(async (error) => { await dialog.showMessageBox({ type: 'error', title: 'Worldview could not open', message: error.message, detail: 'Your workspace files were not replaced. Choose the folder again, or restart the local app service.' }); app.quit() })
 }
 const configurationPath = () => join(app.getPath('userData'), 'workspace.json')
@@ -38,6 +88,7 @@ async function openWorkspace(path, navigate = false) {
     origin = url; workspace = path; server = child
     try { if (navigate && window) await window.loadURL(`${url}/#/today`); remember(path) }
     catch (error) { origin = previousOrigin; workspace = previousWorkspace; server = previous; if (child !== previous) await stopChild(child); if (navigate && window && previousUrl && window.webContents.getURL() !== previousUrl) await window.loadURL(previousUrl).catch(() => {}); throw error }
+    if (previousWorkspace !== path || previousOrigin !== url) floatingCapture?.close()
     if (previous !== child) await stopChild(previous)
     return url
   }
@@ -45,7 +96,7 @@ async function openWorkspace(path, navigate = false) {
   const occupied = await probe('http://127.0.0.1:5173')
   let port = 5173
   if (occupied && previous) port = 5174
-  else if (occupied) { const answer = await dialog.showMessageBox({ type: 'question', title: 'Another workspace is already open', message: 'Port 5173 belongs to another local workspace.', detail: 'Open this workspace on a separate local port? MCP configuration must use the displayed port; the browser companion uses port 5173.', buttons: ['Cancel', 'Open on another port'], defaultId: 0, cancelId: 0 }); if (answer.response !== 1) throw new Error('Choose the workspace already running, or stop its service before opening another.'); port = 5174 }
+  else if (occupied) { const answer = await dialog.showMessageBox({ type: 'question', title: 'Another workspace is already open', message: 'Port 5173 belongs to another local workspace.', detail: 'Open this workspace on a separate local port? Use the displayed port in Worldview Reader connection settings when pairing this workspace.', buttons: ['Cancel', 'Open on another port'], defaultId: 0, cancelId: 0 }); if (answer.response !== 1) throw new Error('Choose the workspace already running, or stop its service before opening another.'); port = 5174 }
   if (!existsSync(node)) throw new Error('The bundled Node runtime is unavailable. Rebuild the desktop app with scripts/desktop/prepare-node.mjs first.')
   let lastError = ''
   for (let attempt = 0; attempt < 12; attempt++, port++) {
@@ -62,20 +113,66 @@ async function openWorkspace(path, navigate = false) {
 }
 function trusted(event) { return event.sender === window?.webContents && event.senderFrame?.url?.startsWith(`${origin}/`) && new URL(event.senderFrame.url).origin === origin }
 async function changeWorkspace() { if (changing) return; changing = true; try { const selected = await selectWorkspace(); if (!selected || selected === workspace) return; await openWorkspace(selected, true) } catch (error) { await dialog.showMessageBox(window, { type: 'error', message: error.message }) } finally { changing = false } }
+function createWorkspaceWindow() {
+  const view = new BrowserWindow({ title: 'Worldview', width: 1400, height: 940, minWidth: 680, minHeight: 540, show: false, backgroundColor: '#171819', autoHideMenuBar: true, webPreferences: { preload: join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true, allowRunningInsecureContent: false, safeDialogs: true, spellcheck: true } })
+  view.webContents.setWindowOpenHandler(({ url }) => { try { const target = new URL(url); if (['https:', 'http:'].includes(target.protocol) && !target.username && !target.password) void shell.openExternal(url) } catch {} return { action: 'deny' } })
+  view.webContents.on('will-navigate', (event, target) => { try { if (new URL(target).origin !== origin) event.preventDefault() } catch { event.preventDefault() } })
+  view.once('ready-to-show', () => view.show())
+  view.on('closed', () => { floatingCapture?.close(); if (window === view) window = null })
+  window = view
+  return view
+}
+async function showWorkspace(hash) {
+  if (!workspaceReady || stopping) return
+  const existing = window, view = existing || createWorkspaceWindow()
+  if (hash || !existing) await view.loadURL(origin + '/' + (hash || '#/today'))
+  if (window !== view) return
+  if (process.platform === 'darwin' && app.isHidden()) app.show()
+  if (view.isMinimized()) view.restore()
+  view.show()
+  view.focus()
+}
+function reopenWorkspace() {
+  void showWorkspace().catch(error => dialog.showMessageBox({ type: 'error', title: 'Worldview could not open', message: error.message }))
+}
+async function openSavedRecord(record) {
+  const selected = workspace, localOrigin = origin
+  try {
+    const response = await fetch(localOrigin + '/api/crm/status', { headers: { 'x-wv-client': 'worldview-desktop-launcher' }, redirect: 'error', signal: AbortSignal.timeout(5000) })
+    if (!response.ok || (await response.json()).workspaceFingerprint !== record.workspace) throw new Error('Open the workspace paired with Worldview Reader to view this record.')
+    if (workspace === selected && origin === localOrigin && !changing && !stopping) await showWorkspace(record.hash)
+  } catch (error) {
+    await dialog.showMessageBox({ type: 'info', title: 'Open saved record', message: error.message })
+  }
+}
 async function start() {
   const chosen = await selectWorkspace(arg('--workspace') ?? remembered()); if (!chosen) { app.quit(); return }
   const url = await openWorkspace(chosen)
   session.defaultSession.setPermissionCheckHandler((contents, permission, requestingOrigin, details) => { try { return contents === window?.webContents && !contents.isDestroyed() && new URL(requestingOrigin).origin === origin && new URL(details.requestingUrl ?? contents.getURL()).origin === origin && permission === 'media' && details.mediaType === 'audio' && process.platform === 'darwin' && systemPreferences.getMediaAccessStatus('microphone') === 'granted' } catch { return false } })
   session.defaultSession.setPermissionRequestHandler(async (contents, permission, callback, details) => { const requestedWorkspaceOrigin = origin; let granted = false; try { const requestingOrigin = new URL(details.requestingUrl ?? contents.getURL()).origin; if (contents === window?.webContents && requestingOrigin === requestedWorkspaceOrigin && permission === 'media' && Array.isArray(details.mediaTypes) && details.mediaTypes.length && details.mediaTypes.every((type) => type === 'audio') && process.platform === 'darwin') granted = await systemPreferences.askForMediaAccess('microphone'); granted = granted && origin === requestedWorkspaceOrigin && contents === window?.webContents && !contents.isDestroyed() && new URL(contents.getURL()).origin === requestedWorkspaceOrigin } catch { granted = false } callback(granted) })
-  window = new BrowserWindow({ title: 'Worldview', width: 1400, height: 940, minWidth: 680, minHeight: 540, show: false, backgroundColor: '#171819', autoHideMenuBar: true, webPreferences: { preload: join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true, allowRunningInsecureContent: false, safeDialogs: true, spellcheck: true } })
-  window.webContents.setWindowOpenHandler(({ url }) => { try { const target = new URL(url); if (['https:', 'http:'].includes(target.protocol) && !target.username && !target.password) void shell.openExternal(url) } catch {} return { action: 'deny' } })
-  window.webContents.on('will-navigate', (event, target) => { try { if (new URL(target).origin !== origin) event.preventDefault() } catch { event.preventDefault() } })
-  window.once('ready-to-show', () => window.show())
+  createWorkspaceWindow()
+  workspaceReady = true
   ipcMain.handle('worldview:desktop-info', async (event) => { if (!trusted(event)) throw new Error('Only the local workspace can use desktop controls.'); return { version: app.getVersion(), workspaceName: basename(workspace), workspace, origin, ownsService: !!server, cloudAi: (await probe(origin))?.cloudAiOff ? 'off' : 'unknown', platform: process.platform } })
   ipcMain.handle('worldview:choose-workspace', async (event) => { if (!trusted(event)) throw new Error('Only the local workspace can select a folder.'); await changeWorkspace(); return { workspaceName: basename(workspace), origin } })
   ipcMain.handle('worldview:show-workspace', async (event) => { if (!trusted(event)) throw new Error('Only the local workspace can reveal a folder.'); await shell.openPath(workspace); return { ok: true } })
-  Menu.setApplicationMenu(Menu.buildFromTemplate([{ label: 'Worldview', submenu: [{ role: 'about' }, { type: 'separator' }, { label: 'Open Workspace…', accelerator: 'CmdOrCtrl+O', click: () => void changeWorkspace() }, { label: 'Show Workspace in Finder', click: () => void shell.openPath(workspace) }, { type: 'separator' }, { role: 'quit' }] }, { role: 'editMenu' }, { role: 'viewMenu' }, { role: 'windowMenu' }]))
+  ipcMain.handle('worldview:open-floating-capture', event => { if (!trusted(event)) throw new Error('Open floating capture from the local workspace.'); showFloatingCapture(); return true })
+  if (process.platform === 'darwin') require('./photo-places.cjs').registerPhotoPlaces({
+    ipcMain,
+    getWorkspace: () => workspaceReady && !changing && !stopping && window && { path: workspace, origin, contents: window.webContents },
+    readNative: (...args) => {
+      const nativePath = app.isPackaged ? join(base, 'electron/photo-places.node') : join(base, 'data/desktop/native/photo-places.node')
+      if (!existsSync(nativePath)) throw new Error('Build the Mac Photos connector with node scripts/desktop/build-photo-places.mjs, then reopen Maps.')
+      return require(nativePath).read(...args)
+    },
+  })
+  try { await helperShortcut(readHelperPreferences().shortcut || defaultShortcut) } catch (error) { console.warn('Floating shortcut unavailable:',error.message) }
+  Menu.setApplicationMenu(Menu.buildFromTemplate([{ label: 'Worldview', submenu: [{ role: 'about' }, { type: 'separator' }, { label: 'Open Floating Capture', click: showFloatingCapture }, { label: 'Open Workspace…', accelerator: 'CmdOrCtrl+O', click: () => void changeWorkspace() }, { label: 'Show Workspace in Finder', click: () => void shell.openPath(workspace) }, { type: 'separator' }, { role: 'quit' }] }, { role: 'editMenu' }, { role: 'viewMenu' }, { role: 'windowMenu' }]))
+  if (process.platform === 'darwin') app.dock.setMenu(Menu.buildFromTemplate([
+    { label: 'Quick Capture', click: showFloatingCapture },
+    { label: 'Show Worldview Workspace', click: reopenWorkspace },
+  ]))
   await window.loadURL(`${url}/#/today`)
+  if (pendingRecord) { const record = pendingRecord; pendingRecord = null; await openSavedRecord(record) }
 }
-app.on('window-all-closed', () => app.quit())
+app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })
 app.on('before-quit', (event) => { if (stopping || !server && !ownedChildren.size) return; event.preventDefault(); stopping = true; void stopOwnedServer().finally(() => app.quit()) })

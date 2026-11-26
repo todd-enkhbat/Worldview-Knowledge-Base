@@ -103,3 +103,95 @@ it('extracts exact identities only from explicitly selected retained Drive or Re
   const text = 'Visible profile for Ada. Contact ada@example.test about the project.', blobId = `knowledge-${crmHash(text)}`, snapshot: KnowledgeSnapshot = { schemaVersion: 1, revision: 1, sources: [{ id: 'selected-source', externalId: 'web:profile', title: 'Ada profile', kind: 'document', currentVersionId: 'version1', createdAt: time, updatedAt: time, excluded: false, aiAllowed: false, tags: [] }], versions: [{ id: 'version1', sourceId: 'selected-source', contentHash: crmHash(text), originalBlobId: blobId, originalName: 'capture.json', text, createdAt: time, authoredAt: null, origin: 'capture', metadata: { format: 'article', captureMethod: 'browser-extension', url: 'https://example.test/ada' } }], passages: [], imports: [], jobs: [], proposals: [] }; db.putAssetMeta({ id: blobId, kind: 'file', mime: 'text/plain', bytes: text.length, createdAt: time, nodeId: null }); db.putKv('knowledge.v1', snapshot)
   expect(service.capturedSources().sources).toMatchObject([{ id: 'selected-source', provider: 'website-reader', url: 'https://example.test/ada' }]); await expect(service.stageCapturedSource({ sourceId: 'selected-source', expectedVersionId: 'stale' })).rejects.toThrow(/changed/); await service.stageCapturedSource({ sourceId: 'selected-source', expectedVersionId: 'version1' }); const batch = staged.mock.calls[0][0]; expect(batch.candidates[0].payload).toMatchObject({ fullName: 'ada@example.test', emails: ['ada@example.test'] }); expect(batch.candidates[0].sourceRefs[0]).toMatchObject({ originalAssetId: blobId, version: 'version1' }); expect(batch.candidates[0].evidence[0].excerpt).toContain('ada@example.test'); await expect(service.stageCapturedSource({ sourceId: 'selected-source', expectedVersionId: 'version1', fullName: 'Ada Example', email: 'notvisible@example.test' }, true)).rejects.toThrow(/not in the captured page/); await service.stageCapturedSource({ sourceId: 'selected-source', expectedVersionId: 'version1', fullName: 'Ada Example' }, true); expect(staged.mock.calls[1][0].candidates[0].payload.urls).toEqual(['https://example.test/ada']); expect(provider).not.toHaveBeenCalled(); snapshot.sources[0].excluded = true; db.putKv('knowledge.v1', snapshot); expect(service.capturedSources().sources).toHaveLength(0)
 })
+
+it('rebuilds relationship history from saved headers for later captures, counts only exchanges, and excludes ambiguous addresses', async () => {
+  const { accountId } = await connect(['gmail'])
+  const rows = [
+    { id: 'first', at: '100', from: 'friend@example.test', to: 'owner@example.test', subject: 'Office hours', key: 'same-id' },
+    { id: 'copy', at: '100', from: 'friend@example.test', to: 'owner@example.test', subject: 'Office hours', key: 'same-id' },
+    { id: 'second', at: '500', from: 'owner@example.test', to: 'friend@example.test', subject: 'Next steps', key: 'second-id' },
+    { id: 'co-recipients', at: '800', from: 'stranger@example.test', to: 'friend@example.test, owner@example.test', subject: 'Newsletter', key: 'third-id' },
+  ]
+  provider.mockResolvedValueOnce(json({ historyId: 'first-cursor' })).mockResolvedValueOnce(json({ messages: rows.map(row => ({ id: row.id })) }))
+  for (const row of rows) provider.mockResolvedValueOnce(json({ internalDate: row.at, payload: { headers: [
+    { name: 'From', value: row.from }, { name: 'To', value: row.to }, { name: 'Subject', value: row.subject }, { name: 'Message-ID', value: row.key },
+  ] } }))
+  await service.gmail({ accountId, includeSubject: true })
+  const person = store.command({ requestId: 'create-friend', operation: 'create', collection: 'people', record: { fullName: 'Known contact', emails: ['friend@example.test'] } }).record!
+  store.command({ requestId: 'future-visit', operation: 'create', collection: 'interactions', record: { title: 'Future visit', status: 'scheduled', startAt: 1001, personIds: [person.id] } })
+  const history = await service.relationship(person.id, 0)
+  expect(history).toMatchObject({ total: 2, sent: 1, received: 1, recentCount: 2, first: { title: 'Office hours', at: 100 }, last: { title: 'Next steps', at: 500 }, unavailableSources: 0, ambiguousEmails: 0 })
+  expect(history.timeline[0].url).toContain('authuser=owner%40example.test')
+  const introducer = store.command({ requestId: 'introducer', operation: 'create', collection: 'people', record: { fullName: 'Sam' } }).record!
+  store.command({ requestId: 'introduction', operation: 'create', collection: 'relationships', record: { from: { type: 'person', id: person.id }, to: { type: 'person', id: introducer.id }, relation: 'Introduced by', confirmed: true } })
+  expect((await service.relationship(person.id, 0)).introductions).toEqual([{ personId: introducer.id, name: 'Sam', source: 'Saved relationship' }])
+  time += 31 * 86400000
+  expect(await service.reconnect(0)).toMatchObject({ total: 1, rows: [{ id: person.id, idleDays: 31, last: { title: 'Next steps' } }] })
+  store.command({ requestId: 'followup', operation: 'create', collection: 'tasks', record: { title: 'Get coffee', entityRefs: [{ id: person.id, type: 'person' }] } })
+  expect((await service.reconnect(0)).total).toBe(0)
+  store.command({ requestId: 'another-friend', operation: 'create', collection: 'people', record: { fullName: 'Shared inbox', emails: ['FRIEND@example.test'] } })
+  expect(await service.relationship(person.id, 0)).toMatchObject({ total: 0, ambiguousEmails: 1 })
+})
+
+it('automatically syncs an opted-in mailbox once per interval, pauses on quota and isolates a replacement workspace', async () => {
+  const { accountId } = await connect(['gmail'])
+  expect(await service.autoSync()).toEqual({ changed: false })
+  expect(provider).not.toHaveBeenCalled()
+  await service.syncPreferences({ accountId, enabled: true, includeSubjects: true })
+  provider.mockResolvedValueOnce(json({ historyId: 'sync-cursor' })).mockResolvedValueOnce(json({ messages: [] }))
+  expect(await service.autoSync()).toEqual({ changed: true })
+  expect(await service.autoSync()).toEqual({ changed: false })
+  expect(provider).toHaveBeenCalledTimes(2)
+  time += 15 * 60000
+  provider.mockResolvedValueOnce(new Response('{}', { status: 429 }))
+  await service.autoSync()
+  expect((await service.status()).accounts[0].autoSyncError).toMatch(/quota/i)
+  time += 15 * 60000
+  expect(await service.autoSync()).toEqual({ changed: false })
+  db.wipe()
+  expect((await service.status()).accounts[0].autoSync).toBe(false)
+})
+
+it('carries Google contact cities and distinct school, current, and former roles into accepted CRM records', async () => {
+  const { accountId } = await connect(['contacts'])
+  provider.mockResolvedValueOnce(json({ connections: [{
+    resourceName: 'people/c1', names: [{ displayName: 'Ada Test' }], addresses: [{ type: 'work', city: 'Boston' }, { type: 'home', city: 'New York', region: 'NY' }],
+    organizations: [{ type: 'work', name: 'Past Inc', title: 'Director', endDate: { year: 2021 } }, { type: 'work', name: 'Current Inc', title: 'Engineer', current: true, location: 'Boston', domain: 'current.example' }, { type: 'school', name: 'Example College' }],
+  }] }))
+  await service.contacts({ accountId })
+  const candidate = store.rows('candidates')[0]
+  const accepted = store.command({ requestId: 'accept-gc', operation: 'review_candidate', id: candidate.id, expectedRecordRevision: candidate.revision, accept: true })
+  expect(accepted.record).toMatchObject({ location: 'New York, NY', jobTitle: 'Engineer', affiliations: [{ organization: 'Past Inc', current: false, endDate: '2021' }, { organization: 'Current Inc', current: true, organizationUrl: 'https://current.example/' }, { organization: 'Example College', kind: 'education' }] })
+})
+it('counts calendar participation only after confirmation and links the same event to a second selected contact', async () => {
+  const save = (id: string) => store.command({ requestId: 'create-' + id, operation: 'create', collection: 'people', record: { id, fullName: id } })
+  save('person-a'); save('person-b')
+  const event = { title: 'Coffee', type: 'calendar', startAt: 200, sourceRefs: [{ provider: 'google-calendar', accountId: 'work', externalId: 'event-1' }] }
+  store.command({ requestId: 'attach-a', operation: 'log_calendar', record: { ...event, personIds: ['person-a'] } })
+  const existing = store.command({ requestId: 'attach-b', operation: 'log_calendar', record: { ...event, personIds: ['person-b'] } }).record!
+  expect(await service.relationship('person-a', 0)).toMatchObject({ total: 0 })
+  store.command({ requestId: 'confirm', operation: 'log_calendar', expectedRecordRevision: existing.revision, record: event, confirmAttendance: true })
+  expect(store.rows('interactions')).toHaveLength(1)
+  expect((await service.relationship('person-b', 0)).total).toBe(1)
+  save('person-c')
+  store.command({ requestId: 'attach-after-confirmation', operation: 'log_calendar', record: { ...event, personIds: ['person-c'] } })
+  expect((await service.relationship('person-c', 0)).total).toBe(0)
+})
+it('retains an accepted past Folk email timestamp without requiring calendar attendance', async () => {
+  const id = 'friend'
+  store.command({ requestId: 'person', operation: 'create', collection: 'people', record: { id, fullName: 'Friend' } })
+  const candidate = store.command({ requestId: 'candidate', operation: 'create', collection: 'candidates', record: { kind: 'interaction', provider: 'folk', accountId: 'team', externalId: 'em-1', payload: { type: 'email', status: 'logged', title: 'Hello', occurredAt: 200, personIds: [id] } } }).record!
+  store.command({ requestId: 'accept', operation: 'review_candidate', accept: true, id: candidate.id, expectedRecordRevision: candidate.revision })
+  expect((await service.relationship(id, 0)).last).toMatchObject({ at: 200, title: 'Hello' })
+})
+
+it('returns physical calendar venues with source and pagination, keeping private invite details out of Maps', async () => {
+  const { accountId }=await connect(['calendar'])
+  const event={id:'venue',summary:'Reading group',location:'Cambridge, MA',description:'Invitation https://lu.ma/test',attendees:[{email:'private@example.test'}],start:{dateTime:'2026-06-01T15:00:00Z'}}
+  provider.mockResolvedValueOnce(json({items:[event,{...event,id:'remote',location:'https://meet.google.com/example'},{...event,id:'cancelled',status:'cancelled'},{...event,id:'second',description:'https://partiful.com/e/test'}],nextPageToken:'second-page'}))
+  const page=await service.venues({accountId,calendarId:'primary',timeMin:'2026-01-01',timeMax:'2026-12-01'})
+  expect(page.nextPageToken).toBe('second-page')
+  expect(page.venues.map(v=>v.provider)).toEqual(['luma','partiful'])
+  expect(page.venues[0]).toMatchObject({title:'Reading group',location:'Cambridge, MA'})
+  expect(JSON.stringify(page)).not.toContain('private@example.test')
+})

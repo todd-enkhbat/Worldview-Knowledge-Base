@@ -25,8 +25,8 @@ export interface CrmProfileCaptureInput {
   profile: CapturedProfileData
 }
 export interface CrmCapturedProfile extends Required<Omit<CapturedProfileData, 'affiliations'>> { affiliations: CrmAffiliation[] }
-export interface CrmProfileCaptureMatch { collection: 'people' | 'companies'; id: string; name: string; revision: number; reason: 'profile-url' | 'source-continuity' }
-export interface CrmProfileCaptureSource { url: string; title: string; text: string; originalAssetId: string; capturedAt: number; contentHash: string; captureMethod: 'browser-extension' | 'public-url' | 'saved-source'; sourceId?: string; sourceVersionId?: string }
+export interface CrmProfileCaptureMatch { collection: 'people' | 'companies'; id: string; name: string; revision: number; reason: 'profile-url' | 'source-continuity' | 'email-and-name' | 'company-domain' | 'affiliation-name' }
+export interface CrmProfileCaptureSource { url: string; title: string; text: string; originalAssetId: string; capturedAt: number; contentHash: string; captureMethod: 'browser-extension' | 'desktop-capture' | 'public-url' | 'saved-source'; sourceId?: string; sourceVersionId?: string }
 export interface CrmProfileCaptureDraft {
   id: string
   draftId: string

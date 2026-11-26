@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import type { KnowledgeSnapshot, SourceVersion } from '../src/knowledge/types.ts'
 import type { CrmProfileCaptureDraft, CrmProfileCaptureScanResult } from '../src/crm/profileCaptureTypes.ts'
 import { CrmError } from './crmStore.ts'
+import type { CatalogCompanyWebsite } from './crmProfileUrls.ts'
 import { fetchProfileResource, publicProfileUrl } from './crmProfileMedia.ts'
 import { profileFromHtml, profileFromSavedText } from './crmProfileExtract.ts'
 import type { CrmProfileCapture } from './crmProfileCapture.ts'
@@ -21,12 +22,13 @@ export class CrmProfileCollection {
   private readonly urlFlights = new Map<string, { url: string; promise: Promise<CrmProfileCaptureDraft> }>()
   constructor(options: Options) { this.options = options }
   private current(generation: number) { check(generation === this.options.db.getReplacementGeneration() && !this.options.db.getKv('importInProgress') && this.options.db.getSettings()?.firstRunComplete, 'The workspace changed. Reopen Collect profiles and try again.', 409) }
-  async fromUrl(input: Record<string, unknown>): Promise<CrmProfileCaptureDraft> {
+  async fromUrl(input: Record<string, unknown>, authorize?: () => void, catalog?: CatalogCompanyWebsite): Promise<CrmProfileCaptureDraft> {
     check(typeof input.requestId === 'string' && input.requestId.length > 0 && input.requestId.length <= 100, 'Provide a bounded unique URL import identity.')
     const url = publicProfileUrl(input.url); check(url, 'Choose a public profile URL.')
+    const signature = typeof input.expectedCompanyName === 'string' ? JSON.stringify([url, input.expectedCompanyName, ...(catalog ? [catalog.labels.en || input.expectedCompanyName] : [])]) : url
     const flight = this.urlFlights.get(input.requestId)
-    if (flight) { check(flight.url === url, 'This URL import identity was already used for a different address.', 409); return flight.promise }
-    const promise = this.collectUrl(input); this.urlFlights.set(input.requestId, { url, promise })
+    if (flight) { check(flight.url === signature, 'This URL import identity was already used for a different address.', 409); return flight.promise }
+    const promise = this.collectUrl(input, signature, authorize, catalog); this.urlFlights.set(input.requestId, { url: signature, promise })
     try { return await promise } finally { if (this.urlFlights.get(input.requestId)?.promise === promise) this.urlFlights.delete(input.requestId) }
   }
   private recoveredUrlDraft(requestId: string): CrmProfileCaptureDraft | null {
@@ -41,12 +43,12 @@ export class CrmProfileCollection {
     check(draft.source.originalAssetId === assetId && draft.source.captureMethod === 'public-url', 'The retained URL import does not match its capture.', 409)
     return draft
   }
-  private async collectUrl(input: Record<string, unknown>) {
-    const generation = this.options.db.getReplacementGeneration(), current = () => this.current(generation), url = publicProfileUrl(input.url)
+  private async collectUrl(input: Record<string, unknown>, signature: string, authorize?: () => void, catalog?: CatalogCompanyWebsite) {
+    const generation = this.options.db.getReplacementGeneration(), current = () => { authorize?.(); this.current(generation) }, url = publicProfileUrl(input.url)
     current(); check(url && new URL(url).hostname.replace(/\.$/, '').toLowerCase() !== 'app.folk.app', 'Use a public person or company URL; Folk has its own private import.')
     check(typeof input.requestId === 'string' && input.requestId.length > 0 && input.requestId.length <= 100, 'Provide a bounded unique URL import identity.')
-    if (/(^|\.)linkedin\.com$/i.test(new URL(url).hostname)) throw new CrmError('For LinkedIn, open the main profile or company page in Dia and choose Save profile or company in Reader. This importer does not use your browser login.', 422)
-    const stateKey = `profile-url:${hash(input.requestId)}`, fingerprint = hash(url), prior = this.options.db.db.prepare('SELECT body FROM crm_state WHERE key=?').get(stateKey) as { body: string } | undefined
+    if (/(^|\.)linkedin\.com$/i.test(new URL(url).hostname)) throw new CrmError('For LinkedIn, open the profile in Dia and use Worldview’s floating capture or Worldview Reader. You can also sign in through the floating control’s Worldview browser.', 422)
+    const stateKey = `profile-url:${hash(input.requestId)}`, fingerprint = hash(signature), prior = this.options.db.db.prepare('SELECT body FROM crm_state WHERE key=?').get(stateKey) as { body: string } | undefined
     if (prior) {
       const receipt = JSON.parse(prior.body) as { fingerprint: string; id?: string }; check(receipt.fingerprint === fingerprint, 'This URL import identity was already used for a different address.', 409)
       if (receipt.id) return this.options.capture.detail(receipt.id)
@@ -55,8 +57,8 @@ export class CrmProfileCollection {
     }
     else this.options.db.db.prepare('INSERT INTO crm_state(key,body) VALUES(?,?)').run(stateKey, JSON.stringify({ fingerprint }))
     const resource = await fetchProfileResource(url, { fetch: this.options.fetch, lookup: this.options.lookup, maxBytes: 512 * 1024, current }); current()
-    check(/^(?:text\/html|application\/xhtml\+xml)(?:\s*;|$)/i.test(resource.contentType), 'This link does not return a readable HTML profile. Use Reader on the page.', 422)
-    const parsed = profileFromHtml(new TextDecoder('utf-8', { fatal: true }).decode(resource.bytes), resource.url)
+    check(/^(?:text\/html|application\/xhtml\+xml)(?:\s*;|$)/i.test(resource.contentType), 'This link did not return a readable HTML profile. Open the page and use floating capture or Worldview Reader.', 422)
+    const parsed = profileFromHtml(new TextDecoder('utf-8', { fatal: true }).decode(resource.bytes), resource.url, typeof input.expectedCompanyName === 'string' ? input.expectedCompanyName : undefined, catalog)
     const draft = await this.options.capture.stage({ ...parsed, requestId: `url:${input.requestId}` }, { authorize: current, captureMethod: 'public-url' }); current()
     this.options.db.db.prepare('INSERT OR REPLACE INTO crm_state(key,body) VALUES(?,?)').run(stateKey, JSON.stringify({ fingerprint, id: draft.id })); return draft
   }

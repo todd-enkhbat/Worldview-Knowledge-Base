@@ -5,7 +5,7 @@ import { eligibleEvidence } from '../src/knowledge/evidencePolicy.ts'
 import { buildEvidencePacket } from '../src/knowledge/contextPacket.ts'
 import { artifactContext } from '../src/knowledge/artifacts/policy.ts'
 import { ARTIFACTS_KV, emptyArtifacts, type ArtifactSnapshot } from '../src/knowledge/artifacts/types.ts'
-import { retrievalCoverage, fuseEvidence } from '../src/knowledge/retrievalTrace.ts'
+import { retrievalCoverage, fuseEvidence } from '../src/knowledge/evidenceRanking.ts'
 import { isArtifactProjection } from '../src/knowledge/derived.ts'
 
 export type MemoryOperation = 'search' | 'read_passage' | 'read_record' | 'get_project_context' | 'context' | 'status'

@@ -1,13 +1,135 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Worldview Reader</title><link rel="stylesheet" href="popup.css"></head><body>
-<main><header><strong>Worldview Reader</strong><span id="state" role="status">Checking local pairing…</span></header>
-<p id="capture-help">Follow only the article you choose. Highlights and comments stay in your local workspace.</p>
-<div id="connection"><button id="connect">Connect to Worldview</button><p id="connection-help">Approve this browser in the local app. No IDs or tokens to copy.</p></div>
-<section id="profile-data-panel" class="profile-action"><button id="profile-data" disabled>Save profile or company</button><p>Keep the loaded page as a readable source snapshot and collect education, employment, affiliations and company details. Open those sections first. Review the fields in People before adding them; no cloud AI is used.</p><p id="profile-data-status" role="status"></p></section>
-<section id="profile-panel" class="profile-action"><button id="profile" disabled>Save contact photo</button><p id="photo-help">On a contact’s profile page, keep their visible photo in Worldview. Existing photos stay intact. This does not start reading tracking.</p><p id="photo-status" role="status"></p></section>
-<section id="folk-panel" class="profile-action" hidden><button id="folk-photos" disabled>Capture visible Folk photos</button><button id="folk-follow" disabled>Follow visible Folk photos</button><p>Keep this group’s visible photo rows in People. Follow once, then scroll to capture newly visible rows. The PH badge stays on until Stop or navigation. Contact data stays out of your reading and knowledge archive.</p><p id="folk-status" role="status"></p></section>
-<section id="folk-search-capture-panel" class="profile-action" hidden><button id="folk-search-photos" disabled>Save matched Search photos</button><button id="folk-search-follow" disabled>Follow matched Search photos</button><p>Save visible portraits only when a unique email, name and imported Folk account match. Existing photos stay intact. Follow once, then move through the list; Stop or navigation ends capture.</p><p id="folk-search-photo-status" role="status"></p></section>
-<div class="actions"><button id="follow" disabled>Save and follow this article</button><label for="note">Your comment (optional)</label><textarea id="note" rows="3" maxlength="20000" placeholder="What stood out to you?"></textarea><button id="highlight" disabled>Save selected text + comment</button><button id="stop" disabled>Stop following this tab</button></div>
-<p id="notice" role="status"></p><p id="error" role="alert"></p>
-<section class="delivery"><p id="queue" role="status"></p><p id="delivery"></p><p id="delivery-error"></p><ul id="pending"></ul><button id="retry">Retry pending captures</button></section>
-<details id="setup"><summary>Connection settings</summary><section id="folk-search-panel" class="profile-action" hidden><button id="folk-search-diagnostic" disabled>Inspect visible Folk Search photos</button><p>Retain visible names, emails and photo references privately in People for matching checks. This diagnostic changes no contacts or pictures. To save a photo, use a person’s Folk group or profile.</p><p id="folk-search-status" role="status"></p></section><p>Advanced pairing is available if your browser cannot finish the approval flow.</p><input id="extension-id" aria-label="Extension ID" readonly><label for="token">Pairing token</label><input id="token" type="password" autocomplete="off" spellcheck="false" placeholder="Paste the token shown once by Worldview"><button id="pair">Save pairing</button><button id="discard">Discard pending captures</button><button id="disconnect">Disconnect this browser</button></details>
-<footer>Worldview must run locally at 127.0.0.1:5173. No browsing history access. Navigation and browser restart stop following.</footer></main><script type="module" src="popup.js"></script></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Worldview Reader</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header class="workspace">
+    <div class="brand"><img src="worldview-128.png" alt="" width="24" height="24"><strong>Worldview</strong></div>
+    <span id="state" role="status">Connecting…</span>
+  </header>
+  <main>
+    <nav class="capture-modes" aria-label="Capture mode">
+      <button type="button" id="mode-word">Dictionary</button>
+      <button type="button" id="mode-person" aria-current="true">Person</button>
+      <button type="button" id="mode-application">Application</button>
+    </nav>
+    <section id="connection" hidden>
+      <button id="connect">Connect to Worldview</button>
+      <p id="connection-help">Approve this browser in the local app.</p>
+    </section>
+
+    <section id="no-profile" hidden>
+      <h1>No profile on this page</h1>
+      <p>Open someone’s LinkedIn profile or personal website to see their CRM record.</p>
+      <button id="browse-people" type="button">Open my contacts <span aria-hidden="true">↗</span></button>
+    </section>
+    <section id="quick-panel" hidden aria-labelledby="profile-name">
+      <p id="profile-kind"></p>
+      <div class="identity">
+        <div class="portrait">
+          <span id="profile-initials" aria-hidden="true"></span>
+          <img id="profile-avatar" alt="" referrerpolicy="no-referrer" hidden>
+        </div>
+        <div class="identity-copy">
+          <h1 id="profile-name"></h1>
+          <p id="profile-summary"></p>
+          <p id="profile-affiliations"></p>
+          <p id="profile-location"></p>
+        </div>
+      </div>
+      <div id="group-picker">
+        <button id="profile-group" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="group-options">
+          <span class="group-label">Save to</span>
+          <span id="group-selected-icon" aria-hidden="true"></span>
+          <span id="group-selected-name">All contacts</span>
+          <span class="chevron" aria-hidden="true"></span>
+        </button>
+        <div id="group-popover" hidden>
+          <div class="group-search-field">
+            <span class="magnifier" aria-hidden="true"></span>
+            <input id="group-search" type="search" role="combobox" aria-label="Search groups" aria-autocomplete="list" aria-expanded="true" aria-controls="group-options" autocomplete="off" placeholder="Search groups">
+          </div>
+          <div id="group-options" role="listbox" aria-label="Groups"></div>
+          <p id="group-empty" hidden>No groups found.</p>
+        </div>
+      </div>
+      <button id="quick-add" class="primary" disabled>Add to CRM</button>
+      <div class="save-result">
+        <p id="quick-status" role="status"></p>
+        <a id="open-desktop-record" hidden>Open in Mac app ↗</a>
+        <a id="log-interaction" hidden>Log interaction ↗</a>
+        <a id="open-record" hidden>Open in Worldview <span aria-hidden="true">↗</span></a>
+      </div>
+    </section>
+
+    <section id="folk-panel" class="tool-section" hidden>
+      <button id="folk-photos" class="primary" disabled>Capture visible Folk photos</button>
+      <button id="folk-follow" disabled>Follow visible Folk photos</button>
+      <p>Follow this group, then scroll to capture newly visible photo rows. Following stops when you leave the group.</p>
+      <p id="folk-status" role="status"></p>
+    </section>
+    <section id="folk-search-capture-panel" class="tool-section" hidden>
+      <button id="folk-search-photos" class="primary" disabled>Save matched Search photos</button>
+      <button id="folk-search-follow" disabled>Follow matched Search photos</button>
+      <p>Worldview matches visible portraits using email, name and the imported Folk account. Follow the page to capture newly visible rows.</p>
+      <p id="folk-search-photo-status" role="status"></p>
+    </section>
+    <p id="notice" role="status"></p>
+    <p id="error" role="alert"></p>
+
+    <details id="capture-tools">
+      <summary>Profile tools</summary>
+      <div class="tools-body">
+        <section id="profile-data-panel" class="tool-section">
+          <button id="profile-data" disabled>Review profile fields in People</button>
+          <p id="profile-data-status" role="status"></p>
+        </section>
+        <section id="profile-panel" class="tool-section">
+          <button id="profile" disabled>Save contact photo only</button>
+          <p id="photo-help">Save the visible portrait for a matching contact.</p>
+          <p id="photo-status" role="status"></p>
+        </section>
+      </div>
+    </details>
+    <details id="reader-tools" class="utility"><summary>Article &amp; highlights</summary>
+      <div class="tools-body"><section class="actions tool-section">
+          <p id="capture-help"></p>
+          <button id="follow" disabled>Save and follow this article</button>
+          <label for="note">Your comment (optional)</label>
+          <textarea id="note" rows="2" maxlength="20000" placeholder="What stood out to you?"></textarea>
+          <button id="highlight" disabled>Save selected text + comment</button>
+          <button id="stop" disabled>Stop following this tab</button>
+        </section>
+      </div>
+    </details>
+    <details id="delivery-tools" class="utility"><summary>Delivery status</summary>
+      <div class="tools-body"><section class="delivery tool-section">
+          <p id="queue" role="status"></p><p id="delivery"></p><p id="delivery-error"></p>
+          <ul id="pending"></ul><button id="retry" hidden>Retry pending captures</button>
+        </section>
+      </div>
+    </details>
+        <details id="setup" class="utility">
+          <summary>Connection settings</summary>
+          <section id="folk-search-panel" class="tool-section" hidden>
+            <button id="folk-search-diagnostic" disabled>Inspect visible Folk Search photos</button>
+            <p>Keep visible names, emails and photo references privately in People for matching checks.</p>
+            <p id="folk-search-status" role="status"></p>
+          </section>
+          <p>Use advanced pairing if the browser approval flow is unavailable.</p>
+          <input id="extension-id" aria-label="Extension ID" readonly>
+          <label for="workspace-port">Local workspace port</label>
+          <input id="workspace-port" type="number" min="5173" max="5185" step="1" value="5173">
+          <label for="token">Pairing token</label>
+          <input id="token" type="password" autocomplete="off" spellcheck="false" placeholder="Token from Worldview">
+          <button id="pair">Save pairing</button><button id="discard">Discard pending captures</button><button id="disconnect">Disconnect this browser</button>
+          <p>Find your local address in Worldview for Mac under Sources → Desktop. The default port is 5173.</p>
+        </details>
+  </main>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

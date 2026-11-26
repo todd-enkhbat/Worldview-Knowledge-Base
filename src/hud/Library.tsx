@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react'
-import { useApp, useWorld } from '../app/store.ts'
+import { usePersonalLibrary } from '../reading/personalLibrary.ts'
+import { useApp } from '../app/store.ts'
 import { formatByPrecision } from '../domain/time.ts'
 import { ARCHETYPES } from '../domain/types.ts'
 import type { NodeRecord } from '../domain/types.ts'
@@ -46,7 +47,7 @@ export function Library() {
 }
 
 function LibraryPanel() {
-  const nodes = useWorld((s) => s.nodes)
+  const { nodes } = usePersonalLibrary()
   const selectedId = useApp((s) => s.selectedId)
   const [query, setQuery] = useState('')
   const [groupBy, setGroupByState] = useState<GroupBy>(lastGroupBy)

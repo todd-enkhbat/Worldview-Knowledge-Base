@@ -35,10 +35,13 @@ export function socialProfile(value: string) {
   const handle = platform.id === 'website' ? host : pathname.replace(/^\/(?:in|@)\/?/, '').replace(/^\/|\/$/g, '') || host
   return { url, platform, handle }
 }
-export function SocialProfileLinks({ urls, compact = false }: { urls: string[]; compact?: boolean }) {
+export function SocialProfileLinks({ urls, compact = false, websiteLabel }: { urls: string[]; compact?: boolean; websiteLabel?: string }) {
   const seen = new Set<string>(), profiles = urls.flatMap(value => { const item = socialProfile(value); if (!item || seen.has(item.url)) return []; seen.add(item.url); return [item] })
   if (!profiles.length) return null
-  return <div className={`crm-social-links ${compact ? 'is-compact' : ''}`} aria-label="Websites and social profiles">{profiles.map(({ url, platform, handle }) => <a key={url} href={url} target="_blank" rel="noreferrer noopener" title={`${platform.label} · ${handle}`} data-platform={platform.id}><platform.Icon size={compact ? 16 : 19} weight={platform.id === 'website' ? 'regular' : 'fill'} /><span>{compact ? platform.label === 'Personal website' ? 'Website' : platform.label : <><strong>{platform.label}</strong><small>{handle}</small></>}</span>{!compact && <ArrowSquareOut size={12} />}</a>)}</div>
+  return <div className={`crm-social-links ${compact ? 'is-compact' : ''}`} aria-label="Websites and social profiles">{profiles.map(({ url, platform, handle }) => {
+    const label = platform.id === 'website' ? websiteLabel || (compact ? 'Website' : platform.label) : platform.label
+    return <a key={url} href={url} target="_blank" rel="noreferrer noopener" title={`${label} · ${handle}`} data-platform={platform.id}><platform.Icon size={compact ? 16 : 19} weight={platform.id === 'website' ? 'regular' : 'fill'} /><span>{compact ? label : <><strong>{label}</strong><small>{handle}</small></>}</span>{!compact && <ArrowSquareOut size={12} />}</a>
+  })}</div>
 }
 
 /** Editing one named profile leaves every other original URL, including duplicates, intact. */

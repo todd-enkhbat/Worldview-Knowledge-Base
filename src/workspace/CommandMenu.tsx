@@ -1,8 +1,15 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react'
-import { ArrowDown, ArrowElbowDownLeft, ArrowUp, BookOpen, Books, CheckSquare, FileText, FolderOpen, MagnifyingGlass, PencilSimple, Planet, Plus, Stack, Sun, TreeStructure, Users, X } from '@phosphor-icons/react'
+import { ArrowDown, ArrowElbowDownLeft, ArrowUp, BookOpen, Books, CheckSquare, FileText, FolderOpen, MapTrifold, MagnifyingGlass, PencilSimple, Planet, Plus, Stack, Sun, TreeStructure, Users, X } from '@phosphor-icons/react'
+import { crmGet, personName, type CrmListResult } from '../crm/client.ts'
+import type { CrmPerson, CrmCompany } from '../crm/types.ts'
 import { useApp, useWorld } from '../app/store.ts'
 import { useAuth } from '../data/auth.ts'
 import { useKnowledge } from '../knowledge/index.ts'
+import { useBookshelf } from '../bookshelf/store.ts'
+import { bookHref } from '../bookshelf/model.ts'
+import { useReading } from '../reading/store.ts'
+import { resolveTopics, topicHref } from '../reading/topics.ts'
+import { usePersonalLibrary } from '../reading/personalLibrary.ts'
 import { isArtifactProjection } from '../knowledge/derived.ts'
 import { parseAppRoute } from './routes.ts'
 import { openWorkspaceRecord, useWorkspace, WORKSPACE_SECTIONS } from './state.ts'
@@ -20,7 +27,8 @@ export function openCommandMenu(): void {
 
 type MenuRecord = {
   id: string
-  kind: 'source' | 'node'
+  kind: 'source' | 'node' | 'book' | 'writing' | 'concept'
+  editionId?: string
   title: string
   detail: string
   titleKey: string
@@ -43,12 +51,14 @@ const commands: MenuEntry[] = [
   { id: 'write', title: 'Writing studio', detail: 'Documents, formatting and your own design', icon: PencilSimple, href: '#/write', keywords: 'write editor essay newsletter journal poem rich text' },
   { id: 'search', title: 'Search & ask', detail: 'Find words and passages', icon: MagnifyingGlass, href: '#/search', keywords: 'find evidence question' },
   { id: 'library', title: 'Library', detail: 'Read your original sources', icon: BookOpen, href: '#/library', keywords: 'records notes documents files' },
+  { id: 'maps', title: 'Maps', detail: 'Search saved places, photos, people and venues', icon: MapTrifold, href: '#/maps', keywords: 'atlas geography trips visits google apple luma partiful calendar' },
   { id: 'people', title: 'People', detail: 'Contacts, groups, follow-ups and your network', icon: Users, href: '#/people', keywords: 'folk crm contacts calendar comments network relationships' },
   { id: 'graph', title: 'Knowledge graph', detail: 'Connect sources, ideas and topics', icon: TreeStructure, href: '#/graph', keywords: 'network connections links topics map' },
   { id: 'topics', title: 'Projects & topics', detail: 'Follow a subject or investigation', icon: FolderOpen, href: '#/topics', keywords: 'subjects investigations' },
   { id: 'knowledge', title: 'Knowledge pages', detail: 'Your connected understanding', icon: FileText, href: '#/knowledge', keywords: 'wiki pages' },
   { id: 'review', title: 'Review', detail: 'Inspect suggested connections', icon: CheckSquare, href: '#/review', keywords: 'proposals suggestions' },
   { id: 'sources', title: 'Sources & activity', detail: 'Imports, capture, and connections', icon: Stack, href: '#/sources', keywords: 'import telegram voice qmd integrations settings' },
+  { id: 'quotes', title: 'Quotes', detail: 'Find a quotation and its source', icon: Books, href: '#/quotes', keywords: 'quotation excerpt citation source edition passage' },
   { id: 'bookshelf', title: 'Bookshelf', detail: 'Books, articles, ratings and reading lists', icon: Books, href: '#/bookshelf', keywords: 'books shelves want buy unread read reading recommendation author ranking' },
   { id: 'explore', title: 'Explore in 3D', detail: 'Open your spatial world', icon: Planet, href: '#/explore', keywords: 'world map spatial' },
 ]
@@ -65,6 +75,10 @@ function scoreMetadata(title: string, searchable: string, query: string, terms: 
 }
 
 function recordHref(record: MenuRecord): string {
+  if (record.kind === 'concept') return topicHref(record.id)
+  if (record.kind === 'book') return bookHref(record.id)
+  if (record.kind === 'writing' && record.editionId) return bookHref(record.editionId, record.id)
+  if (record.kind === 'writing') return '#/write?doc=' + encodeURIComponent(record.id)
   return `#/library?${record.kind === 'source' ? 'source' : 'record'}=${encodeURIComponent(record.id)}`
 }
 
@@ -73,8 +87,10 @@ function matchingRecords(records: readonly MenuRecord[], query: string): MenuRec
   const terms = query.split(' ').filter(Boolean)
   const best: { record: MenuRecord; score: number }[] = []
   for (const record of records) {
-    const score = query ? scoreMetadata(record.titleKey, record.searchKey, query, terms) : 0
+    let score = query ? scoreMetadata(record.titleKey, record.searchKey, query, terms) : 0
     if (score < 0) continue
+    // The concept page also opens its synthesis note. Prefer it when both share a title.
+    if (query && record.kind === 'concept' && record.titleKey === query) score++
     let at = best.findIndex((entry) => score > entry.score || score === entry.score && record.updatedAt > entry.record.updatedAt)
     if (at < 0) at = best.length
     if (at >= RECORD_LIMIT) continue
@@ -94,8 +110,9 @@ export function CommandMenu() {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [activeId, setActiveId] = useState<string | null>(null)
-  const nodes = useWorld((state) => state.nodes)
-  const sources = useKnowledge((state) => state.sources)
+  const {nodes, sources, writings} = usePersonalLibrary()
+  const books = useBookshelf(s => s.books), filing = useReading(s => s.items)
+  const readingTopics = useReading(s => s.topics)
   const account = useAuth((state) => state.user?.id)
   const dialog = useRef<HTMLDialogElement>(null)
   const input = useRef<HTMLInputElement>(null)
@@ -120,6 +137,7 @@ export function CommandMenu() {
       invoker.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
       restoreFocus.current = true
       setQuery('')
+      setCrmHits({term:'',rows:[]})
       setActiveId(null)
       setOpen(true)
     }
@@ -164,8 +182,29 @@ export function CommandMenu() {
     if (!open) return []
     const indexed: MenuRecord[] = []
     const sourceNodes = new Set(sources.map((source) => source.nodeId))
+    const hidden = new Set(filing.filter(item => item.libraryVisible === false).map(item => item.sourceId))
+    const visibleBooks = books.filter(book => !book.archivedAt && !hidden.has('book:' + book.id))
+    const editions = new Map(visibleBooks.map(book => [book.id, book]))
+    const topicDates = new Map(readingTopics.map(topic => [topic.id, topic.updatedAt ?? topic.createdAt]))
+    for (const topic of resolveTopics([], readingTopics)) {
+      indexed.push({
+        id: topic.id, kind: 'concept', title: topic.name, detail: 'Concept · notes and quotes',
+        titleKey: fold(topic.name), searchKey: fold([topic.name, ...(topic.terms ?? []), 'concept'].join(' ')),
+        updatedAt: topicDates.get(topic.id) ?? 0,
+      })
+    }
+    const displayedSources = new Set([...writings.map(doc => doc.sourceId), ...visibleBooks.map(book => book.sourceId)])
+    for (const book of visibleBooks) {
+      const title = book.title, detail = [book.kind === 'book' ? 'Book' : 'Article', ...book.authors].join(' · ')
+      indexed.push({ id:book.id, kind:'book', title, detail, titleKey:fold(title), searchKey:fold([title,detail,book.isbn].join(' ')), updatedAt:book.updatedAt })
+    }
+    for (const doc of writings) {
+      const edition = doc.bookEditionId ? editions.get(doc.bookEditionId) : undefined
+      const title = doc.title || 'Untitled writing', detail = edition ? 'Reading note · ' + edition.title : 'Writing studio · ' + doc.format
+      indexed.push({ id:doc.id, kind:'writing', editionId:edition?.id, title, detail, titleKey:fold(title), searchKey:fold(title + ' ' + detail), updatedAt:doc.updatedAt })
+    }
     for (const source of sources) {
-      if (source.excluded || source.deleted) continue
+      if (source.excluded || source.deleted || displayedSources.has(source.id)) continue
       const title = source.title || 'Untitled source'
       const detail = [source.kind, ...source.tags.slice(0, 2)].join(' · ')
       indexed.push({ id: source.id, kind: 'source', title, detail, titleKey: fold(title.slice(0, 256)), searchKey: fold(`${title.slice(0, 256)} ${source.kind} ${source.tags.join(' ').slice(0, 512)}`), updatedAt: source.updatedAt })
@@ -177,7 +216,7 @@ export function CommandMenu() {
       indexed.push({ id: node.id, kind: 'node', title, detail, titleKey: fold(title.slice(0, 256)), searchKey: fold(`${title.slice(0, 256)} ${node.archetype} ${node.tags.join(' ').slice(0, 512)}`), updatedAt: node.updatedAt })
     }
     return indexed
-  }, [nodes, sources, open])
+  }, [nodes, sources, open, writings, books, filing, readingTopics])
 
   const normalizedQuery = fold(query)
   const navigation = useMemo(() => {
@@ -185,8 +224,24 @@ export function CommandMenu() {
     const terms = normalizedQuery.split(' ')
     return commands.map((command) => ({ command, score: scoreMetadata(fold(command.title), fold(`${command.title} ${command.detail} ${command.keywords ?? ''}`), normalizedQuery, terms) })).filter((entry) => entry.score >= 0).sort((a, b) => b.score - a.score).map((entry) => entry.command)
   }, [normalizedQuery])
-  const recordEntries = useMemo(() => matchingRecords(records, normalizedQuery).map((record): MenuEntry => ({ id: `${record.kind}:${record.id}`, title: record.title, detail: record.detail, icon: FileText, href: recordHref(record), record })), [records, normalizedQuery])
-  const entries = [...navigation, ...recordEntries]
+  const recordEntries = useMemo(() => matchingRecords(records, normalizedQuery).map((record): MenuEntry => ({ id: `${record.kind}:${record.id}`, title: record.title, detail: record.detail, icon: record.kind === 'concept' ? TreeStructure : record.kind === 'book' ? BookOpen : FileText, href: recordHref(record), record })), [records, normalizedQuery])
+  const [crmHits,setCrmHits]=useState<{term:string;rows:MenuEntry[]}>({term:'',rows:[]})
+  useEffect(()=>{
+    if (!open || !query.trim()) return
+    const controller=new AbortController(), params=new URLSearchParams({q:query.trim(),limit:'5'})
+    const options={signal:controller.signal}
+    const timer=setTimeout(()=>{
+      void Promise.all([crmGet<CrmListResult<CrmPerson>>('people?'+params,options),crmGet<CrmListResult<CrmCompany>>('companies?'+params,options)]).then(([people,companies])=>{
+        if (!controller.signal.aborted) setCrmHits({term:query,rows:[
+          ...companies.rows.map(c=>({id:'company:'+c.id,title:c.name,detail:c.domain || 'Organization',icon:Users,href:'#/people?tab=companies&company='+encodeURIComponent(c.id)})),
+          ...people.rows.filter(p=>!p.mergedIntoId).map(p=>({id:'person:'+p.id,title:personName(p),detail:p.jobTitle || 'CRM contact',icon:Users,href:'#/people?person='+encodeURIComponent(p.id)}))
+        ]})
+      }).catch(()=>{})
+    },160)
+    return ()=>{clearTimeout(timer);controller.abort()}
+  },[open,query,account])
+  const crmEntries=open && query && crmHits.term===query ? crmHits.rows : []
+  const entries = [...navigation, ...recordEntries, ...crmEntries]
   const activeIndex = Math.max(0, entries.findIndex((entry) => entry.id === activeId))
   const selected = entries[activeIndex]
   const optionId = (entry: MenuEntry) => `${id}-option-${entry.id}`
@@ -199,7 +254,11 @@ export function CommandMenu() {
     if (entry.record) {
       // Selection rechecks current policy even if a key arrived before a store rerender.
       const record = entry.record
-      if (record.kind === 'source') {
+      if (record.kind === 'book' || record.kind === 'writing' || record.kind === 'concept') {
+        if (!records.some(item => item.kind === record.kind && item.id === record.id)) return
+        close(false)
+        location.hash = recordHref(record)
+      } else if (record.kind === 'source') {
         const source = useKnowledge.getState().sources.find((item) => item.id === record.id)
         if (!source || source.excluded || source.deleted) return
         close(false)
@@ -272,6 +331,7 @@ export function CommandMenu() {
       <div id={listId} className="workspace-command-results" role="listbox" aria-label="Commands and records">
         {navigation.length > 0 && <div role="group" aria-label="Workspace"><div className="workspace-command-group" aria-hidden="true">Workspace</div>{navigation.map(option)}</div>}
         {recordEntries.length > 0 && <div role="group" aria-label={normalizedQuery ? 'Matching records' : 'Recently updated'}><div className="workspace-command-group" aria-hidden="true">{normalizedQuery ? 'Matching records' : 'Recently updated'}</div>{recordEntries.map(option)}</div>}
+        {crmEntries.length>0 && <div role="group" aria-label="People and companies"><div className="workspace-command-group" aria-hidden="true">People and companies</div>{crmEntries.map(option)}</div>}
       </div>
       {entries.length === 0 && <div className="workspace-command-empty"><FileText size={25} aria-hidden="true" /><strong>No matching commands or records</strong><p>Try a record title, a tag, or a workspace section.</p><button type="button" onClick={() => { setQuery(''); setActiveId(null); input.current?.focus() }}>Clear search</button></div>}
       {!normalizedQuery && !recordEntries.length && <p className="workspace-command-start">Your saved thoughts and sources will appear here.</p>}

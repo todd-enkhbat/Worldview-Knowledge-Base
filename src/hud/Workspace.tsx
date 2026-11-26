@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowSquareOut, ArrowsClockwise, BookOpen, Books, CaretDown, ChatCircle, Compass, DotsThree, FileText, GearSix, Info, Leaf, MagnifyingGlass, Pause, Planet, Play, PencilSimple, Plus, Robot, Sparkle, Stack, Sun, TreeStructure, UploadSimple, Users } from '@phosphor-icons/react'
 import { useApp, useWorld } from '../app/store.ts'
-import { seedDemo, useRepoStatus } from '../data/repo.ts'
+import { useRepoStatus } from '../data/repo.ts'
 import { buildTypedLinks } from '../world/links/style.ts'
 import { recenterWorld } from '../world/camera/OrbitRig.tsx'
 import { stopOrbitMotion, toggleOrbitMotion, useOrbitMotion } from '../world/camera/orbitMotion.ts'
@@ -17,6 +17,7 @@ import { ProductDialog } from './ProductDialog.tsx'
 import { WorldviewMark } from '../workspace/WorldviewMark.tsx'
 import { AsciiOrbit } from '../workspace/AsciiOrbit.tsx'
 import '../workspace/worldviewVisuals.css'
+import { usePersonalLibrary } from '../reading/personalLibrary.ts'
 import { returnToWorkspace } from '../workspace/state.ts'
 
 function revealWorld() {
@@ -24,7 +25,7 @@ function revealWorld() {
 }
 
 export function WorkspaceNav() {
-  const nodes = useWorld((s) => s.nodes)
+  const { nodes } = usePersonalLibrary()
   const library = useApp((s) => s.panels.library)
   const selected = useApp((s) => s.selectedId)
   const fallback = useRepoStatus((s) => s.fallback)
@@ -85,12 +86,7 @@ export function WorldToolbar() {
     document.addEventListener('keydown', escape)
     return () => { document.removeEventListener('pointerdown', outside); document.removeEventListener('keydown', escape) }
   }, [navigationOpen])
-  const [seedBusy, setSeedBusy] = useState(false)
-  const [seedError, setSeedError] = useState('')
-  const example = async () => {
-    setSeedBusy(true)
-    try { await seedDemo(); recenterWorld() } catch (e) { setSeedError(e instanceof Error ? e.message : 'Could not load the example') } finally { setSeedBusy(false) }
-  }
+
   const controlsHint = mode === 'third_person' ? 'WASD walk · Drag to look · O orbit'
     : mode === 'autonav' ? 'Following dated memories · Esc to stop'
       : mode === 'orbit' ? orbiting ? 'Orbiting · Drag or scroll to take control' : 'Select a cluster to explore · Drag to rotate · Scroll to zoom'
@@ -121,8 +117,6 @@ export function WorldToolbar() {
       <span className="world-empty-mark"><Sparkle size={28} weight="duotone" /></span>
       <h2>Your world starts here.</h2><p>Related thoughts form neighborhoods.<br />Add something to give it a place in your world.</p>
       <button className="product-primary" disabled={!writer} onClick={() => useApp.getState().togglePanel('chat', true)}>Add your first thought</button>
-      <button className="world-example-button" disabled={seedBusy || !writer} onClick={() => void example()}>{seedBusy ? 'Loading sample notes…' : 'Explore an example world'}</button>
-      <small>Loads sample notes into this world.</small>{seedError && <p role="alert">{seedError}</p>}
     </div>}
     <div className="world-guide" data-label-avoid>
       <button className="world-guide-help" aria-label="How to read and navigate your world" onClick={() => setHelp(true)}><Info size={16} /></button>

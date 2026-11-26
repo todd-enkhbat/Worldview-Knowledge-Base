@@ -1,5 +1,8 @@
 import { strToU8, zipSync } from 'fflate'
 import { getStore, getWorldGeneration, isRepoReady } from '../data/repo.ts'
+import { decodeReading } from '../reading/model.ts'
+import { READING_KV } from '../reading/types.ts'
+import { conceptMark, writingPassages } from './concepts.ts'
 import { validateWritingDocument } from './model.ts'
 import { parseWritingEmbed, readWritingMedia } from './media.ts'
 import type { WritingDocument, WritingMark, WritingNode } from './types.ts'
@@ -27,6 +30,7 @@ function styles(mark: WritingMark): string {
 function htmlMark(text: string, mark: WritingMark): string {
   const tags: Record<string, string> = { bold: 'strong', italic: 'em', underline: 'u', strike: 's', code: 'code', highlight: 'mark' }
   if (mark.type === 'link') return `<a href="${html(new URL(String(mark.attrs!.href)).href)}" rel="noreferrer noopener">${text}</a>`
+  if (mark.type === conceptMark) return `<span class="writing-topic-link" data-topic-id="${html(mark.attrs!.topicId)}" data-relation="${html(mark.attrs!.relation)}">${text}</span>`
   const tag = tags[mark.type] ?? 'span', style = styles(mark)
   return `<${tag}${style ? ` style="${html(style)}"` : ''}>${text}</${tag}>`
 }
@@ -70,23 +74,43 @@ function mdMark(text: string, mark: WritingMark): string {
   if (mark.type === 'link') return `[${text}](${link(String(mark.attrs!.href))})`
   return text
 }
-function mdNode(node: WritingNode, assets: Map<string, ExportAsset>): string {
-  const children = (separator = '') => (node.content ?? []).map((child) => mdNode(child, assets)).join(separator)
+interface ExportConcepts {
+  names: Map<string, string>
+  wholePassages: Map<string, string>
+  linkedInBody: Set<string>
+}
+
+function wikiTarget(name: string) {
+  return !!name && !name.includes('%%') && name !== '.' && name !== '..' && !/[[\]#|^/\\<>:\r\n]/u.test(name)
+}
+
+function mdNode(node: WritingNode, assets: Map<string, ExportAsset>, concepts: ExportConcepts): string {
+  const children = (separator = '') => (node.content ?? []).map((child) => mdNode(child, assets, concepts)).join(separator)
   switch (node.type) {
     case 'doc': return children('\n\n')
     case 'text': {
       if (node.marks?.some((mark) => mark.type === 'code')) { const raw = node.text ?? '', longest = Math.max(0, ...(raw.match(/`+/g) ?? []).map((run) => run.length)), fence = '`'.repeat(longest + 1); return `${fence} ${raw} ${fence}` }
-      return (node.marks ?? []).reduce(mdMark, markdown(node.text))
+      let value = markdown(node.text)
+      const marks = node.marks ?? []
+      const passage = marks.find(mark => mark.type === conceptMark && mark.attrs?.relation === 'concept')
+      if (passage && !marks.some(mark => mark.type === 'link')) {
+        const id = String(passage.attrs!.topicId), name = concepts.names.get(id), words = node.text ?? ''
+        if (name && wikiTarget(name) && words === concepts.wholePassages.get(String(passage.attrs!.id)) && !/[[\]|\\<>\r\n]/u.test(words)) {
+          value = name === words ? `[[${name}]]` : `[[${name}|${words}]]`
+          concepts.linkedInBody.add(id)
+        }
+      }
+      return marks.reduce(mdMark, value)
     }
     case 'paragraph': return children()
     case 'heading': return `${'#'.repeat(Number(node.attrs?.level ?? 2))} ${children()}`
     case 'hardBreak': return '  \n'
     case 'horizontalRule': return '---'
     case 'blockquote': return children('\n\n').split('\n').map((line) => `> ${line}`).join('\n')
-    case 'bulletList': case 'orderedList': return (node.content ?? []).map((child, index) => { const prefix = node.type === 'orderedList' ? `${Number(node.attrs?.start ?? 1) + index}. ` : '- '; return mdNode(child, assets).split('\n').map((line, lineIndex) => lineIndex ? `${' '.repeat(prefix.length)}${line}` : `${prefix}${line}`).join('\n') }).join('\n')
+    case 'bulletList': case 'orderedList': return (node.content ?? []).map((child, index) => { const prefix = node.type === 'orderedList' ? `${Number(node.attrs?.start ?? 1) + index}. ` : '- '; return mdNode(child, assets, concepts).split('\n').map((line, lineIndex) => lineIndex ? `${' '.repeat(prefix.length)}${line}` : `${prefix}${line}`).join('\n') }).join('\n')
     case 'listItem': return children('\n\n')
     case 'codeBlock': { const raw = (node.content ?? []).map((child) => child.type === 'hardBreak' ? '\n' : child.text ?? '').join(''), length = Math.max(2, ...(raw.match(/`+/g) ?? []).map((run) => run.length)) + 1, fence = '`'.repeat(length), language = String(node.attrs?.language ?? '').replace(/[^A-Za-z0-9_+-]/g, ''); return `${fence}${language}\n${raw}\n${fence}` }
-    case 'table': if (node.content?.some((row) => row.content?.some((cell) => Number(cell.attrs?.colspan ?? 1) > 1 || Number(cell.attrs?.rowspan ?? 1) > 1))) return htmlNode(node, assets); return (node.content ?? []).map((row, index) => `| ${(row.content ?? []).map((cell) => mdNode(cell, assets).replace(/\n/g, '<br>')).join(' | ')} |${index === 0 ? `\n| ${(row.content ?? []).map(() => '---').join(' | ')} |` : ''}`).join('\n')
+    case 'table': if (node.content?.some((row) => row.content?.some((cell) => Number(cell.attrs?.colspan ?? 1) > 1 || Number(cell.attrs?.rowspan ?? 1) > 1))) return htmlNode(node, assets); return (node.content ?? []).map((row, index) => `| ${(row.content ?? []).map((cell) => mdNode(cell, assets, concepts).replace(/\n/g, '<br>')).join(' | ')} |${index === 0 ? `\n| ${(row.content ?? []).map(() => '---').join(' | ')} |` : ''}`).join('\n')
     case 'tableRow': return children(' | ')
     case 'tableCell': case 'tableHeader': return children('<br>')
     case 'writingCitation': { const a = node.attrs!, title = a.url ? `[${markdown(a.sourceTitle)}](${link(String(a.url))})` : markdown(a.sourceTitle), locator = a.page ? `page ${a.page}` : `characters ${Number(a.start) + 1}–${a.end}`; return `${String(a.quote).split('\n').map((line) => `> ${markdown(line)}`).join('\n')}\n>\n> — ${title} (${locator}; source ${markdown(a.sourceId)}, version ${markdown(a.versionId)})` }
@@ -135,9 +159,28 @@ export async function exportWritingDocument(value: WritingDocument, format: 'htm
   const assets = new Map<string, ExportAsset>()
   for (const id of ids) { const media = await readWritingMedia(id, { store, generation }); check(); assets.set(id, { id, bytes: media.bytes, mime: media.mime, kind: media.kind, path: `assets/${id}.${extensions[media.mime]}`, dataUrl: format === 'markdown' ? '' : `data:${media.mime};base64,${base64(media.bytes)}` }) }
   const name = (doc.title || 'Untitled writing').normalize('NFKC').replace(/[^\p{L}\p{N}._ -]/gu, '').replace(/^\.+/, '').trim().slice(0, 100) || 'Writing'
-  const rendered = format === 'markdown' ? '' : htmlDocument(doc, assets), md = `# ${markdown(doc.title || 'Untitled writing')}\n\n${doc.subtitle ? `${markdown(doc.subtitle)}\n\n` : ''}${doc.byline ? `${markdown(doc.byline)}\n\n` : ''}${mdNode(doc.content, assets)}${footnotes(doc).length ? `\n\n${footnotes(doc).map((note) => `[^fn-${encodeURIComponent(note.id)}]: ${markdown(note.text).replace(/\n/g, '\n    ')}`).join('\n')}` : ''}\n`
+  if (format === 'html') {
+    check()
+    return { blob: new Blob([htmlDocument(doc, assets)], { type: 'text/html;charset=utf-8' }), name: `${name}.html` }
+  }
+  const passages = writingPassages(doc.content)
+  const topics = passages.length ? decodeReading(await store.getKv(READING_KV)).topics : []
+  const concepts: ExportConcepts = {
+    names: new Map(topics.map(topic => [topic.id, topic.name])),
+    wholePassages: new Map(passages.filter(passage => !passage.part).map(passage => [passage.id, passage.text])),
+    linkedInBody: new Set(),
+  }
+  const body = mdNode(doc.content, assets, concepts)
+  const otherLinks = new Set<string>()
+  for (const passage of passages) {
+    const name = concepts.names.get(passage.topicId)
+    if (!name || passage.relation === 'concept' && concepts.linkedInBody.has(passage.topicId)) continue
+    const target = wikiTarget(name) ? `[[${name}]]` : markdown(name)
+    otherLinks.add(passage.relation === 'example' ? `- Example of ${target}` : `- ${target}`)
+  }
+  const linkedConcepts = otherLinks.size ? '\n\n## Linked concepts\n\n' + [...otherLinks].join('\n') : ''
+  const rendered = format === 'markdown' ? '' : htmlDocument(doc, assets), md = `# ${markdown(doc.title || 'Untitled writing')}\n\n${doc.subtitle ? `${markdown(doc.subtitle)}\n\n` : ''}${doc.byline ? `${markdown(doc.byline)}\n\n` : ''}${body}${linkedConcepts}${footnotes(doc).length ? `\n\n${footnotes(doc).map((note) => `[^fn-${encodeURIComponent(note.id)}]: ${markdown(note.text).replace(/\n/g, '\n    ')}`).join('\n')}` : ''}\n`
   check()
-  if (format === 'html') return { blob: new Blob([rendered], { type: 'text/html;charset=utf-8' }), name: `${name}.html` }
   if (format === 'markdown' && !assets.size) return { blob: new Blob([md], { type: 'text/markdown;charset=utf-8' }), name: `${name}.md` }
   const manifest = { format: 'worldview-writing-export.v1', schemaVersion: 1, document: doc, assets: [...assets.values()].map((asset) => ({ assetId: asset.id, path: asset.path, mime: asset.mime, bytes: asset.bytes.byteLength, sha256: asset.id.slice('writing-'.length) })) }
   const files: Record<string, Uint8Array> = { 'document.md': strToU8(md), 'writing.json': strToU8(JSON.stringify(manifest, null, 2)), 'README.txt': strToU8('Local writing export. document.md uses the retained files in assets/. writing.json preserves the validated rich document and appearance. Full bundles include self-contained document.html. External video blocks stay explicit links. No cloud service is required.\n') }
