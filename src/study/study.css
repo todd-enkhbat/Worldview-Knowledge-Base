@@ -111,3 +111,4 @@
 .study-lookup small {
   color: var(--kb-muted, #636964);
 }
+.study-edit-actions { display: contents; }

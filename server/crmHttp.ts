@@ -6,7 +6,7 @@ import type { ChangeBus } from './changes.ts'
 import { memoryOriginAllowed } from './memoryHttp.ts'
 import { CrmError, SqliteCrmStore } from './crmStore.ts'
 import { isCrmCollection, validateCrmFilter } from '../src/crm/model.ts'
-import { CRM_COLLECTIONS, type CrmCommand, type CrmListQuery } from '../src/crm/types.ts'
+import { CRM_COLLECTIONS, type CrmCommand, type CrmListQuery, type CrmPerson } from '../src/crm/types.ts'
 import { CrmProfileMedia } from './crmProfileMedia.ts'
 import { discoverProfileWebsite } from './crmProfileDiscovery.ts'
 import { CrmPhotoCoverage } from './crmPhotoCoverage.ts'
@@ -20,14 +20,24 @@ import { previewNameDigest, previewUrlDigest } from './crmProfilePreviewIdentity
 import { educationStatus, employmentStatus } from '../src/crm/affiliationStatus.ts'
 
 const send = (res: ServerResponse, status: number, value: unknown) => { res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end(JSON.stringify(value)) }
-function savedPreviewAffiliations(store: SqliteCrmStore, urlDigest: string, nameDigest: string) {
-  if (![urlDigest, nameDigest].every(value => /^[a-f0-9]{64}$/.test(value))) throw new CrmError('Choose a named profile for this preview.')
-  const matches = store.rows('people', false).filter(person => !person.mergedIntoId && (
-    person.urls.some(url => previewUrlDigest(url) === urlDigest) ||
-    person.sourceRefs.some(ref => ref.provider === 'profile-capture' && previewUrlDigest(ref.url || ref.externalId) === urlDigest)
-  ))
-  if (matches.length !== 1) return null
-  const person = matches[0]
+function matchPreviewUrls(store: SqliteCrmStore, type: 'person' | 'company', digests: string[]) {
+  if (digests.length > 64 || digests.some(value => typeof value !== 'string' || !/^[a-f0-9]{64}$/.test(value))) throw new CrmError('Choose visible profiles for this preview.')
+  const wanted = new Set(digests)
+  const matches = new Map<string, string | null>()
+  for (const record of store.rows(type === 'person' ? 'people' : 'companies', false)) {
+    if (record.mergedIntoId) continue
+    const urls = [...record.urls, ...record.sourceRefs.filter(ref => ref.provider === 'profile-capture').map(ref => ref.url || ref.externalId)]
+    for (const digest of new Set(urls.map(previewUrlDigest))) {
+      if (wanted.has(digest)) matches.set(digest, matches.has(digest) ? null : record.id)
+    }
+  }
+  const memberships = store.rows('memberships', false).filter(row => row.entityType === type)
+  return Object.fromEntries([...matches].flatMap(([digest, recordId]) => recordId ? [[digest, {
+    recordId, groupIds: memberships.filter(row => row.entityId === recordId).map(row => row.groupId),
+  }]] : [])) as Record<string, { recordId: string; groupIds: string[] }>
+}
+function savedPreviewAffiliations(person: CrmPerson, nameDigest: string | null) {
+  if (!nameDigest || !/^[a-f0-9]{64}$/.test(nameDigest)) throw new CrmError('Choose a named profile for this preview.')
   if (previewNameDigest(person.fullName || [person.firstName, person.lastName].filter(Boolean).join(' ')) !== nameDigest) return null
   const rows = person.affiliations || []
   const companies = [...new Set(rows.filter(row => row.kind === 'employment' && employmentStatus(row) === 'current').map(row => row.organization))]
@@ -126,14 +136,42 @@ export function createCrmHttp(db: WorldDb, options: { store?: SqliteCrmStore; bu
           } else if (req.method === 'GET' && parts.length === 2 && parts[1] === 'groups') {
             const type = url.searchParams.get('entityType')
             if (type !== 'person' && type !== 'company') throw new CrmError('Choose groups for a person or company.')
-            const groups = store.rows('groups', false).filter(group => store.groupSupports(group, type)).map(({ id, name, emoji }) => ({ id, name, emoji })).sort((a, b) => a.name.localeCompare(b.name))
-            const savedAffiliations = native && type === 'person' && url.searchParams.has('sourceDigest') ? savedPreviewAffiliations(store, url.searchParams.get('sourceDigest') || '', url.searchParams.get('nameDigest') || '') : null
-            send(res, 200, { groups, workspaceToken: store.workspaceFingerprint(), ...(savedAffiliations ? { savedAffiliations } : {}) })
+            const groups = store.rows('groups', false).filter(group => store.groupSupports(group, type)).map(({ id, name, emoji, icon }) => ({ id, name, emoji, ...(icon && { icon }) })).sort((a, b) => a.name.localeCompare(b.name))
+            const digest = native && url.searchParams.get('sourceDigest')
+            const existing = digest ? matchPreviewUrls(store, type, [digest])[digest] ?? null : null
+            const person = type === 'person' && existing ? store.get('people', existing.recordId) : null
+            const savedAffiliations = person && savedPreviewAffiliations(person, url.searchParams.get('nameDigest'))
+            send(res, 200, { groups, workspaceToken: store.workspaceFingerprint(), ...(native && { existing }), ...(savedAffiliations && { savedAffiliations }) })
           } else if (req.method === 'GET' && parts.length === 2) send(res, 200, capture.detail(parts[1]))
           else if (req.method === 'POST') {
             const generation = db.getReplacementGeneration(), body = await readBody(req)
             if (generation !== db.getReplacementGeneration()) throw new CrmError('The workspace changed while this capture request was read.', 409)
-            if (parts.length === 2 && parts[1] === 'discover') send(res, 200, await discoverProfileWebsite(body, options.profileMediaFetch))
+            if (native && parts.length === 2 && parts[1] === 'visible-matches') {
+              if (!Array.isArray(body.digests)) throw new CrmError('Choose visible profiles for this preview.')
+              send(res, 200, { matches: matchPreviewUrls(store, 'person', body.digests), workspaceToken: store.workspaceFingerprint() })
+            } else if (native && parts.length === 2 && ['review-fields','photo-only'].includes(parts[1])) {
+              const authorize = () => {
+                if (generation !== db.getReplacementGeneration() || db.getKv('importInProgress') || !db.getSettings()?.firstRunComplete || body.workspaceToken !== store.workspaceFingerprint()) throw new CrmError('The workspace changed. Read this profile again.', 409)
+              }
+              authorize()
+              if (typeof body.requestId !== 'string' || !body.requestId.trim() || body.requestId.length > 100) throw new CrmError('Choose a current capture.')
+              const requestId = 'desktop-' + parts[1] + ':' + body.requestId
+              if (parts[1] === 'review-fields') {
+                const draft = await capture.stage({ ...body, requestId }, {captureMethod:'desktop-capture',authorize})
+                send(res, 200, { draftId: draft.id })
+              } else {
+                if (!media || typeof body.url !== 'string' || typeof body.name !== 'string' || !body.name.trim() || typeof body.photoUrl !== 'string') throw new CrmError('Choose a named portrait from a contact profile.')
+                const digest = previewUrlDigest(body.url)
+                const matched = matchPreviewUrls(store, 'person', [digest])[digest]
+                const person = matched && store.get('people', matched.recordId)
+                if (!person || previewNameDigest(person.fullName || [person.firstName,person.lastName].filter(Boolean).join(' ')) !== previewNameDigest(body.name)) {
+                  send(res, 200, {status:'unmatched',message:'Add a contact with this name and profile URL before saving their photo.'})
+                } else {
+                  const status = await media.saveProfileImage('person', person.id, body.photoUrl, body.url, requestId, authorize)
+                  send(res, 200, { status, message: status === 'saved' ? 'Contact photo saved.' : status === 'kept' ? 'This contact already has a saved photo.' : 'The visible portrait is unavailable.' })
+                }
+              }
+            } else if (parts.length === 2 && parts[1] === 'discover') send(res, 200, await discoverProfileWebsite(body, options.profileMediaFetch))
             else if (parts.length === 2 && parts[1] === 'quick-add') {
               if (typeof body.requestId !== 'string' || !body.requestId.trim() || body.requestId.length > 100 ||
                 body.groupId !== undefined && (typeof body.groupId !== 'string' || !body.groupId.trim())) throw new CrmError('Choose a valid capture and destination group.')

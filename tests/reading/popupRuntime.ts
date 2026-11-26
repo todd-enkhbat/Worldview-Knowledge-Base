@@ -4,5 +4,6 @@ import { readFileSync } from 'node:fs'
 export function popupScript() {
   const icons = readFileSync('extensions/worldview-reader/group-icon.js', 'utf8').replace('export function groupDisplay', 'function groupDisplay')
   const form = readFileSync('extensions/worldview-reader/application-form.js', 'utf8').replace('export function readApplicationForm', 'function readApplicationForm')
-  return readFileSync('extensions/worldview-reader/popup.js', 'utf8').replace("import { readApplicationForm } from './application-form.js'", () => form).replace("import { groupDisplay } from './group-icon.js'", () => icons)
+  const ui = readFileSync('extensions/worldview-reader/contact-ui.js', 'utf8').replaceAll('export function ', 'function ')
+  return readFileSync('extensions/worldview-reader/popup.js', 'utf8').replace("import { contactActions, renderPeopleRows, renderProfileIdentity } from './contact-ui.js'", () => ui).replace("import { readApplicationForm } from './application-form.js'", () => form).replace("import { groupDisplay } from './group-icon.js'", () => icons)
 }

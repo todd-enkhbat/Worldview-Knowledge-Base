@@ -20,3 +20,9 @@ export function libraryDestination(hash: string): { recordId: string | null; pas
   const params = new URLSearchParams(hash.split('?')[1] ?? '')
   return { recordId: params.get('record'), passageId: params.get('passage'), sourceId: params.get('source'), digest: params.get('digest') }
 }
+
+export function workspacePositionKey(hash: string): string {
+  const [path, query] = hash.split('?'), params = new URLSearchParams(query)
+  for (const key of ['doc', 'source', 'record', 'passage', 'book', 'topic', 'folder']) if (params.get(key)) return `${path}:${key}:${params.get(key)}`
+  return path || '#/today'
+}

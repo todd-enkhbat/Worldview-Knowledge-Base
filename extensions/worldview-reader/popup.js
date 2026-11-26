@@ -1,6 +1,22 @@
 /* global chrome */
 import { readApplicationForm } from './application-form.js'
 import { groupDisplay } from './group-icon.js'
+import { contactActions, renderPeopleRows, renderProfileIdentity } from './contact-ui.js'
+// Chromium sizes an action popup from its document's intrinsic width. A vw-only
+// root collapses to the tab labels on first layout.
+if (typeof window !== 'undefined' && chrome.extension?.getViews({type:'popup'}).includes(window)) {
+  const root = document.documentElement
+  const width = Math.min(480, window.screen.availWidth || 480)
+  root.classList.add('toolbar-popup')
+  root.style.setProperty('--toolbar-width', width + 'px')
+  let reachedFullWidth = false
+  const fit = () => {
+    if (window.innerWidth >= width) reachedFullWidth = true
+    if (reachedFullWidth) root.style.setProperty('--toolbar-width', Math.min(width, window.innerWidth) + 'px')
+  }
+  window.addEventListener('resize', fit)
+  requestAnimationFrame(fit)
+}
 const element = (id) => document.getElementById(id)
 const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
 const folkGroupPage = /^https:\/\/app\.folk\.app\/apps\/contacts\/network\/[0-9a-f-]{36}\/groups\/[0-9a-f-]{36}(?:[/?#]|$)/i.test(tab?.url || '')
@@ -14,9 +30,11 @@ let paired = false, following = false, followingFolk = false
 const submitting = new Set()
 let preview = null, previewStarted = false, toolsInitialized = false
 let groups = [], selectedGroupId = '', visibleGroups = [], activeIndex = -1
-let lastQueuedGroup = null, existing = null
+let people = [], pageUrl = '', selectedPerson = '', rosterStarted = false, rosterBusy = false
+let lastQueuedGroup = null, existing = null, recordFingerprint = ''
 const keyText = value => String(value || '').normalize('NFKC').toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
 const selectedGroup = () => groups.find(group => group.id === selectedGroupId)
+const groupTrigger = () => element(existing ? 'add-another-group' : 'profile-group')
 const groupPreference = () => `lastProfileGroup:${preview.entityType}`
 function groupParts(group) {
   if (group.id) return groupDisplay(group)
@@ -25,53 +43,15 @@ function groupParts(group) {
 function saveState(value) {
   element('quick-panel').dataset.saveState = value
   element('quick-status').dataset.state = value
+  if (value !== 'saved') element('quick-status').classList.remove('quiet-receipt')
 }
 
-function publicPhoto(raw) {
-  try {
-    const src = new URL(raw)
-    const host = src.hostname.toLowerCase().replace(/\.$/, '')
-    if (!['http:', 'https:'].includes(src.protocol) || src.username || src.password || src.port || !host.includes('.') ||
-        /(?:^|\.)(?:localhost|local|internal|home|lan)$/.test(host) || host.endsWith('.home.arpa') || host.includes(':') || /^[\d.]+$/.test(host)) return ''
-    return src.href
-  } catch { return '' }
-}
-function setText(id, value) {
-  const node = element(id)
-  node.textContent = value
-  node.hidden = !value
-}
-function showAvatar() {
-  const image = element('profile-avatar'), initials = element('profile-initials')
-  const names = preview.name.trim().split(/\s+/)
-  initials.textContent = [names[0], ...(names.length > 1 ? names.slice(-1) : [])].map(word => [...word][0] || '').join('').toLocaleUpperCase()
-  initials.hidden = false; image.hidden = true
-  image.onload = () => { if (image.naturalWidth) { initials.hidden = true; image.hidden = false } }
-  image.onerror = () => { image.hidden = true; initials.hidden = false }
-  image.referrerPolicy = 'no-referrer'
-  image.removeAttribute('src')
-  const url = publicPhoto(preview.photoUrl)
-  if (url) image.src = url
+function profileIdentity() {
+  renderProfileIdentity(element('profile-identity'), preview, {saved:!!existing, idPrefix:'profile'})
 }
 function showProfile() {
   element('quick-panel').dataset.entity = preview.entityType
-  element('profile-name').textContent = preview.name
-  setText('profile-kind', existing ? 'Already in your CRM' : preview.entityType === 'person' ? 'Save contact' : 'Save company')
-  const used = [preview.name, preview.entityType]
-  function distinct(values) {
-    const output = []
-    for (const value of values) {
-      if (typeof value !== 'string' || !value.trim()) continue
-      const key = keyText(value)
-      if (!key || used.some(text => (' ' + keyText(text) + ' ').includes(' ' + key + ' '))) continue
-      output.push(value.trim()); used.push(value)
-    }
-    return output
-  }
-  setText('profile-summary', distinct([preview.headline, preview.role]).join(' · '))
-  setText('profile-affiliations', distinct([...(preview.current || []), ...(preview.schools || [])]).join(' · '))
-  setText('profile-location', distinct([preview.location]).join(' · '))
-  showAvatar()
+  profileIdentity()
   element('quick-panel').hidden = false
   element('capture-help').hidden = true
   document.body.classList.add('has-profile')
@@ -83,13 +63,13 @@ function updateSelection() {
   element('group-selected-icon').textContent = icon
   element('group-selected-name').textContent = name
   element('profile-group').setAttribute('aria-label', `Choose group, currently ${name}`)
-  element('quick-add').textContent = existing && (!group.id || existing.groupIds.includes(group.id)) ? 'Open saved record' : group.id ? `Add to ${name}` : 'Add to Worldview'
+  element('quick-add').textContent = existing ? 'Retry adding group' : contactActions(preview.entityType).save
 }
 function closePicker(restoreFocus = false) {
   element('group-popover').hidden = true
-  element('profile-group').setAttribute('aria-expanded', 'false')
+  groupTrigger().setAttribute('aria-expanded', 'false')
   element('group-search').removeAttribute('aria-activedescendant')
-  if (restoreFocus) element('profile-group').focus()
+  if (restoreFocus) groupTrigger().focus()
 }
 function chooseGroup(group) {
   selectedGroupId = group.id
@@ -97,6 +77,7 @@ function chooseGroup(group) {
   element('quick-status').textContent = ''
   saveState('idle'); captureControls()
   closePicker(true)
+  if (existing) void saveSelectedGroup()
 }
 function activateOption(index, scroll = false) {
   activeIndex = index
@@ -113,6 +94,7 @@ function activateOption(index, scroll = false) {
 function renderOptions() {
   const query = keyText(element('group-search').value)
   visibleGroups = groups.filter(group => {
+    if (existing && (!group.id || existing.groupIds.includes(group.id))) return false
     if (!group.id && /(?:no group|ungrouped)/i.test(query)) return true
     const { name, icon } = groupParts(group)
     return query ? keyText(name).includes(query) : (icon + name).includes(element('group-search').value.trim())
@@ -137,21 +119,23 @@ function renderOptions() {
 function openPicker() {
   if (!preview || submitting.has('quick-add')) return
   element('group-popover').hidden = false
-  element('profile-group').setAttribute('aria-expanded', 'true')
+  groupTrigger().setAttribute('aria-expanded', 'true')
   element('group-search').value = ''
   renderOptions()
   element('group-search').focus()
 }
-element('profile-group').addEventListener('click', () => element('group-popover').hidden ? openPicker() : closePicker(true))
-element('profile-group').addEventListener('keydown', event => {
-  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); openPicker() }
-})
+for (const id of ['profile-group', 'add-another-group']) {
+  element(id).addEventListener('click', () => element('group-popover').hidden ? openPicker() : closePicker(true))
+  element(id).addEventListener('keydown', event => {
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); openPicker() }
+  })
+}
 element('group-search').addEventListener('input', renderOptions)
 element('group-picker').addEventListener('keydown', event => {
   if (element('group-popover').hidden) return
   if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closePicker(true); return }
   if (event.target !== element('group-search')) return
-  if (event.key === 'Tab') { closePicker(); element('profile-group').focus(); return }
+  if (event.key === 'Tab') { closePicker(true); return }
   if (event.key === 'Enter') { event.preventDefault(); if (visibleGroups[activeIndex]) chooseGroup(visibleGroups[activeIndex]); return }
   const size = visibleGroups.length
   if (size && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
@@ -165,11 +149,11 @@ element('group-picker').addEventListener('focusout', event => {
   if (event.relatedTarget && !element('group-picker').contains(event.relatedTarget) && !element('group-popover').hidden) closePicker()
 })
 
-async function loadPreview() {
-  if (previewStarted || !paired || folkAppPage || !/^https?:\/\//.test(tab?.url || '')) return
+async function loadPreview(person) {
+  if (previewStarted && !person || !paired || folkAppPage || !/^https?:\/\//.test(tab?.url || '')) return
   previewStarted = true
   try {
-    const result = await send('reader-profile-preview')
+    const result = await send('reader-profile-preview', person ? {selectedUrl:person.url,sourceUrl:pageUrl} : {})
     if (!result?.preview || !Array.isArray(result.groups)) return
     // An unpacked popup can update while Dia still has the previous worker loaded.
     if (!('existing' in result)) {
@@ -185,12 +169,25 @@ async function loadPreview() {
         Object.assign(result, await response.json())
       }
     }
+    if (person && (result.preview.name !== person.name || result.preview.url !== person.url)) throw Error('This profile changed. Reopen the reader.')
+    selectedPerson = person?.url || ''
+    lastQueuedGroup = null
+    existing = null
+    closePicker()
+    saveState('')
+    element('quick-status').textContent = ''
+    for (const id of ['open-record','open-desktop-record','log-interaction']) element(id).hidden = true
     preview = result.preview
     groups = [{ id: '', name: '' }, ...result.groups.filter(group => typeof group?.id === 'string' && group.id && typeof group.name === 'string')]
     const key = groupPreference()
     const preferences = await chrome.storage?.local?.get(key).catch(() => ({}))
     selectedGroupId = groups.some(group => group.id === preferences?.[key]) ? preferences[key] : ''
     existing = result.existing || null
+    recordFingerprint = result.workspaceFingerprint || ''
+    element('quick-panel').dataset.existing = String(!!existing)
+    element('memberships').hidden = !existing
+    element('profile-group').hidden = !!existing
+    element('group-picker').hidden = groups.length < 2 && !existing?.groupIds?.length
     if (existing) {
       selectedGroupId = existing.groupIds.find(id => groups.some(g => g.id === id)) || selectedGroupId
       showRecord(existing.recordId, result.workspaceFingerprint)
@@ -198,7 +195,8 @@ async function loadPreview() {
     updateSelection(); showProfile(); toolsInitialized = false
     captureControls()
   } catch (error) {
-    if (/linkedin\.com\/(in|company|school)\//i.test(tab.url)) element('error').textContent = error.message
+    if (person) throw error
+    if (!people.length && /(?:linkedin\.com\/(?:in|company|school)\/|instagram\.com\/|facebook\.com\/)/i.test(tab.url)) element('error').textContent = error.message
   }
 }
 async function confirmSave(receipt, group) {
@@ -212,23 +210,47 @@ async function confirmSave(receipt, group) {
   ].filter(Boolean).join(' ')
   saveState('saved')
   existing = { recordId, groupIds: [...new Set([...(existing?.groupIds || []), group.id].filter(Boolean))] }
-  setText('profile-kind', 'Already in your CRM')
-  showRecord(recordId, receipt.workspaceFingerprint)
+  profileIdentity()
+  element('quick-status').classList.toggle('quiet-receipt', image !== 'unavailable' && !receipt.experienceNotice)
+  recordFingerprint = receipt.workspaceFingerprint || recordFingerprint
+  showRecord(recordId, recordFingerprint)
+  if (selectedPerson) people = people.map(row => row.url === selectedPerson ? {...row, existing} : row)
   lastQueuedGroup = null
   await chrome.storage?.local?.set({ [groupPreference()]: group.id }).catch(() => {})
 }
 function showRecord(recordId, fingerprint) {
-  const link = element('open-record')
-  const param = preview.entityType === 'company' ? 'tab=companies&company' : 'person'
+  element('quick-panel').dataset.existing = 'true'
+  element('profile-group').hidden = true
+  element('memberships').hidden = false
+  element('group-picker').hidden = groups.length < 2 && !existing.groupIds.length
+  element('add-another-group').hidden = !groups.some(group => group.id && !existing.groupIds.includes(group.id))
+  const chips = groups.filter(group => existing.groupIds.includes(group.id)).map(group => {
+    const chip = document.createElement('span')
+    const { name, icon } = groupParts(group)
+    chip.className = 'member-chip'
+    chip.textContent = [icon, name].filter(Boolean).join(' ')
+    return chip
+  })
+  const caption = document.createElement('span')
+  caption.className = 'membership-label'
+  caption.textContent = chips.length ? 'Groups' : 'No groups yet'
+  element('membership-summary').replaceChildren(caption, ...chips)
+  const link = element('open-record'), mac = element('open-desktop-record')
+  const company = preview.entityType === 'company', kind = company ? 'company' : 'person'
+  const openLabel = contactActions(preview.entityType).open
+  const param = company ? 'tab=companies&company' : 'person'
   link.href = `${workspaceOrigin()}/#/people?${param}=${encodeURIComponent(recordId)}`
-  link.textContent = preview.entityType === 'company' ? 'Open company in Worldview' : 'Open contact in Worldview'
   link.hidden = false
-  const mac = element('open-desktop-record')
-  mac.hidden = !/^[a-f0-9]{64}$/.test(fingerprint || '')
-  if (!mac.hidden) {
-    const kind = preview.entityType === 'company' ? 'company' : 'person'
+  // Keep only one primary destination. The alternate browser link lives in More tools.
+  if (/^[a-f0-9]{64}$/.test(fingerprint || '')) {
     mac.href = `worldview-local://record/${kind}/${encodeURIComponent(recordId)}?workspace=${fingerprint}`
+    mac.textContent = openLabel; mac.title = openLabel + ' in the Mac app'; mac.hidden = false
     link.textContent = 'View in browser'
+    element('other-record-destinations').append(link)
+  } else {
+    mac.hidden = true; mac.removeAttribute('href')
+    link.textContent = openLabel; link.title = openLabel + ' in Worldview'
+    element('record-actions').insertBefore(link, element('log-interaction'))
   }
   const log = element('log-interaction')
   log.hidden = preview.entityType !== 'person'
@@ -242,19 +264,17 @@ element('open-record').addEventListener('click', event => {
   event.preventDefault()
   if (!element('open-record').hidden) void openWorldview(element('open-record').href).catch(error => { element('quick-status').textContent = error.message })
 })
-element('quick-add').addEventListener('click', async () => {
+element('quick-add').addEventListener('click', saveSelectedGroup)
+async function saveSelectedGroup() {
   if (!preview || submitting.has('quick-add') || !selectedGroup()) return
-  if (existing && (!selectedGroupId || existing.groupIds.includes(selectedGroupId))) {
-    await openWorldview(element('open-record').href).catch(error => { element('quick-status').textContent = error.message })
-    return
-  }
+  if (existing && (!selectedGroupId || existing.groupIds.includes(selectedGroupId))) return
   submitting.add('quick-add'); closePicker(); captureControls()
   const group = selectedGroup(), status = element('quick-status')
   if (!existing) { element('open-record').hidden = true; element('open-desktop-record').hidden = true }
   saveState('working')
   status.textContent = 'Saving…'
   try {
-    const { result } = await send('reader-profile-add', { url: preview.url, name: preview.name, entityType: preview.entityType, groupId: group.id })
+    const { result } = await send('reader-profile-add', { url: preview.url, name: preview.name, entityType: preview.entityType, groupId: group.id, ...(selectedPerson ? {selectedUrl:selectedPerson,sourceUrl:pageUrl} : {}) })
     if (result?.queued) {
       lastQueuedGroup = group
       saveState('pending'); status.textContent = `Queued on this browser. ${result.message || 'It will sync when your local workspace is available.'}`
@@ -265,16 +285,26 @@ element('quick-add').addEventListener('click', async () => {
     else throw new Error('Worldview did not confirm this CRM save.')
     await refresh().catch(() => {})
   } catch (error) { saveState('error'); status.textContent = error.message || 'Could not save this profile.' }
-  finally { submitting.delete('quick-add'); captureControls() }
-})
+  finally {
+    submitting.delete('quick-add'); captureControls()
+    if (element('quick-panel').dataset.saveState === 'saved') {
+      const next = !element('add-another-group').hidden ? groupTrigger() : !element('open-desktop-record').hidden ? element('open-desktop-record') : element('open-record')
+      next.focus()
+    }
+  }
+}
 
 function captureControls() {
-  const saved = element('quick-panel').dataset.saveState === 'saved', working = submitting.has('quick-add')
-  element('quick-add').disabled = !paired || !preview || working || saved
+  const state = element('quick-panel').dataset.saveState, working = submitting.has('quick-add')
+  const saved = state === 'saved', pending = state === 'pending'
+  element('quick-add').hidden = !!existing && state !== 'error'
+  element('quick-add').disabled = !paired || !preview || working || saved || pending
   if (working) element('quick-add').textContent = 'Saving…'
+  else if (pending) element('quick-add').textContent = 'Queued'
   else if (saved) element('quick-add').textContent = 'Saved'
   else updateSelection()
-  element('profile-group').disabled = submitting.has('quick-add')
+  element('profile-group').disabled = working || pending
+  element('add-another-group').disabled = working || pending
   for (const id of ['follow', 'highlight', 'profile', 'profile-data']) element(id).disabled = !paired || folkAppPage || submitting.has(id)
   element('folk-photos').disabled = !paired || !folkGroupPage || submitting.has('folk-photos')
   element('folk-follow').disabled = !paired || !folkGroupPage || followingFolk || submitting.has('folk-follow')
@@ -328,8 +358,9 @@ async function refresh() {
   followingFolk = !!result.folkTracked?.[tab?.id]; following = !!result.tracked[tab?.id] || followingFolk
   element('state').textContent = !paired ? result.pendingConnection ? 'Waiting for your approval in Worldview' : 'Not connected' : followingFolk ? 'Following visible Folk photos · badge PH' : following ? 'Following this article · badge ON' : folkGroupPage ? 'Connected · visible Folk photos' : folkAppPage ? 'Connected · private Folk workspace' : 'Connected'
   element('state').dataset.connected = String(paired)
-  if (!paired && preview) {
-    preview = null; previewStarted = false; toolsInitialized = false; groups = []; lastQueuedGroup = null
+  if (!paired && (preview || rosterStarted)) {
+    people=[]; pageUrl=''; selectedPerson=''; rosterStarted=false; drawRoster()
+    preview = null; existing = null; previewStarted = false; toolsInitialized = false; groups = []; lastQueuedGroup = null
     document.body.classList.remove('has-profile')
     element('quick-panel').hidden = true; element('capture-help').hidden = false; element('open-record').hidden = true; element('open-desktop-record').hidden = true; closePicker()
   }
@@ -349,8 +380,10 @@ async function refresh() {
   if (!result.queued && /queued|not (?:been )?confirmed/i.test(element('profile-data-status').textContent)) element('profile-data-status').textContent = 'No captures remain queued. Open Collect profiles in People to review saved sources.'
   element('pending').replaceChildren(...(result.pending ?? []).slice(0, 20).map((entry) => { const li = document.createElement('li'), title = document.createElement('span'), remove = document.createElement('button'); title.textContent = entry.title; remove.textContent = 'Remove'; remove.setAttribute('aria-label', `Remove pending capture: ${entry.title}`); remove.addEventListener('click', async () => { if (!confirm('Remove this unsent capture? Saved library items are unchanged. You may need to save the article again before later progress can be delivered.')) return; remove.disabled = true; try { await send('reader-discard-one', { sequence: entry.sequence }); await refresh() } catch (error) { element('error').textContent = error instanceof Error ? error.message : 'The pending capture could not be removed.' } }); li.append(title, remove); return li }))
   captureControls()
+  await loadRoster()
   await loadPreview()
-  element('no-profile').hidden = !paired || !!preview || folkAppPage
+  drawRoster()
+  element('no-profile').hidden = !paired || !!preview || !!people.length || folkAppPage
   element('capture-tools').hidden = !paired || folkAppPage || (!preview && !/linkedin\.com\/(in|company|school)\//i.test(tab?.url || ''))
   element('reader-tools').hidden = !paired || folkAppPage && !following
   element('stop').hidden = !following
@@ -359,9 +392,83 @@ async function refresh() {
   if (preview && !following) element('state').textContent = 'Connected'
   if (!toolsInitialized) {
     element('capture-tools').open = false
+    element('more-tools').open = !preview && !people.length
     toolsInitialized = true
   }
+  if (!element('delivery-tools').hidden) element('more-tools').open = true
   document.body.classList.add('popup-ready')
+}
+async function loadRoster() {
+  if (rosterStarted || !paired || folkAppPage || !/^https?:\/\//.test(tab?.url || '')) return
+  rosterStarted = true
+  try {
+    const result = await send('reader-visible-people')
+    if (!Array.isArray(result?.people)) return
+    people = result.people
+    pageUrl = result.sourceUrl
+  } catch (error) { element('error').textContent = error.message }
+}
+function drawRoster() {
+  const primaryKey = preview && !selectedPerson ? preview.url.replace(/\/$/, '') : ''
+  const rows = people.filter(row => row.url !== primaryKey)
+  element('visible-people').hidden = !rows.length || !!selectedPerson
+  element('return-people').hidden = !selectedPerson
+  if (!element('visible-people').hidden) renderPeopleRows(element('visible-rows'), rows, onRowAction, rosterBusy)
+}
+async function onRowAction(row, action) {
+  if (rosterBusy || submitting.has('quick-add')) return
+  rosterBusy = true
+  const restore = event => element('visible-rows').querySelectorAll('button').forEach(button => {
+    if (button.dataset.url === row.url && button.dataset.action === event) button.focus({preventScroll:true})
+  })
+  drawRoster()
+  element('error').textContent = ''
+  try {
+    if (action === 'review') {
+      await loadPreview(row)
+      drawRoster()
+      focusProfileAction()
+    } else if (row.reviewId) {
+      await openProfileReview(row.reviewId)
+    } else if (row.existing) {
+      await openWorldview(workspaceOrigin() + '/#/people?person=' + encodeURIComponent(row.existing.recordId))
+    } else {
+      const { result } = await send('reader-profile-add', { selectedUrl:row.url, sourceUrl:pageUrl, url:row.url, name:row.name, entityType:'person', groupId:'' })
+      if (result?.queued) row.pending = true
+      else if (result?.quickAdd?.status === 'review' && result.profileDraft?.id) row.reviewId = result.profileDraft.id
+      else if (result?.quickAdd?.status === 'saved' && result.quickAdd.recordId) row.existing = {recordId:result.quickAdd.recordId,groupIds:[]}
+      else throw Error('Worldview did not confirm the save.')
+      element('notice').textContent = row.pending ? row.name + ' is queued.' : row.reviewId ? row.name + ' is ready for review.' : row.name + ' saved.'
+    }
+  } catch (error) { element('error').textContent = error.message }
+  finally { rosterBusy = false; drawRoster(); if (!selectedPerson) restore(action) }
+}
+element('return-people').onclick = async () => {
+  selectedPerson = ''; previewStarted = false; preview = null; existing = null
+  element('quick-panel').hidden = true
+  element('error').textContent = ''; element('other-record-destinations').querySelector('a')?.setAttribute('hidden','')
+  await loadPreview()
+  drawRoster()
+  element('visible-rows').querySelector('button')?.focus()
+}
+function showTool(mode) {
+  for (const id of ['person','todo','word','application']) {
+    const section = element(id === 'person' ? 'crm-panel' : id + '-panel')
+    if (section) section.hidden = mode !== id
+    const button = element('mode-' + id)
+    if (mode === id) button.setAttribute('aria-current','true')
+    else button.removeAttribute('aria-current')
+  }
+}
+element('mode-todo').onclick = async () => {
+  if (!paired) { showTool('person'); element('connect').focus(); return }
+  showTool('todo')
+  try { const {mountTodos} = await import('./todo-ui.js'); mountTodos(element('todo-panel')) }
+  catch { element('todo-panel').textContent = 'Could not load TO-DO. Reopen the extension to try again.' }
+}
+function focusProfileAction() {
+  const first = existing ? (element('open-desktop-record').hidden ? element('open-record') : element('open-desktop-record')) : element('quick-add')
+  first.focus()
 }
 element('browse-people').addEventListener('click', () => void openWorldview(workspaceOrigin() + '/#/people').catch(error => { element('error').textContent = error.message }))
 element('connect').addEventListener('click', async () => { element('connect').disabled = true; element('error').textContent = ''; try { const status = await send('reader-status'); const result = status.pendingConnection ? { openUrl: workspaceOrigin() + '/#/sources?connection=browser' } : await send('reader-connect', { port: element('workspace-port').value }); if (result.openUrl) await chrome.tabs.create({ url: result.openUrl }); await refresh() } catch (error) { element('error').textContent = error instanceof Error ? error.message : 'Open Worldview locally, then try connecting again.' } finally { element('connect').disabled = false } })
@@ -372,7 +479,8 @@ for (const [id, type, message] of [['profile-data','reader-profile-data',''],['f
     element('error').textContent = ''; submitting.add(id); element(id).disabled = true; captureControls()
     const submittedToken = element('token').value.trim(), submittedNote = element('note').value
     try {
-      const result = await send(type, { token: submittedToken, note: submittedNote, ...(id === 'pair' ? { port: element('workspace-port').value } : {}) }), receipt = result.result
+      const chosen = selectedPerson && ['profile','profile-data'].includes(id) ? { selectedUrl:selectedPerson, sourceUrl:pageUrl, name:preview.name, url:preview.url, entityType:preview.entityType } : {}
+      const result = await send(type, { token: submittedToken, note: submittedNote, ...chosen, ...(id === 'pair' ? { port: element('workspace-port').value } : {}) }), receipt = result.result
       if (id === 'retry' && lastQueuedGroup && receipt?.quickAdd?.status === 'saved' && receipt.profileDraft?.source?.url === preview?.url) await confirmSave(receipt, lastQueuedGroup)
       if (['retry', 'discard'].includes(id) && lastQueuedGroup) {
         lastQueuedGroup = null
@@ -398,47 +506,85 @@ for (const [id, type, message] of [['profile-data','reader-profile-data',''],['f
 try { await refresh() } catch { element('error').textContent = 'The reader could not initialize. Reload this unpacked extension.' }
 
 element('mode-person').onclick = async () => {
-  if (preview) element('profile-group').focus()
+  showTool('person')
+  if (!preview && people.length) { element('visible-rows').querySelector('button')?.focus(); return }
+  if (preview) focusProfileAction()
   else if (!paired) element('connect').focus()
   else {
     previewStarted = false
     element('error').textContent = ''
     await refresh()
-    if (preview) element('profile-group').focus()
+    if (preview) focusProfileAction()
   }
 }
-for (const mode of ['word', 'application']) {
-  element('mode-' + mode).onclick = async event => {
-    const control = event.currentTarget
-    control.disabled = true
-    let handoff
-    try {
-      if (!paired) throw Error('Connect to Worldview first.')
-      const target = { tabId: tab.id }
-      const [{ result }] = mode === 'application'
-        ? await chrome.scripting.executeScript({ target, func: readApplicationForm })
-        : await chrome.scripting.executeScript({ target, func: () => ({
-            term: window.getSelection()?.toString().trim().slice(0, 160) || '',
-            url: location.origin + location.pathname
-          }) })
-      const origin = workspaceOrigin()
-      handoff = await chrome.tabs.create({ url: origin + '/reader-handoff.html', active: false })
-      let ready = false
-      for (let attempt = 0; attempt < 80; attempt++) {
-        const page = await chrome.tabs.get(handoff.id)
-        if (page.status === 'complete' && page.url === origin + '/reader-handoff.html') { ready = true; break }
-        await new Promise(resolve => setTimeout(resolve, 100))
+// Keep the actual Enki tool mounted across tab switches. Only the paired
+// extension origin may frame it. Application data stays in the local document.
+const studyFrames = new Map()
+async function openStudy(mode) {
+  showTool(mode)
+  const panel = element(mode + '-panel')
+  if (!paired) {
+    studyFrames.get(mode)?.cleanup()
+    studyFrames.delete(mode)
+    panel.textContent = 'Connect to Worldview to open this tool.'
+    return
+  }
+  const origin = workspaceOrigin()
+  const previous = studyFrames.get(mode)
+  if (previous?.origin === origin && previous.frame.isConnected) {
+    previous.port?.postMessage({ type:'focus' })
+    return
+  }
+  previous?.cleanup()
+  const frame = document.createElement('iframe')
+  frame.title = mode === 'word' ? 'Dictionary' : 'Application capture'
+  frame.allow = 'clipboard-write'
+  const status = document.createElement('p')
+  status.setAttribute('role', 'status')
+  status.textContent = 'Opening ' + frame.title + '…'
+  const entry = { origin, frame, port:null, cleanup() {
+    clearTimeout(timer)
+    entry.port?.close()
+    window.removeEventListener('message', handshake)
+  } }
+  studyFrames.set(mode, entry)
+  const timer = setTimeout(() => {
+    if (entry.ready) return
+    entry.cleanup()
+    studyFrames.delete(mode)
+    frame.remove()
+    status.textContent = 'Couldn’t open this tool. Check that Worldview is running and this browser is paired.'
+    const retry = document.createElement('button')
+    retry.textContent = 'Retry'
+    retry.onclick = () => openStudy(mode)
+    panel.append(retry)
+  }, 10000)
+  async function handshake(event) {
+    if (event.origin !== origin || event.source !== frame.contentWindow || event.data?.type !== 'enki:study-ready' || event.data.mode !== mode) return
+    window.removeEventListener('message', handshake)
+    const channel = new MessageChannel()
+    entry.port = channel.port1
+    channel.port1.onmessage = async ({ data }) => {
+      if (data?.type === 'ready') { clearTimeout(timer); entry.ready = true; status.remove() }
+      if (data?.type === 'height' && Number.isFinite(data.height)) frame.style.height = Math.min(452,Math.max(110,data.height)) + 'px'
+      if (data?.type === 'read-form' && mode === 'application' && !panel.hidden) {
+        try {
+          const [{ result }] = await chrome.scripting.executeScript({ target:{tabId:tab.id}, func:readApplicationForm })
+          entry.port.postMessage({ type:'form', form:result })
+        } catch { entry.port.postMessage({ type:'form', error:'Open a form in the active tab, or paste its questions.' }) }
       }
-      if (!ready) throw Error('Open Worldview and try again.')
-      await chrome.scripting.executeScript({ target: { tabId: handoff.id }, args: [origin, mode, result],
-        func: (expected, kind, value) => {
-          if (location.origin !== expected) throw Error('Workspace changed.')
-          sessionStorage.setItem('worldview-reader-' + kind, JSON.stringify(value))
-        } })
-      await chrome.tabs.update(handoff.id, { url: origin + '/#/' + (mode === 'word' ? 'vocabulary' : 'applications'), active: true })
-    } catch (error) {
-      if (handoff?.id) await chrome.tabs.remove(handoff.id).catch(() => {})
-      element('error').textContent = error.message || 'Capture unavailable on this page.'
-    } finally { control.disabled = false }
+    }
+    let selection = {}
+    if (mode === 'word') {
+      try {
+        const [{ result }] = await chrome.scripting.executeScript({ target:{tabId:tab.id}, func:() => ({ term:window.getSelection()?.toString().trim().slice(0,160) || '', url:location.origin + location.pathname }) })
+        selection = result
+      } catch { /* A word can also be typed on browser-owned pages. */ }
+    }
+    if (frame.isConnected) frame.contentWindow.postMessage({ type:'enki:connect', ...selection }, origin, [channel.port2])
   }
+  window.addEventListener('message', handshake)
+  frame.src = origin + '/study-helper.html?' + new URLSearchParams({ mode, reader:chrome.runtime.id })
+  panel.replaceChildren(status, frame)
 }
+for (const mode of ['word', 'application']) element('mode-' + mode).onclick = () => void openStudy(mode)

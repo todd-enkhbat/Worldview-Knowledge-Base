@@ -1,0 +1,31 @@
+.wv-people { max-width:100%; }
+.wv-people h2 { margin:0 0 5px; color:#555f58; font:600 12px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+.wv-people ul { margin:0; padding:0; list-style:none; }
+.wv-people li { display:flex; align-items:center; gap:10px; min-width:0; border-top:1px solid #dde1db; }
+.wv-people .wv-person-review { display:flex; align-items:center; gap:10px; flex:1; min-width:0; padding:9px 1px; min-height:42px; border:0; background:transparent; cursor:pointer; color:inherit; text-align:left; }
+.wv-person-avatar { width:34px; height:34px; flex:none; position:relative; overflow:hidden; border-radius:50%; background:#eaf0e8; color:#455d4c; display:grid; place-items:center; font:550 12px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+.wv-person-avatar img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
+.wv-person-label { min-width:0; display:grid; gap:2px; }
+.wv-person-label strong { font:550 14px/1.3 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; overflow-wrap:anywhere; }
+.wv-person-label small { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#59635d; font:400 12px/1.3 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+.wv-people .wv-row-action { flex:none; min-width:54px; width:auto; min-height:31px; padding:4px 10px; border:1px solid #cad5cb; border-radius:7px; background:#f1f5ef; color:#244e37; cursor:pointer; font:550 12.5px/1.3 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+.wv-people .wv-row-action[data-existing=true] { background:transparent; border-color:#d8ded7; }
+.wv-people :is(.wv-row-action,.wv-person-review):focus-visible { outline:2px solid #256945; outline-offset:-1px; }
+@media(hover:hover) {
+  .wv-person-review:hover .wv-person-label strong { text-decoration:underline; text-underline-offset:2px; }
+  .wv-people .wv-row-action:hover:enabled { background:#e4ece2; }
+}
+.wv-profile-identity { display:grid; grid-template-columns:48px minmax(0,1fr); align-items:center; gap:12px; min-width:0; }
+.wv-profile-identity .wv-profile-portrait { width:48px; height:48px; position:relative; display:grid; place-items:center; overflow:hidden; border-radius:50%; background:#edf1ea; color:#455c46; font:600 18px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+.wv-profile-portrait::after { content:""; position:absolute; inset:0; border-radius:inherit; box-shadow:inset 0 0 0 1px rgb(22 41 29 / 8%); pointer-events:none; }
+.wv-profile-portrait img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
+.wv-profile-identity[data-entity="company"] .wv-profile-portrait { border-radius:12px; }
+.wv-profile-identity[data-entity="company"] img { object-fit:contain; background:white; }
+.wv-identity-copy { min-width:0; overflow-wrap:anywhere; }
+.wv-profile-identity .wv-name-line { display:flex; align-items:baseline; flex-wrap:wrap; gap:3px 8px; }
+.wv-profile-identity .wv-name-line h1 { min-width:0; max-width:100%; margin:0; font:400 24px/1.08 "Alte Haas",Helvetica,Arial,sans-serif; letter-spacing:-.055em; overflow-wrap:anywhere; }
+.wv-profile-identity .wv-saved { white-space:nowrap; color:#24583e; font:550 11.5px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+.wv-profile-identity .wv-saved::before { content:"✓ "; }
+.wv-profile-identity .wv-profile-summary { margin:4px 0 0; font-size:13px; line-height:1.43; }
+.wv-profile-identity .wv-profile-affiliations, .wv-profile-identity .wv-profile-location { margin:3px 0 0; color:#536057; font-size:12px; line-height:1.4; }
+.wv-profile-identity [hidden] { display:none; }

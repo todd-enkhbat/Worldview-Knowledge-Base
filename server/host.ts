@@ -1,5 +1,7 @@
+import { handleSubstack } from './connections/substack.ts'
 import { ApplicationDiscovery } from './applicationDiscovery.ts'
 import { studyHttp } from './studyHttp.ts'
+import { todoHttp } from './todoHttp.ts'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { join, resolve } from 'node:path'
 import { Accounts, AccountError, RateLimit, type User } from './accounts.ts'
@@ -16,7 +18,7 @@ import { TelegramCapture, handleTelegramRequest, type TelegramOptions } from './
 import { transcribeLocalMedia, closeLocalTranscription } from './localTranscription.ts'
 import { handleWhisperModelRequest } from './whisperModels.ts'
 import type { AiRuntime } from './ai.ts'
-import { ArticleCapture, handleArticleCaptureRequest } from './articleCapture.ts'
+import { ArticleCapture, handleArticleCaptureRequest, loopback } from './articleCapture.ts'
 import { GoogleDriveConnection, handleGoogleDriveRequest } from './connections/googleDrive.ts'
 import { handleBookCatalog } from './bookCatalog.ts'
 import { NotebookConnection, handleNotebooks } from './connections/notebooks.ts'
@@ -107,6 +109,7 @@ const clientIp = (req: IncomingMessage) => String(req.headers['x-forwarded-for']
 const SAFE = new Set(['GET', 'HEAD', 'OPTIONS'])
 
 export interface Host {
+  readerFrameAncestor(req: IncomingMessage): string | null
   handler: Handler
   accounts: Accounts | null
   close(): void
@@ -168,9 +171,21 @@ export function createHost(opts: HostOptions): Host {
     return sendJson(res, 200, { user }, { 'set-cookie': sessionCookie(req, s.token, Math.round((s.expiresAt - Date.now()) / 1000)) })
   }
 
+  function readerFrameAncestor(req: IncomingMessage) {
+    if (accounts || !req.url?.startsWith('/study-helper.html?') || !loopback(req)) return null
+    const params = new URL(req.url, 'http://localhost').searchParams
+    const id = params.get('reader') ?? ''
+    if (!/^[a-p]{32}$/.test(id) || !['word','application'].includes(params.get('mode') ?? '')) return null
+    const parent = 'chrome-extension://' + id
+    return worldFor(null).articles.originAllowed(parent) ? parent : null
+  }
+
   const handler: Handler = (req, res, next) => {
     const url = req.url ?? '/'
-    if (!url.startsWith('/api/')) return next ? next() : sendJson(res, 404, { error: 'not found' })
+    if (!url.startsWith('/api/')) {
+      if (next && url.split('?')[0] === '/study-helper.html') res.setHeader('Content-Security-Policy', 'frame-ancestors ' + (readerFrameAncestor(req) ?? "'none'"))
+      return next ? next() : sendJson(res, 404, { error: 'not found' })
+    }
     const path = url.slice('/api'.length).split('?', 1)[0]
     const seg = path.split('/').filter(Boolean)
     const method = req.method ?? 'GET'
@@ -188,7 +203,7 @@ export function createHost(opts: HostOptions): Host {
       }
       if (seg[0] === 'auth') return auth(req, res, seg[1] ?? '')
       const user = accounts ? accounts.userForToken(cookieValue(req.headers.cookie, SESSION_COOKIE)) : null
-      if (!accounts && (seg[0] === 'connections' || seg[0] === 'memory' || seg[0] === 'mcp' || seg[0] === 'qmd' || seg[0] === 'ai' || seg[0] === 'capture' && seg[1] === 'telegram')) {
+      if (!accounts && (seg[0] === 'connections' || seg[0] === 'memory' || seg[0] === 'mcp' || seg[0] === 'qmd' || seg[0] === 'ai' || seg[0] === 'todos' || seg[0] === 'capture' && seg[1] === 'telegram')) {
         let hostname = ''
         try { hostname = new URL(`http://${req.headers.host ?? ''}`).hostname } catch { /* invalid host is refused */ }
         if (!['localhost', '127.0.0.1', '[::1]'].includes(hostname)) return sendMemoryJson(res, 403, { error: 'Local memory requires a loopback host.' })
@@ -215,6 +230,10 @@ export function createHost(opts: HostOptions): Host {
         })
       }
       if (accounts && !user) return sendJson(res, 401, { error: 'Sign in first.' })
+      if (seg[0] === 'todos') {
+        const { db, bus } = worldFor(user)
+        return todoHttp(req, res, seg.slice(1).join('/'), db, bus)
+      }
       if (seg[0] === 'ai' && seg[1] === 'status') {
         if (!memoryOriginAllowed(req) || !req.headers['x-wv-client']) return sendJson(res, 403, { error: 'Open the authorized workspace to check AI.' })
         if (method === 'GET') return sendJson(res, 200, opts.ai?.status() ?? { provider: null, model: null, configured: false })
@@ -223,6 +242,7 @@ export function createHost(opts: HostOptions): Host {
       }
       if (seg[0] === 'study-google') { if(accounts)return sendJson(res,403,{error:'Use the local desktop workspace.'}); const w=worldFor(null);return w.discovery.handle(req,res,seg[1]??'',w.drive,w.db) }
       if (seg[0] === 'study') { if(accounts && seg[1]==='explain-local')return sendJson(res,403,{error:'Open the local desktop workspace.'}); const w=worldFor(user); return studyHttp(req,res,seg[1]??'',w.db,w.bus,user?join(dataDir,'users',user.id):dataDir) }
+      if (seg[0] === 'connections' && seg[1] === 'substack') return handleSubstack(req, res)
       if (seg[0] === 'book-catalog') return handleBookCatalog(req, res, new URL(url, 'http://localhost'))
       if (seg[0] === 'connections' && seg[1] === 'notebooks') {
         if (accounts) return sendJson(res, 403, { error: 'Notebook connections are available in the local workspace.' })
@@ -250,6 +270,7 @@ export function createHost(opts: HostOptions): Host {
 
   return {
     handler,
+    readerFrameAncestor,
     accounts,
     close() {
       capture?.close()

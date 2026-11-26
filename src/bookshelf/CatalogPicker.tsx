@@ -1,3 +1,4 @@
+import { BOOK_PUBLISHERS, verifiedPublisherEditions } from './publishers.ts'
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import {
   editionCover,
@@ -84,6 +85,7 @@ export function CatalogPicker({
   stage: ShelfStatus
   onChoose: (work: CatalogWork, edition: CatalogEdition) => Promise<void>
 }) {
+  const [publisher, setPublisher] = useState('')
   const [limit,setLimit]=useState(24)
   const [query, setQuery] = useState(initialQuery),
     [submitted, setSubmitted] = useState(''),
@@ -99,7 +101,7 @@ export function CatalogPicker({
     return () => request.current?.abort()
   }, [])
   const resultsAnchor = useRef<HTMLDivElement>(null)
-  async function search(event?: FormEvent, newQuery?: string) {
+  async function search(event?: FormEvent, newQuery?: string, selectedPublisher = publisher) {
     event?.preventDefault()
     const fresh = !!event || newQuery !== undefined
     const phrase = newQuery ?? (event ? query.trim() : submitted),
@@ -110,7 +112,7 @@ export function CatalogPicker({
     if (fresh) {
       if (newQuery !== undefined) setQuery(newQuery)
       setLimit(24);setSubmitted(phrase)
-      setRows([])
+      setRows(verifiedPublisherEditions(phrase, selectedPublisher))
       setMore({})
     }
     setMessage('')
@@ -124,7 +126,7 @@ export function CatalogPicker({
       Object.entries(offsets).map(async ([provider, offset]) => {
         try {
           const response = await fetch(
-            '/api/book-catalog/visual?' + new URLSearchParams({ provider, q: phrase, offset: String(offset) }),
+            '/api/book-catalog/visual?' + new URLSearchParams({ provider, q: phrase, offset: String(offset), ...(selectedPublisher ? { publisher: selectedPublisher } : {}) }),
             { signal: controller.signal }
           )
           if (!response.ok) throw new Error()
@@ -186,7 +188,7 @@ export function CatalogPicker({
             id="book-catalog-query"
             ref={input}
             type="search"
-            placeholder="Title, author, translator, ISBN or recommender"
+            placeholder="Title, author, publisher, ISBN or recommender"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             maxLength={240}
@@ -194,6 +196,7 @@ export function CatalogPicker({
           <button disabled={disabled || query.trim().length < 2}>Search</button>
         </div>
       </form>
+      <label className="reading-list-selector"><span>Publisher / series</span><select aria-label="Publisher or series" value={publisher} onChange={event => { const value = event.target.value; setPublisher(value); if (query.trim().length >= 2) void search(undefined, query.trim(), value) }}><option value="">All publishers</option>{BOOK_PUBLISHERS.map(name => <option key={name} value={name}>{name}</option>)}</select></label>
       <label className="reading-list-selector"><span>Browse reading lists</span>
         <select aria-label="Browse reading lists" value={recommenders.find(name => normalized(name) === normalized(submitted)) ?? ''}
           onChange={event => { if (event.target.value) void search(undefined, event.target.value) }}>
@@ -243,6 +246,7 @@ export function CatalogPicker({
               {edition.representative && <small>Representative cover</small>}
               <span className="edition-save-label">{actionLabel(edition)}</span>
             </button>
+            {edition.sourceUrl && <a className="edition-inspect" href={edition.sourceUrl} target="_blank" rel="noreferrer">Publisher-verified edition ↗</a>}
             <button type="button" className="edition-inspect" onClick={() => inspect({ work, edition })}>
               Inspect cover
             </button>

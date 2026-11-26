@@ -3,16 +3,24 @@ const { spawn } = require('node:child_process')
 const { cloudAiIsOff, sameWorkspace, parseRecordLink } = require('./policy.cjs')
 const { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } = require('node:fs')
 const { join, resolve, basename } = require('node:path')
+const { pathToFileURL } = require('node:url')
 
 const base = app.isPackaged ? app.getAppPath() : resolve(__dirname, '..')
 const runtime = app.isPackaged ? join(base, 'runtime') : base
 const node = app.isPackaged ? join(base, 'runtime/node/bin/node') : join(base, `data/tools/desktop-node/26.5.0-${process.platform}-${process.arch}/bin/node`)
+const petPage = pathToFileURL(join(__dirname, 'enki-pet.html')).href
 let window = null, server = null, origin = '', workspace = '', stopping = false, changing = false
 let floatingCapture = null, workspaceReady = false, pendingRecord = null
+let enki = null, bracketMonitor = null, globalBracketsActive = false
 const defaultShortcut = 'CommandOrControl+Alt+Shift+W'
 let registeredShortcut = '', releaseShortcut = null
 const preferenceFile = () => join(app.getPath('userData'),'helper-preferences.json')
-function readHelperPreferences() { try { return JSON.parse(readFileSync(preferenceFile(),'utf8')) } catch { return {} } }
+function readHelperPreferences() {
+  try {
+    const prefs = JSON.parse(readFileSync(preferenceFile(), 'utf8'))
+    return prefs && typeof prefs === 'object' && !Array.isArray(prefs) ? prefs : {}
+  } catch { return {} }
+}
 function writeHelperPreferences(values) {
   const file = preferenceFile()
   writeFileSync(file+'.tmp',JSON.stringify({...readHelperPreferences(),...values}),{mode:0o600})
@@ -34,14 +42,62 @@ async function helperShortcut(value) {
   writeHelperPreferences({shortcut:value})
   return value
 }
-async function showFloatingCapture(fromShortcut) {
-  if (!workspaceReady || stopping) return
+async function showFloatingCapture(fromShortcut, mode, anchor) {
+  if (!workspaceReady || changing || stopping) return
   floatingCapture ||= require('./floating-capture.cjs').createFloatingCapture({
     electron: require('electron'), runtime, context: () => ({ origin, workspace }),
-    loadRecord: showWorkspace, preferences:{read:readHelperPreferences,write:writeHelperPreferences,shortcut:helperShortcut},
+    loadRecord: showWorkspace, celebrate: () => enki?.celebrate(), preferences:{read:readHelperPreferences,write:writeHelperPreferences,shortcut:helperShortcut},
   })
   const selection = fromShortcut === true && systemPreferences.isTrustedAccessibilityClient?.(false) ? await require('./helper-native.cjs').selectedWord() : ''
-  if(workspaceReady && !stopping) floatingCapture?.show(selection)
+  if(workspaceReady && !changing && !stopping) await floatingCapture?.show(selection, mode, anchor)
+}
+function summonEnki() {
+  if (workspaceReady && !changing && !stopping) enki?.summon()
+}
+function connectBracketMonitor(request = false) {
+  if (process.platform !== 'darwin' || globalBracketsActive || !readHelperPreferences().enkiGlobalBrackets) return
+  const nativePath = app.isPackaged ? join(base, 'electron/enki-bracket.node') : join(base, 'data/desktop/native/enki-bracket.node')
+  if (!existsSync(nativePath)) throw Error('Build the desktop bracket shortcut, then reopen Worldview.')
+  bracketMonitor ||= require(nativePath)
+  if (request) bracketMonitor.request()
+  globalBracketsActive = bracketMonitor.start(summonEnki)
+}
+function resumeBracketMonitor() {
+  try { connectBracketMonitor() } catch (error) { console.warn('Enki shortcut unavailable:', error.message) }
+}
+function shortcutMenuItem() {
+  if (process.platform !== 'darwin') return []
+  return [{ label: 'Use ]]] in Other Apps', type: 'checkbox', checked: !!readHelperPreferences().enkiGlobalBrackets, click: async item => {
+    writeHelperPreferences({ enkiGlobalBrackets: item.checked })
+    if (!item.checked) { bracketMonitor?.stop(); globalBracketsActive = false }
+    else {
+      try {
+        connectBracketMonitor(true)
+        if (!globalBracketsActive) {
+          const result = await dialog.showMessageBox({ type: 'info', title: 'Enki shortcut', message: 'Allow Worldview in Input Monitoring to use ]]] in other apps.', detail: 'Enki listens for three taps of the right-bracket key. Typed brackets still go to the app you are using. macOS may ask you to reopen Worldview.', buttons: ['Open Input Monitoring', 'Done'], cancelId: 1 })
+          if (result.response === 0) await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent')
+        }
+      } catch (error) { await dialog.showMessageBox({ type: 'error', title: 'Enki shortcut', message: error.message }) }
+    }
+    setMenus()
+  } }]
+}
+function setMenus() {
+  const petCommands = [
+    { label: 'Open Enki TO-DO', click: summonEnki },
+    { label: 'Show Enki', click: () => enki?.show() },
+    { label: 'Hide Enki', click: () => enki?.hide() },
+  ]
+  Menu.setApplicationMenu(Menu.buildFromTemplate([
+    { label: 'Worldview', submenu: [{ role: 'about' }, { type: 'separator' }, { label: 'Enki', submenu: [...petCommands, ...shortcutMenuItem()] },
+      { label: 'Open Floating Capture', click: () => void showFloatingCapture() }, { label: 'Open Workspace…', accelerator: 'CmdOrCtrl+O', click: () => void changeWorkspace() },
+      { label: 'Show Workspace in Finder', click: () => void shell.openPath(workspace) }, { type: 'separator' }, { role: 'quit' }] },
+    { role: 'editMenu' }, { role: 'viewMenu' }, { role: 'windowMenu' },
+  ]))
+  if (process.platform === 'darwin') app.dock.setMenu(Menu.buildFromTemplate([
+    ...petCommands, { type: 'separator' }, { label: 'Quick Capture', click: () => void showFloatingCapture() },
+    { label: 'Show Worldview Workspace', click: reopenWorkspace },
+  ]))
 }
 const ownedChildren = new Set()
 const arg = (name) => { const index = process.argv.indexOf(name); return index >= 0 ? process.argv[index + 1] : undefined }
@@ -49,6 +105,15 @@ const profile = arg('--profile')
 if (profile) app.setPath('userData', resolve(profile))
 const locked = app.requestSingleInstanceLock()
 if (!locked) { app.quit() } else {
+  app.on('browser-window-created', (_event, win) => {
+    require('./enki-shortcut.cjs').bindEnkiKeys(win, url => {
+      if (!workspaceReady || !url) return false
+      if (url.startsWith(origin + '/')) return true
+      return url === petPage
+    }, summonEnki)
+  })
+  app.on('browser-window-focus', resumeBracketMonitor)
+  app.on('will-quit', () => { bracketMonitor?.stop(); globalBracketsActive = false })
   app.on('second-instance', reopenWorkspace)
   if (process.platform === 'darwin') {
     app.on('activate', reopenWorkspace)
@@ -118,7 +183,7 @@ function createWorkspaceWindow() {
   view.webContents.setWindowOpenHandler(({ url }) => { try { const target = new URL(url); if (['https:', 'http:'].includes(target.protocol) && !target.username && !target.password) void shell.openExternal(url) } catch {} return { action: 'deny' } })
   view.webContents.on('will-navigate', (event, target) => { try { if (new URL(target).origin !== origin) event.preventDefault() } catch { event.preventDefault() } })
   view.once('ready-to-show', () => view.show())
-  view.on('closed', () => { floatingCapture?.close(); if (window === view) window = null })
+  view.on('closed', () => { if (process.platform !== 'darwin') floatingCapture?.close(); if (window === view) window = null })
   window = view
   return view
 }
@@ -155,7 +220,7 @@ async function start() {
   ipcMain.handle('worldview:desktop-info', async (event) => { if (!trusted(event)) throw new Error('Only the local workspace can use desktop controls.'); return { version: app.getVersion(), workspaceName: basename(workspace), workspace, origin, ownsService: !!server, cloudAi: (await probe(origin))?.cloudAiOff ? 'off' : 'unknown', platform: process.platform } })
   ipcMain.handle('worldview:choose-workspace', async (event) => { if (!trusted(event)) throw new Error('Only the local workspace can select a folder.'); await changeWorkspace(); return { workspaceName: basename(workspace), origin } })
   ipcMain.handle('worldview:show-workspace', async (event) => { if (!trusted(event)) throw new Error('Only the local workspace can reveal a folder.'); await shell.openPath(workspace); return { ok: true } })
-  ipcMain.handle('worldview:open-floating-capture', event => { if (!trusted(event)) throw new Error('Open floating capture from the local workspace.'); showFloatingCapture(); return true })
+  ipcMain.handle('worldview:open-floating-capture', async event => { if (!trusted(event)) throw new Error('Open floating capture from the local workspace.'); await showFloatingCapture(false, 'person'); return true })
   if (process.platform === 'darwin') require('./photo-places.cjs').registerPhotoPlaces({
     ipcMain,
     getWorkspace: () => workspaceReady && !changing && !stopping && window && { path: workspace, origin, contents: window.webContents },
@@ -166,11 +231,13 @@ async function start() {
     },
   })
   try { await helperShortcut(readHelperPreferences().shortcut || defaultShortcut) } catch (error) { console.warn('Floating shortcut unavailable:',error.message) }
-  Menu.setApplicationMenu(Menu.buildFromTemplate([{ label: 'Worldview', submenu: [{ role: 'about' }, { type: 'separator' }, { label: 'Open Floating Capture', click: showFloatingCapture }, { label: 'Open Workspace…', accelerator: 'CmdOrCtrl+O', click: () => void changeWorkspace() }, { label: 'Show Workspace in Finder', click: () => void shell.openPath(workspace) }, { type: 'separator' }, { role: 'quit' }] }, { role: 'editMenu' }, { role: 'viewMenu' }, { role: 'windowMenu' }]))
-  if (process.platform === 'darwin') app.dock.setMenu(Menu.buildFromTemplate([
-    { label: 'Quick Capture', click: showFloatingCapture },
-    { label: 'Show Worldview Workspace', click: reopenWorkspace },
-  ]))
+  enki = require('./enki-window.cjs').createEnki({
+    electron: require('electron'), preferences: { read: readHelperPreferences, write: writeHelperPreferences },
+    openTool: (mode, bounds) => void showFloatingCapture(false, mode, bounds).catch(error => dialog.showMessageBox({ type: 'error', title: 'Enki', message: error.message })),
+    dismissPanel: () => floatingCapture?.dismissIfVisible() || false, shortcutMenuItem,
+  })
+  setMenus()
+  resumeBracketMonitor()
   await window.loadURL(`${url}/#/today`)
   if (pendingRecord) { const record = pendingRecord; pendingRecord = null; await openSavedRecord(record) }
 }

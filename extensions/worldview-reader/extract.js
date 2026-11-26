@@ -53,7 +53,7 @@ export function extractArticle(doc = document) {
   const visiblePhoto = element => { for (let part = element; part; part = part.parentElement) { const style = doc.defaultView?.getComputedStyle(part); if (part.hidden || style?.display === 'none' || style?.visibility === 'hidden') return false } return true }
   if (isLinkedInProfile) {
     const photoLink = [...doc.querySelectorAll('a,button,[role="img"]')].find(element => /^(?:profile photo|profile picture|open profile photo|view profile photo)$/i.test(element.getAttribute('aria-label') || ''))
-    const namedPortrait = pageName ? [...root.querySelectorAll('img[alt]')].find(element => {
+  const namedPortrait = pageName ? [...root.querySelectorAll('img[alt]')].find(element => {
       const label = nameKey(element.getAttribute('alt')), name = nameKey(pageName)
       return label === name || label === `${name} s profile picture` || label === `profile photo of ${name}` || label === `profile picture of ${name}`
     }) : null
@@ -238,6 +238,23 @@ export function extractProfile(doc = document, reportError = false) {
     if (names.size === 1 && (!titleContactMatches || candidates.length === 1)) { heading = candidates[0].anchor; headingName = candidates[0].name; subjectHeader = candidates[0].header }
     else if (names.size > 1) throw new Error('Several names appear on this profile’s header links. Keep one person’s main profile visible and try again.')
   }
+  // New LinkedIn headers may render the name as H2 or plain text, even when
+  // there is no portrait. Bind title agreement to this profile's Contact info.
+  if (personPage && !headingName && titleSubject) {
+    const contacts = [...main.querySelectorAll('a[href]')].filter(anchor => {
+      if (!shown(anchor) || !['contact info', 'contact information'].includes(nameKey(textOf(anchor) || anchor.getAttribute('aria-label')))) return false
+      const href = url(anchor.getAttribute('href')); if (!href) return false
+      const target = new URL(href)
+      return target.origin === page.origin && target.pathname.replace(/\/$/, '') === `${page.pathname.replace(/\/$/, '')}/overlay/contact-info`
+    })
+    const candidates = []
+    for (const contact of contacts) for (let scope = contact.parentElement, depth = 0; scope && scope !== main && depth < 7; scope = scope.parentElement, depth++) {
+      if ([...scope.querySelectorAll('h2,h3,[role="heading"]')].some(node => shown(node) && ['activity','experience','education','more profiles for you','people also viewed'].includes(nameKey(textOf(node))))) break
+      const names = [...scope.querySelectorAll('h1,h2,h3,[role="heading"],p,span')].filter(node => shown(node) && nameKey(textOf(node).replace(/\s*[·•]\s*(?:1st|2nd|3rd\+?).*$/i, '')) === nameKey(titleSubject))
+      if (names.length) { candidates.push({ node: names[0], scope }); break }
+    }
+    if (candidates.length === 1) { heading = candidates[0].node; headingName = titleSubject; subjectHeader = candidates[0].scope }
+  }
   if (companyPage && (!headingName || /^(?:about|overview|home)$/i.test(headingName))) {
     const title = /\|\s*LinkedIn\s*$/i.test(doc.title) ? clean(doc.title.replace(/^\(\d+\)\s*/, '').replace(/\s*\|\s*LinkedIn\s*$/i, '').replace(/:\s*(?:about|overview|home|people|jobs|posts|life)\s*$/i, '')) : ''
     const identity = page.pathname.split('/').slice(0, 3).join('/').toLowerCase()
@@ -291,6 +308,33 @@ export function extractProfile(doc = document, reportError = false) {
   if (identities.size > 1 && !personPage && !companyPage) throw new Error('Several primary profile identities are present. Open a page dedicated to one person or company.')
   const labeledHeadings = [...main.querySelectorAll('h2,h3')].filter(shown).map(element => nameKey(textOf(element)))
   const meta = key => clean(doc.querySelector(`meta[property="${key}"],meta[name="${key}"]`)?.content)
+    // Social pages are identified from their profile URL and rendered primary
+  // header. Feed posts, suggestions and inboxes never become profile evidence.
+  const instagram = /(^|\.)instagram\.com$/i.test(page.hostname), facebook = /(^|\.)facebook\.com$/i.test(page.hostname)
+  let social = null
+  if (instagram || facebook) {
+    const segments = page.pathname.split('/').filter(Boolean), handle = segments[0] || ''
+    const reserved = /^(?:accounts|explore|direct|p|reel|reels|stories|about|developer|login|login\.php|home\.php|watch|marketplace|groups|pages|friends|search|photo|photos|posts|share|help|settings|notifications|permalink\.php)$/i
+    const profilePath = instagram ? segments.length === 1 && /^[A-Za-z0-9._]{1,30}$/.test(handle) && !reserved.test(handle) :
+      segments.length === 1 && !reserved.test(handle) && handle !== 'profile.php' || handle === 'profile.php' && /^\d+$/.test(page.searchParams.get('id') || '') || segments.length === 3 && handle === 'people' && /^\d+$/.test(segments[2])
+    if (!profilePath) throw new Error('Open the main Instagram or Facebook profile, rather than a post, feed, group, or sign-in page.')
+    const declared = (meta('og:title') || clean(doc.title)).replace(/^\(\d+\+?\)\s*/, '')
+    const instagramTitle = instagram && /^(.*?)\s*\(@([A-Za-z0-9._]+)\)/.exec(declared)
+    const titleName = instagramTitle && instagramTitle[2].toLowerCase() === handle.toLowerCase() ? clean(instagramTitle[1]) : facebook ? clean(declared.replace(/\s*[|–—]\s*Facebook.*$/i, '').replace(/^Facebook$/i, '')) : ''
+    const headers = [...main.querySelectorAll('header,[data-testid="profile-header"],[data-pagelet="ProfileHeader"]')].filter(shown)
+    if (instagram) {
+      const bound = headers.filter(header => [...header.querySelectorAll('h1,h2,[role="heading"],a,span')].some(node => shown(node) && nameKey(textOf(node)) === nameKey(handle)))
+      if (bound.length !== 1) throw new Error('The Instagram profile header is not visible yet. Open the profile, sign in if requested, and try again.')
+      const header = bound[0], visible = nameKey(textOf(header))
+      social = { header, name: titleName && visible.includes(nameKey(titleName)) ? titleName : handle }
+    } else {
+      const names = [...main.querySelectorAll('h1,[role="heading"][aria-level="1"]')].filter(node => shown(node) && !/^(?:facebook|log in|sign up|notifications)$/i.test(clean(textOf(node))))
+      const candidates = names.filter(node => !titleName || nameKey(textOf(node)) === nameKey(titleName))
+      if (candidates.length !== 1) throw new Error('The Facebook profile name is not unambiguous. Open the main profile with its name visible and try again.')
+      const node = candidates[0], header = node.closest('header,[data-testid="profile-header"],[data-pagelet="ProfileHeader"],section') || node.parentElement
+      social = { header, name: clean(textOf(node)) }
+    }
+  }
   const namedPortrait = !!headingName && [...main.querySelectorAll('img[alt]')].some(image => shown(image) && nameKey(image.alt) === nameKey(headingName))
   const resume = labeledHeadings.includes('education') && labeledHeadings.some(label => ['experience', 'work experience', 'employment'].includes(label))
   const personalLinks = [...main.querySelectorAll('a[rel~="me"][href]')].some(shown)
@@ -309,10 +353,10 @@ export function extractProfile(doc = document, reportError = false) {
     }) : ''
   const namedLogo = homepage && siteName ? [...doc.querySelectorAll('img[alt]')].find(image => shown(image) && nameKey(image.alt) === nameKey(siteName + ' logo')) : null
   const genericCompany = !!(ownCompanyUrl || namedLogo)
-  const schema = matching[0]?.value, entityType = personPage || genericPerson ? 'person' : companyPage || genericCompany ? 'company' : matching[0]?.kind
-  const name = (personPage || companyPage ? headingName : matching[0]?.name || (genericCompany ? companyName : headingName)).slice(0, 200)
+  const schema = matching[0]?.value, entityType = social ? (matching[0]?.kind || 'person') : personPage || genericPerson ? 'person' : companyPage || genericCompany ? 'company' : matching[0]?.kind
+  const name = (social ? social.name : personPage || companyPage ? headingName : matching[0]?.name || (genericCompany ? companyName : headingName)).slice(0, 200)
   if (!entityType || !name || /^(?:experience|education|home|about|people|sign in|join linkedin)$/i.test(name)) throw new Error('No single named person or company was found. Open its main profile page with the name visible.')
-  const top = subjectHeader || heading?.closest('section,header,[role="banner"],[itemscope],.pv-top-card,.org-top-card') || (companyPage ? main.querySelector('.org-top-card') : null) || heading?.parentElement || main
+  const top = social?.header || subjectHeader || heading?.closest('section,header,[role="banner"],[itemscope],.pv-top-card,.org-top-card') || (companyPage ? main.querySelector('.org-top-card') : null) || heading?.parentElement || main
   const profile = { entityType, name, headline: '', description: '', location: '', emails: [], phones: [], urls: [], industry: '', affiliations: [], images: [] }
   let headerEmployer = null
   const addUrl = value => { const next = url(value); if (next && profile.urls.length < 32 && !profile.urls.includes(next)) profile.urls.push(next) }
@@ -324,6 +368,24 @@ export function extractProfile(doc = document, reportError = false) {
     const description = typeof value.description === 'string' ? clean(value.description).slice(0, 12_000) : ''
     const row = { kind: value.kind, organization, ...(description ? { description } : {}), ...Object.fromEntries(['role', 'degree', 'field', 'startDate', 'endDate', 'excerpt'].flatMap(key => clean(value[key]) ? [[key, clean(value[key]).slice(0, key === 'excerpt' ? 2000 : 300)]] : [])), ...(value.current === true ? { current: true } : {}), ...(url(value.organizationUrl) ? { organizationUrl: url(value.organizationUrl) } : {}), ...(url(value.organizationLogoUrl) ? { organizationLogoUrl: url(value.organizationLogoUrl) } : {}) }
     if (!profile.affiliations.some(old => JSON.stringify(old) === JSON.stringify(row))) profile.affiliations.push(row)
+  }
+  if (social) {
+    const bio = top.querySelector('[data-testid="user-bio"],[data-testid="profile-bio"],[data-testid="UserDescription"]')
+    const intro = facebook ? main.querySelector('[data-testid=profile_intro_card],[data-pagelet=ProfileTilesFeed_0]') : null
+    const biography = [...top.querySelectorAll('span[dir=auto]')].filter(node => shown(node) && !node.querySelector('span[dir=auto]')).map(node => clean(textOf(node))).filter(value => value && nameKey(value) !== nameKey(name) && nameKey(value) !== nameKey(page.pathname.split('/').filter(Boolean)[0]) && !/^(?:[\d,.]+[kKmM]?\s*)?(?:posts|followers|following)$/i.test(value))
+    profile.description = (textOf(bio) || textOf(intro) || biography.join('\n')).slice(0, 12000)
+    const portraits = [...top.querySelectorAll('img[alt]')].filter(image => shown(image) && /profile|avatar/i.test(image.alt) && (nameKey(image.alt).includes(nameKey(name)) || instagram && nameKey(image.alt).includes(nameKey(page.pathname.split('/').filter(Boolean)[0]))))
+    if (portraits.length === 1 && !/default|anonymous|silhouette|blank.avatar/i.test(portraits[0].src)) addImage(portraits[0].currentSrc || portraits[0].src, name + ' profile photo', true)
+    for (const anchor of top.querySelectorAll('a[href]')) {
+      if (!shown(anchor)) continue
+      const href = url(anchor.getAttribute('href')); if (!href) continue
+      const target = new URL(href)
+      if (target.hostname !== page.hostname && !/(^|\.)(instagram\.com|facebook\.com)$/i.test(target.hostname)) addUrl(href)
+    }
+    for (const anchor of top.querySelectorAll('a[href^="mailto:"]')) { const email = anchor.getAttribute('href').slice(7).split('?')[0]; if (shown(anchor) && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) profile.emails.push(email) }
+    const text = [name, textOf(top), textOf(intro), page.href].filter(Boolean).join('\n').slice(0, 100000)
+    const article = doc.createElement('article'); article.textContent = text
+    return { url: page.href, title: clean(doc.title || name).slice(0, 300), text, html: article.outerHTML, profile }
   }
   const schemaText = value => typeof value === 'string' ? clean(value) : value && typeof value === 'object' ? clean(value.name) : ''
   if (!linkedIn && !faculty) profile.description = (meta('description') || meta('og:description')).slice(0, 12000)
@@ -764,4 +826,85 @@ export async function captureLinkedInExperience(profileUrl, employer = '', doc =
     const continuation = !detail && [...section.querySelectorAll('a[href]')].find(a => a.origin === profile.origin && a.pathname.replace(/\/$/, '') === detailPath && visible(a))
     return { roles, ...(continuation ? { continuation: continuation.href } : {}) }
   } finally { if (doc.location.pathname === here.pathname && scroller.scrollTop !== start) move(start) }
+}
+
+/** Runs in the chosen tab. A selected link must still name one visible person. */
+export function extractVisiblePeople(doc = document, selectedUrl = '') {
+  doc = doc || document
+  const page = new URL(doc.location.href)
+  const people = new Map(), ambiguous = new Set()
+  const label = value => String(value || '').replace(/\s+/g, ' ').trim()
+  const key = value => label(value).normalize('NFKC').toLowerCase()
+  const cleanUrl = value => {
+    if (!value) return null
+    try {
+      const u = new URL(value, page)
+      if (!/^https?:$/.test(u.protocol) || u.username || u.password || u.href.length > 2048) return null
+      u.hash = ''
+      return u
+    } catch { return null }
+  }
+  const personUrl = (anchor, card) => {
+    const u = cleanUrl(anchor.getAttribute('href'))
+    if (!u) return ''
+    const host = u.hostname.toLowerCase().replace(/^(?:www|m)\./, '')
+    const path = u.pathname.replace(/\/$/, '')
+    if (host === 'linkedin.com') {
+      if (!/^\/in\/[\w%.~-]+$/i.test(path)) return ''
+    } else if (host === 'instagram.com' || host === 'facebook.com') {
+      if (host === 'facebook.com' && path === '/profile.php' && /^\d+$/.test(u.searchParams.get('id') || '')) return u.origin + path + '?id=' + u.searchParams.get('id')
+      if (!/^\/[\w.-]+$/.test(path) && !(host === 'facebook.com' && /^\/people\/[^/]+\/\d+$/.test(path))) return ''
+      if (/^\/(?:p|reels?|stories|accounts|explore|direct|about|login|watch|marketplace|groups|pages|friends|search|photos?|posts|share|settings|messages|notifications|[\w-]+\.php)$/i.test(path)) return ''
+    } else if (!(card?.matches('[itemtype$="/Person"]') && anchor.matches('[itemprop~="url"],[rel~="me"]')) &&
+      !(u.origin === page.origin && /^\/(?:.*\/)?(?:people|profiles?|team|faculty|staff|members?|authors?|speakers?|contributors)\/[^/]+$/i.test(path))) return ''
+    return u.origin + path
+  }
+  const seen = new WeakMap()
+  const visible = node => {
+    if (!node) return true
+    if (seen.has(node)) return seen.get(node)
+    const style = doc.defaultView?.getComputedStyle(node)
+    const ok = !node.matches('nav,footer,form,script,style,[hidden],[inert],[aria-hidden="true"],.sr-only,.visually-hidden,[data-worldview-reader]') &&
+      style?.display !== 'none' && style?.visibility !== 'hidden' && style?.opacity !== '0' && visible(node.parentElement)
+    seen.set(node, ok)
+    return ok
+  }
+  const visibleText = node => {
+    if (!node || !visible(node)) return ''
+    const walker = doc.createTreeWalker(node, 4)
+    let text = '', child
+    while ((child = walker.nextNode()) && text.length < 600) if (visible(child.parentElement)) text += child.nodeValue + ' '
+    return label(text)
+  }
+  const main = doc.body
+  if (main && /^https?:$/.test(page.protocol) && !page.username && !page.password && page.hostname !== 'app.folk.app') {
+    const cards = 'li,article,[role="listitem"],[itemtype$="/Person"],[data-person-card],.entity-result,.person-card,.search-result'
+    for (const anchor of Array.from(main.querySelectorAll('a[href]')).slice(0, 4000)) {
+      const card = anchor.closest(cards), url = personUrl(anchor, card)
+      if (!url || ambiguous.has(url) || !visible(anchor)) continue
+      const candidate = anchor.querySelector('[itemprop~="name"],h2,h3,h4,[data-person-name]')
+      const name = (visibleText(candidate) || visibleText(anchor)).replace(/\s*[·•]\s*(?:1st|2nd|3rd\+?).*$/i, '').replace(/\s+View .+?[’']s profile$/i, '').trim()
+      if (!name || name.length > 100 || name.split(/\s+/).length > 7 ||
+        !/^[\p{L}\p{M}@][\p{L}\p{M}\p{N}\p{Zs}.'’_@-]+$/u.test(name) ||
+        /^(?:view|see|read|follow|connect|contact|home|support|message|visit|our|meet|about|learn|show|click|more|back|profile|linkedin|instagram|facebook|website)(?:\s|$)/i.test(name)) continue
+      if (people.has(url) && key(people.get(url).name) !== key(name)) { ambiguous.add(url); people.delete(url); continue }
+      if (people.has(url) || people.size >= 40) continue
+      const bound = card && [...card.querySelectorAll('a[href]')].every(other => {
+        const otherUrl = personUrl(other, other.closest(cards))
+        return !otherUrl || otherUrl === url || !visible(other)
+      }) ? card : null
+      const headline = visibleText(bound?.querySelector('[itemprop~="jobTitle"],[data-person-headline],.entity-result__primary-subtitle,.person-title')).slice(0, 180)
+      const image = bound && [...bound.querySelectorAll('img[alt]')].find(img => visible(img) && key(img.alt) === key(name))
+      const src = image && cleanUrl(image.currentSrc || image.getAttribute('src'))
+      const photoUrl = src?.protocol === 'https:' && !src.port && /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(src.hostname) && !/(^|\.)(?:local|internal|localhost|invalid)$/i.test(src.hostname) ? src.href : ''
+      people.set(url, { name, url, headline, photoUrl })
+    }
+  }
+  if (!selectedUrl) return { pageUrl: page.href, people: [...people.values()] }
+  const row = people.get(selectedUrl)
+  if (!row) return { extractorError: 'This person is no longer listed on the page. Read the page again.' }
+  const text = [row.name, row.headline, row.url, 'Listed on ' + page.origin + page.pathname].filter(Boolean).join('\n')
+  const escape = value => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  return { sourcePageUrl: page.href, url: row.url, title: row.name, text, html: '<article><pre>' + escape(text) + '</pre></article>',
+    profile: { entityType: 'person', name: row.name, headline: row.headline, urls: [row.url], images: row.photoUrl ? [{ url: row.photoUrl, label: row.name, isProfile: true, subjectName: row.name }] : [], affiliations: [] } }
 }

@@ -1,5 +1,7 @@
 import { cleanFileName, MAX_ATTACHMENT_BYTES, readHead, sniffBlob, sniffImageMime } from '../data/attachments.ts'
 import { getStore, getWorldGeneration, isRepoReady, retainWorldBlob } from '../data/repo.ts'
+import type { Editor } from '@tiptap/core'
+import type { Transaction } from '@tiptap/pm/state'
 import type { WorldStore } from '../data/WorldStore.ts'
 
 export interface WritingMediaAttributes { assetId: string; kind: 'image' | 'video' | 'audio'; name: string; mime: string; alt: string; caption: string; width: 'normal' | 'wide' | 'full'; displayWidth?: number }
@@ -57,6 +59,20 @@ export async function uploadWritingMedia(files: readonly File[], options: Writin
     results.push({ assetId, kind: item.kind, mime: item.mime, name: cleanFileName(item.file.name, 'Writing media'), alt: '', caption: '', width: 'normal' })
   }
   return results
+}
+/** Track the insertion point while the original bytes are retained locally. */
+export async function insertWritingMedia(files: File[], editor: Editor, options: WritingMediaScope = {}) {
+  const scope = activeScope(options)
+  let bookmark = editor.state.selection.getBookmark()
+  const map = ({ transaction }: { transaction: Transaction }) => { bookmark = bookmark.map(transaction.mapping) }
+  editor.on('transaction', map)
+  try {
+    const media = await uploadWritingMedia(files, scope)
+    scope.check()
+    if (editor.isDestroyed || !editor.isEditable) throw new Error('Reopen this document before inserting more media.')
+    const position = bookmark.resolve(editor.state.doc).to
+    editor.chain().focus().insertContentAt(position, media.map(attrs => ({ type: 'writingMedia', attrs }))).run()
+  } finally { editor.off('transaction', map) }
 }
 export async function uploadWritingBackground(file: File, options: WritingMediaScope = {}): Promise<string> {
   const scope = activeScope(options)

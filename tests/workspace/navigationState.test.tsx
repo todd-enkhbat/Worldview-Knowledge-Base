@@ -205,7 +205,7 @@ describe('workspace navigation and local capture', () => {
     const hash = `#/library?source=${source.id}`
     await render('library', hash)
     const select = byLabel<HTMLSelectElement>('Source version')
-    expect(host.querySelector('.knowledge-prose')?.textContent).toContain(revision)
+    await until(() => host.querySelector('[aria-label="Document content"]')?.textContent?.includes(revision) === true)
     act(() => { select.value = older.id; select.dispatchEvent(new Event('change', { bubbles: true })) })
     expect(host.querySelector('.knowledge-prose')?.textContent).toContain(original)
     await render('today')

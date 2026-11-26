@@ -97,3 +97,49 @@
 .writing-book-picker select { max-width: 100%; padding: .45rem; }
 
 .writing-saved-quote { color: inherit; text-decoration: underline double var(--write-accent); text-underline-offset: .19em; cursor: pointer; }
+
+/* Keep the page available while the long-form tools are closed. */
+.writing-rich-editor .writing-tools {
+  position:sticky; top:0; z-index:6; display:block; padding:0; border:0; border-radius:0;
+  border-bottom:1px solid var(--kb-line); box-shadow:none; color:var(--kb-muted);
+  background:var(--kb-bg,var(--kb-panel)); font:500 12px/1.35 var(--font-sans,system-ui);
+}
+.writing-tools-line { display:flex; align-items:center; gap:3px; min-height:38px; padding:1px 4px; }
+.writing-rich-editor .writing-tools-line select { color:var(--kb-text); font-size:12px; padding-inline:4px; max-width:10em; }
+.writing-tool-label { display:inline-flex; align-items:center; justify-content:center; gap:5px; min-height:30px; padding:4px 8px; border:0; border-radius:4px; background:transparent; cursor:pointer; white-space:nowrap; }
+.writing-tool-label:hover,.writing-tool-label[aria-expanded=true] { color:var(--kb-text); background:var(--kb-hover); }
+.writing-tools-line > :first-child { margin-right:4px; }
+.writing-tools-tray {
+  position:absolute; z-index:6; top:calc(100% + 4px); left:0; width:min(480px,100%); box-sizing:border-box;
+  display:flex; flex-wrap:wrap; align-items:center; gap:5px; padding:9px; max-height:min(52vh,330px); overflow-y:auto;
+  background:var(--kb-panel,#fafafa); border:1px solid var(--kb-line); border-radius:8px; box-shadow:0 5px 20px #0002;
+}
+.writing-tools-tray[hidden] { display:none; }
+.writing-rich-editor .writing-tools-tray .writing-toolbar-group { margin:0; padding:1px 3px; }
+.writing-tools-tray .writing-toolbar-group:first-child { width:100%; padding-bottom:5px; border:0; border-bottom:1px solid var(--kb-line); }
+.writing-selection-color { position:relative; display:grid; place-items:center; min-width:22px; height:32px; }
+.writing-selection-color select { position:absolute; inset:0; width:100%; height:100%; opacity:0; cursor:pointer; }
+.writing-selection-color:focus-within,.writing-text-color:focus-within { outline:2px solid var(--kb-cyan); outline-offset:1px; }
+.writing-rich-editor .writing-sketch { position:relative; margin:1.3em 0; width:100%; max-width:100%; border:1px solid var(--kb-line,#ccc); border-radius:7px; overflow:hidden; background:#fff; }
+.writing-sketch svg[viewBox] { display:block; width:100%; height:auto; }
+.writing-sketch[data-editing] svg[viewBox] { touch-action:none; cursor:crosshair; }
+.writing-sketch-tools { display:flex; align-items:center; flex-wrap:wrap; gap:4px; padding:4px 8px; min-height:30px; background:var(--kb-panel,#f6f6f5); color:var(--kb-text,#222); font:12px/1.35 var(--font-sans,system-ui); }
+.writing-sketch-tools > input,.writing-sketch-tools > span { flex:1 1 95px; min-width:65px; border:0; color:inherit; background:transparent; font:inherit; }
+.writing-sketch-tools select { border:0; padding:4px; font:inherit; color:inherit; background:transparent; }
+.writing-sketch-tools button { display:inline-flex; align-items:center; justify-content:center; gap:4px; min-width:27px; min-height:27px; padding:3px; border:0; border-radius:3px; color:inherit; background:transparent; cursor:pointer; font:inherit; }
+.writing-sketch-tools button:hover { background:var(--kb-hover,#eee); }
+.writing-sketch-tools button:disabled { opacity:.4; cursor:default; }
+.writing-ink-palette { display:flex; gap:1px; }
+.writing-ink-palette i { display:block; width:13px; height:13px; border-radius:50%; background:currentColor; }
+.writing-ink-palette [aria-pressed=true] i { outline:1px solid currentColor; outline-offset:2px; }
+.writing-sketch > small { display:block; padding:4px 8px; color:#5a6167; font:11px/1.45 var(--font-sans,system-ui); }
+.writing-sketch :focus-visible { outline:2px solid var(--kb-cyan,#365e8a); outline-offset:-2px; }
+@media(max-width:520px) {
+ .writing-tools-line { gap:0; padding-inline:0; }
+ .writing-tools-line > :first-child { margin-right:0; }
+ .writing-tool-label { padding-inline:5px; font-size:11px; }
+ .writing-selection-menu.has-concepts:where(:not(.is-notebook .writing-selection-menu)) { flex-wrap:wrap; justify-content:center; }
+ .writing-rich-editor:not(.is-notebook) .writing-selection-menu.has-concepts .writing-selection-format { display:flex; }
+}
+@media print { .writing-tools,.writing-sketch-tools,.writing-sketch>small { display:none!important; } .writing-rich-editor .writing-sketch { border:0; break-inside:avoid; } }
+.writing-tools.is-expanded ~ .writing-selection-menu { visibility:hidden; pointer-events:none; }

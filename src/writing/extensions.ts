@@ -1,3 +1,5 @@
+import { parseSketchData } from './sketch.ts'
+import { WritingSketch } from './sketchExtension.tsx'
 import { savedQuote } from './quoteLink.ts'
 import { conceptExtension } from './conceptExtension.ts'
 import type { ConceptTerm } from './concepts.ts'
@@ -53,12 +55,14 @@ export function sanitizeWritingPasteHTML(html: string): string {
     if (size) { const value = Number(size[1]) * (size[2] === 'pt' ? 4 / 3 : 1); if (value >= 8 && value <= 96) safeStyles.push(`font-size:${Math.round(value)}px`) }
     const alignment = originalStyle.textAlign
     if (['left', 'center', 'right', 'justify'].includes(alignment)) safeStyles.push(`text-align:${alignment}`)
+    const sketch = element.tagName === 'FIGURE' ? parseSketchData(element.getAttribute('data-writing-sketch')) : null
     const href = element.tagName === 'A' ? element.getAttribute('href') : null
     const colspan = ['TD', 'TH'].includes(element.tagName) ? element.getAttribute('colspan') : null
     const rowspan = ['TD', 'TH'].includes(element.tagName) ? element.getAttribute('rowspan') : null
     const start = element.tagName === 'OL' ? element.getAttribute('start') : null
     const language = element.tagName === 'CODE' ? /(?:^|\s)language-([\w-]{1,80})(?:\s|$)/.exec(element.className)?.[1] : null
     for (const attribute of [...element.attributes]) element.removeAttribute(attribute.name)
+    if (sketch) element.setAttribute('data-writing-sketch', JSON.stringify(sketch))
     if (safeStyles.length) element.setAttribute('style', safeStyles.join(';'))
     if (href && safeWritingLink(href)) { element.setAttribute('href', href); element.setAttribute('rel', 'noopener noreferrer'); element.setAttribute('target', '_blank') }
     if (colspan && /^\d+$/.test(colspan) && Number(colspan) >= 1 && Number(colspan) <= 100) element.setAttribute('colspan', colspan)
@@ -91,6 +95,33 @@ const WritingCitation = Node.create({
   renderHTML({ node }) { const a = node.attrs; return ['blockquote', { class: 'writing-citation', 'data-source-id': a.sourceId, 'data-source-version': a.versionId }, ['p', { style: 'white-space:pre-wrap' }, a.quote], ['cite', ['a', { href: `#/library?source=${encodeURIComponent(String(a.sourceId))}&version=${encodeURIComponent(String(a.versionId))}${a.page ? `&page=${Number(a.page)}` : ''}`, 'aria-label': `Read source: ${a.sourceTitle}` }, a.sourceTitle || 'Retained source'], ['small', a.page ? ` · page ${Number(a.page)}` : ` · characters ${Number(a.start) + 1}–${a.end}`]]] },
   renderText({ node }) { return `${node.attrs.quote} — ${node.attrs.sourceTitle}` },
 })
+const WritingSourceLink = Mark.create({
+  name: 'writingSourceLink', inclusive: false,
+  addAttributes() { return {sourceId:{default:null}, target:{default:null}, embed:{default:false}} },
+  renderHTML({mark}) {
+    return ['a',{href:'#/library?source=' + encodeURIComponent(mark.attrs.sourceId), 'data-vault-target':mark.attrs.sourceId,
+      class:'writing-topic-link', tabindex:'0', title:'Open ' + mark.attrs.target},0]
+  },
+  addProseMirrorPlugins() {
+    function open(event: MouseEvent | KeyboardEvent, editable: boolean) {
+      const link = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>('a[href]') : null
+      if (!link || event.defaultPrevented || event instanceof MouseEvent && event.button !== 0) return false
+      if (link.dataset.vaultTarget) {
+        event.preventDefault()
+        location.hash = '#/library?source=' + encodeURIComponent(link.dataset.vaultTarget)
+        return true
+      }
+      if (!safeWritingLink(link.getAttribute('href')) || editable && event instanceof MouseEvent && !event.metaKey && !event.ctrlKey) return false
+      event.preventDefault()
+      window.open(link.href,'_blank','noopener,noreferrer')
+      return true
+    }
+    return [new Plugin({props:{handleDOMEvents:{
+      click: (view,event) => open(event,view.editable),
+      keydown: (view,event) => event.key === 'Enter' && open(event,view.editable),
+    }}})]
+  },
+})
 const WritingTopicLink = Node.create({
   name: 'writingTopicLink', group: 'inline', inline: true, atom: true, selectable: true,
   addAttributes() { return { topicId: { default: '' }, label: { default: '' } } },
@@ -115,13 +146,13 @@ const ReadOnlyGate = Extension.create({
 
 export function writingExtensions(options: { topics?: () => ConceptTerm[]; placeholder?: string } = {}) {
   return [Mark.create({name:"writingAi",inclusive:false,parseHTML(){return []},renderHTML(){return ["span",{"class":"writing-ai-words","title":"AI-written"},0]}}),savedQuote, conceptExtension(options.topics ?? (() => [])),
-    StarterKit.configure({ heading: { levels: [1, 2, 3, 4, 5, 6] }, link: { openOnClick: false, autolink: false, linkOnPaste: false, defaultProtocol: 'https', isAllowedUri: (url) => safeWritingLink(url), HTMLAttributes: { target: '_blank', rel: 'noopener noreferrer' } } }),
+    StarterKit.configure({ heading: { levels: [1, 2, 3, 4, 5, 6] }, link: { openOnClick: false, autolink: false, linkOnPaste: false, defaultProtocol: 'https', isAllowedUri: (url) => safeWritingLink(url), HTMLAttributes: { tabindex: '0', target: '_blank', rel: 'noopener noreferrer' } } }),
     TextStyleKit.configure({ lineHeight: false }),
     TextAlign.configure({ types: ['heading', 'paragraph'] }),
     Highlight.configure({ multicolor: true }),
     Placeholder.configure({ placeholder: options.placeholder ?? 'Begin with a thought…', showOnlyCurrent: false }),
     TableKit.configure({ table: { resizable: true, cellMinWidth: 60, renderWrapper: true } }),
-    WritingMedia, WritingEmbed, WritingCitation, WritingTopicLink, WritingFootnote, ReadOnlyGate,
+    WritingSketch, WritingSourceLink, WritingMedia, WritingEmbed, WritingCitation, WritingTopicLink, WritingFootnote, ReadOnlyGate,
     Extension.create({ name: 'writingTopicInput', addInputRules() { return [new InputRule({ find: /\[\[([^\]\n]{1,100})\]\]$/, handler: ({ state, range, match }) => { if (state.selection.$from.parent.type.spec.code) return null; const label = String(match[1]).normalize('NFKC').trim().toLocaleLowerCase(); const topic = options.topics?.().find((entry) => [entry.label, ...(entry.aliases ?? [])].some(name => name.normalize('NFKC').trim().toLocaleLowerCase() === label)); if (!topic) return null; state.tr.replaceWith(range.from, range.to, state.schema.nodes.writingTopicLink.create({ topicId: topic.id, label: topic.label })); } })] } }),
   ]
 }

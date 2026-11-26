@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { realpath } from 'node:fs/promises'
+import { readFile, realpath } from 'node:fs/promises'
 import { createServer, type Server } from 'node:http'
 import { mkdtemp, readdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -16,7 +16,12 @@ const origin = `chrome-extension://${'a'.repeat(32)}`, clientHeaders = { 'x-wv-c
 beforeEach(async () => {
   db = openWorldDb(':memory:'); directory = await mkdtemp(join(tmpdir(), 'wv-photo-http-'))
   db.putSettings({ T0: 0, yPerYear: 12, stepsPerYear: 600, physicsSeed: 42, qualityTier: 'auto', firstRunComplete: true, lastBackupAt: null, autoBackupEnabled: false, createdAt: 1, schemaVersion: 1 })
-  const crm = createCrmHttp(db, { store: db.crm, blobDir: directory, workspaceDirectory: directory })
+  const crm = createCrmHttp(db, { store: db.crm, blobDir: directory, workspaceDirectory: directory,
+    profileMediaLookup: async () => ['203.0.113.17'],
+    profileMediaFetch: async url => String(url) === 'https://portrait.example.org/editor.png'
+      ? new Response(new Uint8Array(await readFile('extensions/worldview-reader/worldview-128.png')), {headers:{'content-type':'image/png'}})
+      : new Response(null,{status:404}),
+  })
   articles = new ArticleCapture({ db, blobDir: directory, saveFolkPhotos: input => crm.photos!.saveFolkPhotos(input), saveContactPhoto: input => crm.photos!.saveCapturedProfile(input) })
   server = createServer((req, res) => { if (req.url?.startsWith('/api/reading-capture')) void handleArticleCaptureRequest(articles, req, res); else void crm.handle(req, res) })
   await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve) }); base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
@@ -81,6 +86,11 @@ it('saves native capture through the normal group and retained-source flow and r
   expect(first).toMatchObject({ status: 'saved', recordId: expect.any(String) })
   expect(await (await post()).json()).toMatchObject({ recordId: first.recordId, draftId: first.draftId })
   expect(db.crm.list('people', {groupId: 'g'}).total).toBe(1)
+  const digest = previewUrlDigest(snapshot.url)
+  const matched = await fetch(base + '/api/crm/profile-capture/visible-matches', { method:'POST', headers, body:JSON.stringify({ digests:[digest,previewUrlDigest('https://other.example/ada')] }) })
+  expect(await matched.json()).toMatchObject({ matches:{[digest]: { recordId:first.recordId, groupIds:['g'] }}, workspaceToken:dest.workspaceToken })
+  const existing = await fetch(groupsUrl + '&sourceDigest=' + digest + '&nameDigest=' + previewNameDigest(snapshot.title), { headers })
+  expect(await existing.json()).toMatchObject({ existing:{recordId:first.recordId,groupIds:['g']} })
   const unrelated = { ...snapshot, requestId:'same-name-new-site', url:'https://different.example.org/about' }
   const review = await fetch(base + '/api/crm/profile-capture/quick-add', { method:'POST', headers, body:JSON.stringify(unrelated) })
   expect(await review.json()).toMatchObject({status:'review', draftId:expect.any(String)})
@@ -103,4 +113,22 @@ it('reads only a uniquely linked, exactly named active person’s saved affiliat
   expect(db.crm.revision()).toBe(revision)
   db.crm.command({operation:'create',collection:'people',requestId:'preview-duplicate-url',record:{id:'p-other',fullName:'Other Person',urls:[source]}})
   expect(await get('Ada J. Example', source)).not.toHaveProperty('savedAffiliations')
+})
+
+it('stages native field review without applying it and saves only the named existing contact’s portrait', async () => {
+  const url = 'https://example.org/team/ben', name = 'Ben Southwood', photoUrl = 'https://portrait.example.org/editor.png'
+  const headers = {'content-type':'application/json','x-wv-client':'desktop-profile-capture','x-wv-workspace-fingerprint':createHash('sha256').update(await realpath(directory)).digest('hex')}
+  const workspaceToken = db.crm.workspaceFingerprint()
+  const post = (action:string, data:Record<string,unknown>)=>fetch(base+'/api/crm/profile-capture/'+action,{method:'POST',headers,body:JSON.stringify({workspaceToken,requestId:'same-'+action,url,...data})})
+  const receipt = await (await post('review-fields',{title:name,text:name+' appears on the team page.',profile:{entityType:'person',name,headline:'Editor'}})).json()
+  expect(receipt).toMatchObject({draftId:expect.stringMatching(/^crm-profile-capture-/)})
+  expect(db.crm.rows('people',false)).toHaveLength(0)
+  expect(await (await post('photo-only',{name,photoUrl})).json()).toMatchObject({status:'unmatched'})
+  db.crm.command({operation:'create',collection:'people',requestId:'existing-person',record:{id:'local-ben',fullName:name,urls:[url]}})
+  expect(await (await post('photo-only',{name:'Someone Else',photoUrl})).json()).toMatchObject({status:'unmatched'})
+  expect(await (await post('photo-only',{name,photoUrl})).json()).toMatchObject({status:'saved'})
+  expect(await (await post('photo-only',{name,photoUrl})).json()).toMatchObject({status:'kept'})
+  expect(db.crm.get('people','local-ben')).toMatchObject({avatarAssetId:expect.stringMatching(/^crm-avatar-/)})
+  expect(db.crm.get('people','local-ben')?.jobTitle).not.toBe('Editor')
+  expect((await post('photo-only',{workspaceToken:'stale',name,photoUrl})).status).toBe(409)
 })

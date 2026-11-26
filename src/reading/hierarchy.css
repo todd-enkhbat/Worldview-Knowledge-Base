@@ -1,0 +1,78 @@
+.knowledge-workbench .hierarchy-explorer { margin: 4px 0 20px; min-width: 0; }
+.knowledge-workbench .hierarchy-explorer > header { display: flex; align-items: center; justify-content: space-between; padding: 0 7px 6px 11px; }
+.knowledge-workbench .hierarchy-explorer h2 { margin: 0; color: var(--kb-muted); font-size: 12px; font-weight: 500; }
+.knowledge-workbench .hierarchy-explorer-search { display: flex; align-items: center; gap: 6px; margin: 2px 5px 8px; padding: 6px; border: 1px solid var(--kb-line); border-radius: 5px; color: var(--kb-muted); }
+.knowledge-workbench .hierarchy-explorer-search input { width: 100%; min-width: 0; font-size: 11px; color: var(--kb-text); background: transparent; border: 0; outline-offset: 5px; }
+.knowledge-workbench .hierarchy-tree-row { display: flex; align-items: center; min-width: 0; }
+.knowledge-workbench .hierarchy-tree-row button, .knowledge-workbench .hierarchy-all-files, .knowledge-workbench .hierarchy-unfiled { display: flex; align-items: center; gap: 7px; border: 0; border-radius: 5px; color: var(--kb-muted); background: transparent; text-align: left; font-size: 12px; min-height: 30px; }
+.knowledge-workbench .hierarchy-tree-row [role="treeitem"] { flex: 1; min-width: 0; padding: 6px 5px; }
+.knowledge-workbench .hierarchy-tree-row [role="treeitem"] > span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.knowledge-workbench .hierarchy-tree-row svg, .knowledge-workbench .hierarchy-tree-row img { flex-shrink: 0; }
+.knowledge-workbench .hierarchy-tree-row [aria-selected="true"] { color: var(--kb-text); background: var(--kb-hover); }
+.knowledge-workbench .hierarchy-tree-expand, .knowledge-workbench .hierarchy-tree-spacer { flex: 0 0 17px; width: 17px; padding: 2px; }
+.knowledge-workbench .hierarchy-all-files, .knowledge-workbench .hierarchy-unfiled { width: 100%; padding: 7px 12px; }
+.knowledge-workbench .hierarchy-unfiled small { margin-left: auto; font-size: 10px; }
+.knowledge-workbench .hierarchy-explorer p { padding: 6px 11px; font-size: 11px; color: var(--kb-muted); }
+.knowledge-workbench .hierarchy-icon-photo { display: inline-block; flex-shrink: 0; object-fit: cover; border-radius: 4px; }
+.knowledge-workbench .hierarchy-library .reading-archive-body { display: block; }
+.knowledge-workbench .hierarchy-library .reading-filters { display: flex; flex-direction: row; flex-wrap: wrap; gap: 3px 6px; width: auto; padding: 0 0 15px; margin-bottom: 14px; border: 0; border-bottom: 1px solid var(--kb-line); }
+.knowledge-workbench .hierarchy-library .reading-filters > button { width: auto; }
+.knowledge-workbench .hierarchy-library .personal-library-refine { margin: 0; align-self: center; }
+.knowledge-workbench .hierarchy-library .reading-folders > button { min-height: 64px; }
+.knowledge-workbench .hierarchy-library .reading-folders > button > span { flex: 1; min-width: 0; text-align: left; overflow-wrap: anywhere; }
+.knowledge-workbench .hierarchy-library .reading-folders > button > span small { display: block; color: var(--kb-muted); font-size: 10px; font-weight: 400; }
+.knowledge-workbench .hierarchy-library.has-folder-page > .reading-archive-top { margin-top: 26px; }
+.knowledge-workbench .hierarchy-library.has-folder-page > .reading-archive-top h2 { font-size: 18px; }
+.knowledge-workbench .hierarchy-library .reading-folder-breadcrumb { display: none; }
+.knowledge-workbench .hierarchy-page-header { margin-bottom: 20px; }
+.knowledge-workbench .hierarchy-breadcrumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 5px 8px; font-size: 12px; margin: 0 0 18px; }
+.knowledge-workbench .hierarchy-breadcrumbs span { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+.knowledge-workbench .hierarchy-breadcrumbs a { color: var(--kb-muted); text-decoration: none; overflow-wrap: anywhere; }
+.knowledge-workbench .hierarchy-breadcrumbs a[aria-current="page"] { color: var(--kb-text); }
+.knowledge-workbench .hierarchy-cover { position: relative; height: clamp(150px, 23vw, 240px); overflow: hidden; border-radius: 8px; background: var(--kb-panel); }
+.knowledge-workbench .hierarchy-cover > img { width: 100%; height: 100%; object-fit: cover; }
+.knowledge-workbench .hierarchy-cover > button { position: absolute; bottom: 14px; right: 14px; background: var(--kb-bg); color: var(--kb-text); }
+.knowledge-workbench .hierarchy-page-identity { display: flex; align-items: center; flex-wrap: wrap; gap: 16px; margin: 22px 0; }
+.knowledge-workbench .hierarchy-page-symbol { display: grid; place-items: center; flex: 0 0 62px; width: 62px; height: 62px; border: 1px solid var(--kb-line); border-radius: 12px; background: var(--kb-bg); }
+.knowledge-workbench .hierarchy-cover + .hierarchy-page-identity .hierarchy-page-symbol { margin-top: -42px; position: relative; }
+.knowledge-workbench .hierarchy-page-identity > div:nth-child(2) { flex: 1; min-width: 140px; }
+.knowledge-workbench .hierarchy-page-identity h2 { margin: 0; font-size: clamp(24px, 3vw, 34px); font-weight: 500; line-height: 1.25; overflow-wrap: anywhere; }
+.knowledge-workbench .hierarchy-page-identity p { color: var(--kb-muted); font-size: 11px; margin: 7px 0 0; text-transform: capitalize; }
+.knowledge-workbench .hierarchy-page-actions { display: flex; flex-wrap: wrap; gap: 7px; }
+.knowledge-workbench .hierarchy-page-text { max-width: 72ch; font-size: 15px; line-height: 1.8; margin: 24px 0; overflow-wrap: anywhere; }
+.knowledge-workbench .hierarchy-form-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.hierarchy-icon-picker, .hierarchy-cover-picker { min-width: 0; border: 0; padding: 0; margin: 20px 0; }
+.hierarchy-icon-picker legend, .hierarchy-cover-picker legend { margin-bottom: 10px; font-size: 13px; }
+.hierarchy-icon-picker > div { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 14px; }
+.hierarchy-icon-picker button { display: grid; place-items: center; width: 38px; height: 38px; color: inherit; background: transparent; border: 1px solid var(--kb-line); border-radius: 6px; }
+.hierarchy-icon-picker button[aria-pressed="true"], .hierarchy-cover-picker button[aria-pressed="true"] { outline: 2px solid var(--kb-accent); outline-offset: 1px; background: var(--kb-hover); }
+.hierarchy-cover-picker > div { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 9px; margin-bottom: 18px; }
+.hierarchy-cover-picker button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; overflow: hidden; min-height: 66px; padding: 0; border-radius: 6px; border: 1px solid var(--kb-line); background: var(--kb-panel); color: inherit; font-size: 11px; }
+.hierarchy-cover-picker button img { width: 100%; height: 54px; object-fit: cover; }
+.hierarchy-cover-picker button span { display: block; padding: 3px; text-transform: capitalize; }
+.hierarchy-cover-preview { width: 100%; height: 120px; object-fit: cover; border-radius: 6px; }
+.hierarchy-form-note { font-size: 12px; color: var(--kb-muted); }
+@media (hover: hover) { .knowledge-workbench .hierarchy-tree-row button:hover, .knowledge-workbench .hierarchy-all-files:hover, .knowledge-workbench .hierarchy-unfiled:hover { background: var(--kb-hover); color: var(--kb-text); } }
+@media (max-width: 640px) { .knowledge-workbench .hierarchy-page-actions { width: 100%; } .knowledge-workbench .hierarchy-cover { height: 160px; } .knowledge-workbench .hierarchy-page-identity { gap: 12px; } .knowledge-workbench .hierarchy-explorer-search input { font-size: 16px; } .knowledge-workbench .hierarchy-library .reading-filters { flex-wrap: nowrap; overflow-x: auto; } .knowledge-workbench .hierarchy-library .reading-filters > button { flex: 0 0 auto; } .knowledge-workbench .hierarchy-library .personal-library-refine { flex: 0 0 auto; } .hierarchy-form-pair { grid-template-columns: 1fr; } }
+@media print { .hierarchy-explorer, .hierarchy-page-actions, .hierarchy-cover > button { display: none !important; } }
+.knowledge-workbench .hierarchy-explorer { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 90px; overflow: hidden; margin-bottom: 12px; }
+.knowledge-workbench .hierarchy-explorer > :is(header,label,button,p) { flex-shrink: 0; }
+.knowledge-workbench .hierarchy-explorer > [role="tree"] { overflow-y: auto; overscroll-behavior: contain; min-height: 0; scrollbar-width: thin; }
+.knowledge-workbench .hierarchy-page-text :is(h1,h2,h3,h4) { text-transform: none; letter-spacing: normal; font-size: 20px; line-height: 1.4; margin: 20px 0 10px; }
+.knowledge-workbench .hierarchy-page-text p { margin: 8px 0 16px; }
+.hierarchy-editor label { display: grid; gap: 7px; min-width: 0; }
+.hierarchy-editor :is(select,input[type="file"]) { width: 100%; min-width: 0; padding: 10px; border: 1px solid var(--kb-line); border-radius: 6px; background: var(--kb-panel); color: var(--kb-text); font: inherit; }
+.hierarchy-editor footer { display: flex; flex-wrap: wrap; gap: 8px; }
+.hierarchy-editor footer > button:first-child:not(:last-child) { margin-right: auto; }
+@media (max-width: 640px) { .knowledge-workbench .hierarchy-form-pair { grid-template-columns: 1fr; } .hierarchy-editor :is(input,textarea,select) { font-size: 16px; } }
+.knowledge-workbench .hierarchy-tree-row { content-visibility: auto; contain-intrinsic-size: auto 30px; }
+.knowledge-workbench .hierarchy-concept-links { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 16px 0; }
+.knowledge-workbench .hierarchy-concept-links p { width: 100%; margin: 0; font-size: 11px; color: var(--kb-muted); }
+
+.knowledge-workbench .library-files-layout { display: grid; grid-template-columns: 235px minmax(0,1fr); height: 100%; min-height: 0; }
+.knowledge-workbench .library-files-explorer { display: flex; flex-direction: column; min-width: 0; min-height: 0; padding: 18px 10px; border-right: 1px solid var(--kb-line); background: var(--kb-bg); }
+.knowledge-workbench .library-files-explorer > summary { display: none; }
+.knowledge-workbench .library-files-explorer > .hierarchy-explorer { height: calc(100% - 12px); margin-top: 0; }
+.knowledge-workbench .library-files-layout > .reading-library { min-width: 0; min-height: 0; overflow-y: auto; }
+@media (min-width: 761px) { .knowledge-workbench .library-files-explorer:not([open]) > .hierarchy-explorer { display: flex; } }
+@media (max-width: 760px) { .knowledge-workbench .library-files-layout { display: flex; flex-direction: column; height: auto; min-height: 100%; } .knowledge-workbench .library-files-explorer { display: block; padding: 12px 16px; border-right: 0; border-bottom: 1px solid var(--kb-line); } .knowledge-workbench .library-files-explorer > summary { display: list-item; cursor: pointer; font-size: 13px; } .knowledge-workbench .library-files-explorer > .hierarchy-explorer { height: auto; max-height: 45dvh; margin: 16px 0 0; } }

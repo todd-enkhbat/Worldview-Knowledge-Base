@@ -45,3 +45,9 @@
 .crm-inline-multiple > label { display: flex; align-items: center; gap: 8px; }
 .crm-inline-editor input[type=checkbox] { accent-color: var(--kb-accent); }
 @media (max-width: 600px) { .crm-field-manager-layout { grid-template-columns: minmax(0, 1fr); } .crm-field-manager-layout > aside { display: flex; overflow-x: auto; gap: 7px; padding-right: 0; border-right: 0; } .crm-field-manager-layout > aside > button { min-width: 145px; } .crm-field-manager-layout > div { padding-left: 0; } .crm-field-option-row { grid-template-columns: 24px minmax(0, 1fr) 24px 24px 24px; } .crm-field-option-row > span { display: none; } .crm-field-manager input:not([type=color]), .crm-field-manager select, .crm-field-manager textarea { font-size: 16px; } }
+
+.crm-email-cell { display:flex; gap:4px; align-items:center; max-width:100%; min-width:0; }
+.crm-email-addresses { display:grid; gap:3px; min-width:0; }
+.crm-email-cell .copy-email-button { font-size:inherit; width:fit-content; }
+.crm-email-edit { border:0; border-radius:4px; background:transparent; color:var(--kb-muted); padding:4px; flex:none; }
+@media (hover:hover) { .crm-email-edit { opacity:0; } .crm-email-cell:hover .crm-email-edit,.crm-email-cell:focus-within .crm-email-edit { opacity:1; } }

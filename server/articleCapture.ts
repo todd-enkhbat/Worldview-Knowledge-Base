@@ -1,3 +1,4 @@
+import { accessTodos, TodoError } from './todoHttp.ts'
 import { entityUrl } from './crmProfileCapture.ts'
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import { existsSync } from 'node:fs'
@@ -79,7 +80,7 @@ export class ArticleCapture {
     return request.token ? { connected: true, token: request.token, clientId: request.clientId } : { connected: false, expiresAt: request.expiresAt }
   }
   async download(): Promise<Uint8Array> {
-    const files = ['manifest.json', 'background.js', 'content.js', 'folk-content.js', 'extract.js', 'popup.html', 'popup.js', 'group-icon.js', 'worldview-128.png', 'popup.css', 'README.md']
+    const files = ['manifest.json', 'background.js', 'content.js', 'folk-content.js', 'extract.js', 'popup.html', 'popup.js', 'group-icon.js', 'worldview-128.png', 'popup.css', 'application-form.js', 'contact-ui.js', 'contact-ui.css', 'todo-ui.js', 'todo-ui.css', 'README.md']
     const entries = await Promise.all(files.map(async (name) => [`WorldviewReader/${name}`, await readFile(resolve('extensions/worldview-reader', name))] as const))
     return zipSync(Object.fromEntries(entries), { level: 6 })
   }
@@ -103,18 +104,48 @@ export class ArticleCapture {
     return this.status()
   }
   originAllowed(origin: string) { return extensionOrigin(origin) && this.clients().clients.some((client) => client.origin === origin && !client.revokedAt && client.expiresAt > this.now()) }
+  todos(origin: string, token: string, edit?: Record<string,unknown>) {
+    this.authenticate(origin,token)
+    try { return accessTodos(this.options.db,this.options.bus,edit) }
+    catch (error) {
+      if (error instanceof TodoError) throw new ArticleCaptureError(error.message,error.status)
+      throw new ArticleCaptureError('Worldview could not access your saved to-do lists.',500)
+    }
+  }
   profileGroups(type: unknown, origin: string, token: string, url?: unknown) {
     this.authenticate(origin, token)
     assert(type === 'person' || type === 'company', 'Choose a person or company profile.')
     const store = this.options.db.crm
     const key = typeof url === 'string' && entityUrl(url, type)
-    const matches = key ? store.rows(type === 'person' ? 'people' : 'companies', false).filter(row =>
-      !row.mergedIntoId && (row.urls.some(link => entityUrl(link, type) === key) ||
-        row.sourceRefs.some(ref => ref.provider === 'profile-capture' && entityUrl(ref.url ?? ref.externalId, type) === key))) : []
-    const record = matches.length === 1 ? matches[0] : null
-    const existing = record && { recordId: record.id, groupIds: store.rows('memberships', false)
-      .filter(m => m.entityType === type && m.entityId === record.id).map(m => m.groupId) }
+    const existing = key ? this.profileMatches(type, new Set([key])).get(key) ?? null : null
     return { ...(key ? { existing, workspaceFingerprint: store.workspaceFingerprint() } : {}), groups: store.rows('groups', false).filter(group => store.groupSupports(group, type)).map(({ id, name, emoji, icon }) => ({ id, name, emoji: emoji ?? '', ...(icon ? { icon } : {}) })).sort((a, b) => a.name.localeCompare(b.name)) }
+  }
+  private profileMatches(type: 'person' | 'company', keys: Set<string>) {
+    const store = this.options.db.crm
+    const matches = new Map<string, {recordId: string; groupIds: string[]} | null>()
+    const assigned = new Map<string, string[]>()
+    for (const membership of store.rows('memberships', false)) {
+      if (membership.entityType !== type) continue
+      const list = assigned.get(membership.entityId) || []
+      list.push(membership.groupId)
+      assigned.set(membership.entityId, list)
+    }
+    for (const record of store.rows(type === 'person' ? 'people' : 'companies', false)) {
+      if (record.mergedIntoId) continue
+      const links = [...record.urls, ...record.sourceRefs.filter(ref => ref.provider === 'profile-capture').map(ref => ref.url ?? ref.externalId)]
+      const unique = new Set(links.map(link => entityUrl(link, type)).filter(Boolean))
+      for (const url of unique) if (url && keys.has(url)) {
+        matches.set(url, matches.has(url) ? null : { recordId: record.id, groupIds: assigned.get(record.id) || [] })
+      }
+    }
+    return matches
+  }
+  visiblePeople(urls: unknown, origin: string, token: string) {
+    this.authenticate(origin, token)
+    assert(Array.isArray(urls) && urls.length <= 40 && urls.every(url => typeof url === 'string' && url.length <= 2048), 'Choose up to forty visible profiles.')
+    const keys = new Map(urls.map(url => [url as string, entityUrl(url, 'person')]))
+    const matches = this.profileMatches('person', new Set([...keys.values()].filter((value): value is string => !!value)))
+    return { workspaceFingerprint: this.options.db.crm.workspaceFingerprint(), existing: Object.fromEntries([...keys].map(([url, key]) => [url, key && matches.get(key) || null])) }
   }
   private authenticate(origin: string, token: string): Client {
     assert(extensionOrigin(origin) && /^wvread_[A-Za-z0-9_-]{43}$/.test(token), 'A paired browser token is required.', 401)
@@ -287,7 +318,7 @@ export class ArticleCapture {
   }
 }
 
-function loopback(req: IncomingMessage): boolean {
+export function loopback(req: IncomingMessage): boolean {
   try { return ['localhost', '127.0.0.1', '[::1]'].includes(new URL(`http://${req.headers.host ?? ''}`).hostname) && ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress ?? '') } catch { return false }
 }
 async function body(req: IncomingMessage): Promise<Record<string, unknown>> {
@@ -311,13 +342,15 @@ export async function handleArticleCaptureRequest(service: ArticleCapture, req: 
       assert(input.action === 'check' || input.action === 'acknowledge', 'Choose a connection check or acknowledgement.')
       return sendMemoryJson(res, 200, service.connectionStatus(decodeURIComponent(path.split('/').at(-1)!), origin, secret, input.action === 'acknowledge'))
     }
-    if (path === '/api/reading-capture/capture' || path === '/api/reading-capture/profile-groups') {
+    if (['/api/reading-capture/capture','/api/reading-capture/profile-groups','/api/reading-capture/profile-people','/api/reading-capture/todos-state','/api/reading-capture/todos-mutate'].includes(path)) {
       assert(service.originAllowed(origin), 'Pair this extension in the local workspace first.', 403)
       res.setHeader('access-control-allow-origin', origin); res.setHeader('vary', 'Origin'); res.setHeader('access-control-allow-private-network', 'true')
       if (req.method === 'OPTIONS') { res.writeHead(204, { 'access-control-allow-methods': 'POST', 'access-control-allow-headers': 'authorization,content-type', 'access-control-max-age': '300' }); res.end(); return }
       assert(req.method === 'POST', 'Use POST for explicit article captures.', 405)
       const token = /^Bearer (\S+)$/.exec(String(req.headers.authorization ?? ''))?.[1] ?? ''
       const input = await body(req)
+      if (path.endsWith('/todos-state') || path.endsWith('/todos-mutate')) return sendMemoryJson(res,200,service.todos(origin,token,path.endsWith('/todos-mutate') ? input : undefined))
+      if (path.endsWith('/profile-people')) return sendMemoryJson(res, 200, service.visiblePeople(input.urls, origin, token))
       if (path.endsWith('/profile-groups')) return sendMemoryJson(res, 200, service.profileGroups(input.entityType, origin, token, input.url))
       if (input.saveProfileData === true && req.socket.localPort) {
         const receipt = await service.capture({ ...input, saveProfileData: true }, origin, token)

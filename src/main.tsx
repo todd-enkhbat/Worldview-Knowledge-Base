@@ -4,6 +4,7 @@ import './index.css'
 import './workspace.css'
 import './galaxy.css'
 import App from './App.tsx'
+import { EmailClipboard } from './workspace/EmailClipboard.tsx'
 import { bootData } from './app/boot.ts'
 
 void bootData()
@@ -11,5 +12,6 @@ void bootData()
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />
+    <EmailClipboard />
   </StrictMode>,
 )

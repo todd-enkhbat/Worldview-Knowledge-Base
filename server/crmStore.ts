@@ -256,6 +256,16 @@ export class SqliteCrmStore {
           }
         }
       }
+      else if (input.operation === 'memberships_add') {
+        check(validEntityRef(input.entity) && Array.isArray(input.groupIds) && input.groupIds.length > 0 && input.groupIds.length <= 100 && input.groupIds.every(id => typeof id === 'string' && id), 'Choose a contact and between 1 and 100 groups.')
+        const entity = input.entity as CrmEntityRef, ids = [...new Set(input.groupIds as string[])]
+        this.active(entity)
+        for (const id of ids) { const group = this.get('groups', id); check(group && !group.archivedAt && this.groupSupports(group, entity.type), 'Choose compatible available CRM groups.') }
+        output.records = ids.map(groupId => {
+          const existing = this.rows('memberships', false).find(row => row.groupId === groupId && row.entityId === entity.id && row.entityType === entity.type)
+          return existing ? existing.affiliationRule ? put('memberships', { affiliationRule: null }, existing) : existing : put('memberships', { groupId, entityType: entity.type, entityId: entity.id })
+        })
+      }
       else if (input.operation === 'membership') {
         check(typeof input.groupId === 'string' && validEntityRef(input.entity), 'Choose a contact and group.')
         const entity = input.entity as CrmEntityRef, existing = this.rows('memberships', false).find(row => row.groupId === input.groupId && row.entityId === entity.id && row.entityType === entity.type)

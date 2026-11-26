@@ -16,9 +16,23 @@ When no matching service is running, the bundled Node runtime starts the normal 
 
 A different workspace occupying port 5173 requires an explicit separate-port choice. Use the local address displayed in the app for MCP configuration. The browser reader uses port 5173. On Mac, closing the workspace window leaves capture available in the Dock. Quitting Worldview stops the local service if Worldview started it. An independently running service stays available.
 
+## Enki
+
+Enki appears at the bottom right when Worldview opens. Drag her to move her to another part of the screen or another display. Option-drag turns the model. With the pet focused, the left and right arrow keys also turn her. Enki blinks at rest, waves when clicked, and hops when you complete a task. These gestures follow your Mac’s Reduce Motion setting.
+
+Click Enki to open TO-DO beside her. Click again to tuck the panel away. Press Enter to add a task to the selected list, or Shift-Enter for a new line. Choose **New list** to start another list. You can edit tasks and check them off. **Completed** holds tasks you can reopen. Two-finger click a task, including a completed task, and choose **Delete task**. Two-finger click the current list name to **Delete list**, or **Clear Inbox** for the default list. The confirmation shows the affected task count. The trash controls and Shift-F10 offer the same actions.
+
+Dictionary, CRM, Application, and TO-DO share one panel. Switch tools to return to an open draft or preview. Drag the title bar or resize the panel by its edges to save its position and size on this Mac.
+
+Right-click Enki or open her **•••** menu for the four tools and **Hide Enki**. The Worldview application menu and Dock menu can show her again. Her position and visibility persist on this Mac.
+
+Quickly tap `]` three times in Worldview to summon TO-DO. For the same gesture while working in another Mac app, enable **Use ]]] in Other Apps** in Enki’s menu and grant Worldview Input Monitoring when prompted. The cross-app shortcut watches the physical right-bracket key on a US-layout keyboard and leaves typed brackets in the focused app. Secure keyboard input suspends it.
+
+Saved lists, task text, and completion status live in the active workspace’s `world.sqlite` and are included in Worldview backup exports. Pet position and shortcut preferences live in the app’s local preferences.
+
 ## Floating profile capture
 
-In **People**, click **Capture profile**. While browsing, you can also right-click Worldview in the Dock and choose **Quick Capture**, or press **⌘⌥⇧W** while the app is running. Click **Add to Worldview** while a profile is selected in Dia. Check the source and person or company, pick a group if you want one, and save. macOS may ask for permission to control Dia. The chevron next to **Add to Worldview** opens the in-app browser option directly. Paste a profile URL there to use Worldview’s own browser session. **People → Review captures** opens saved drafts and the URL collector.
+In **People**, click **Capture profile**. While browsing, you can also right-click Worldview in the Dock and choose **Quick Capture**, or press **⌘⌥⇧W** while the app is running. Choose **CRM**, select the active Dia tab, and click **Read profile**. Choose **Add** beside a person under **People on this page**, or select their name to review the visible details first. On a profile, choose a group if desired and save. An existing contact offers **Open contact**, **Log interaction** and additional groups. macOS may ask for permission to control Dia. Choose **Worldview browser** to open a profile URL in Worldview’s browser session. **People → Review captures** opens saved drafts and the URL collector.
 
 **People → Companies → Fill company details** checks all companies for official websites, descriptions and logos. The scan saves its progress locally and resumes when the workspace reopens. New company records are queued as they are collected. Public lookups use organization names and published URLs. Ambiguous matches can be resolved by collecting the official page yourself.
 
@@ -78,4 +92,4 @@ Choose **Connect Apple Photos** in Maps and respond to the macOS Photos permissi
 
 Optional visual indexing uses Apple Vision to suggest subject labels from previews already on the Mac. Search covers saved metadata and these labels. Worldview keeps the resulting index in the selected workspace. Access can be changed in **System Settings → Privacy & Security → Photos**.
 
-Mac packaging compiles the PhotoKit connector with the Command Line Tools and Node-API headers. For a development checkout, run `node scripts/desktop/build-photo-places.mjs` before starting Electron. A packaged app carries the compiled connector.
+Mac packaging compiles the PhotoKit connector and Enki shortcut with the Command Line Tools and Node-API headers. For a development checkout, run `node scripts/desktop/build-photo-places.mjs` and `node scripts/desktop/build-enki-bracket.mjs` before starting Electron. A packaged app carries both native modules.

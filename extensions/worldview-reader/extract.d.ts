@@ -7,3 +7,5 @@ export interface ExtractedProfile { url: string; title: string; text: string; ht
 export function extractProfile(doc?: Document): ExtractedProfile
 export function extractProfile(doc: null, reportError: true): ExtractedProfile | { extractorError: string }
 export function captureLinkedInExperience(profileUrl: string, employer?: string, doc?: Document): Promise<{ roles: NonNullable<ExtractedProfile['profile']['affiliations']>; continuation?: string }>
+export function extractVisiblePeople(doc?: Document | null): {pageUrl: string; people: import('./contact-ui.js').VisiblePerson[]}
+export function extractVisiblePeople(doc: Document | null, selectedUrl: string): (ExtractedProfile & {sourcePageUrl: string}) | {extractorError: string}

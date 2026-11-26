@@ -22,7 +22,13 @@ const server = createServer((req, res) => {
     const retained = await realpath(file).catch(() => null)
     if (retained && retained !== dist && !retained.startsWith(dist + sep)) { res.writeHead(403, headers).end(); return }
     const info = retained ? await stat(retained).catch(() => null) : null
-    if (info?.isFile()) { res.writeHead(200, { ...headers, 'content-type': mime[extname(file)] ?? 'application/octet-stream', 'content-length': info.size, 'cache-control': path.startsWith('/assets/') ? 'public,max-age=31536000,immutable' : 'no-cache' }); if (req.method === 'HEAD') res.end(); else await pipeline(createReadStream(retained), res); return }
+    const frameAncestor = path === '/study-helper.html' && host.readerFrameAncestor(req)
+    const fileHeaders = { ...headers }
+    if (frameAncestor) {
+      delete fileHeaders['x-frame-options']
+      fileHeaders['content-security-policy'] = 'frame-ancestors ' + frameAncestor
+    }
+    if (info?.isFile()) { res.writeHead(200, { ...fileHeaders, 'content-type': mime[extname(file)] ?? 'application/octet-stream', 'content-length': info.size, 'cache-control': path.startsWith('/assets/') ? 'public,max-age=31536000,immutable' : 'no-cache' }); if (req.method === 'HEAD') res.end(); else await pipeline(createReadStream(retained), res); return }
     if (extname(path)) { res.writeHead(404, headers).end(); return }
     const index = await realpath(join(dist, 'index.html')); if (!index.startsWith(dist + sep)) { res.writeHead(403, headers).end(); return }
     const html = await readFile(index); res.writeHead(200, { ...headers, 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-cache' }); res.end(req.method === 'HEAD' ? undefined : html)

@@ -7,9 +7,10 @@ import { compareAndSwapWorldState, getStore, getWorldGeneration, isRepoReady, re
 import type { WorldStore } from '../data/WorldStore.ts'
 import { ingestRetainedSource, initializeKnowledge, knowledgeHash } from '../knowledge/index.ts'
 import type { KnowledgeSnapshot } from '../knowledge/types.ts'
-import { decodeWriting, defaultWritingAppearance, emptyWriting, emptyWritingContent, plainTextFromWriting, validateWritingDocument, writingAssetIds, writingFromPlainText, writingPublicationValue } from './model.ts'
+import { decodeWriting, defaultWritingAppearance, emptyWriting, emptyWritingContent, plainTextFromWriting, validateWritingDocument, writingAssetIds, writingPublicationValue } from './model.ts'
 import { WRITING_KV, type CreateWritingInput, type WritingDocument, type WritingDocumentPatch, type WritingSnapshot } from './types.ts'
 import { readWritingHistory, retainWritingRevision } from './history.ts'
+import { sourceWritingContent, sourceWritingDocument } from './sourceMarkdown.ts'
 import { writingAuthorshipMessages } from './authorship.ts'
 export * from './types.ts'
 export * from './model.ts'
@@ -158,9 +159,9 @@ export function createWritingFromSource(sourceId: string): Promise<WritingDocume
   return mutate((snapshot, corpus) => {
     const source = corpus.sources.find((entry) => entry.id === sourceId && !entry.deleted && !entry.excluded), version = corpus.versions.find((entry) => entry.id === source?.currentVersionId)
     if (!source || !version) throw new Error('This source is no longer available to copy.')
-    const existing = snapshot.docs.find((entry) => entry.sourceId === sourceId || version.metadata?.format === 'writing' && version.metadata.writingDocumentId === entry.id)
-    if (existing) return existing
-    const doc = newWritingDraft({ title: source.title, content: writingFromPlainText(version.text), basedOnSourceId: source.id })
+    const existing = snapshot.docs.find((entry) => !entry.archivedAt && (entry.sourceId === sourceId || entry.basedOnSourceId === sourceId || version.metadata?.format === 'writing' && version.metadata.writingDocumentId === entry.id))
+    if (existing) return sourceWritingDocument(existing,corpus.sources,corpus.versions)
+    const doc = newWritingDraft({ title: source.title, content: sourceWritingContent(source,version,undefined,corpus), basedOnSourceId: source.id })
     doc.baseVersionId = version.id; snapshot.docs.push(doc); return doc
   })
 }

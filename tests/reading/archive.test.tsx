@@ -29,7 +29,7 @@ beforeEach(async () => {
   host = document.createElement('div'); document.body.append(host); root = createRoot(host)
 })
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); resetReading(); resetKnowledge(); resetWriting(); await closeRepo(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
-async function render() { await act(async () => root.render(<ReadingArchive onOpenSource={openSource} onOpenRecord={openRecord} />)) }
+async function render() { await act(async () => root.render(<ReadingArchive key={new URLSearchParams(location.hash.split('?')[1] ?? '').get('folder') ?? 'root'} onOpenSource={openSource} onOpenRecord={openRecord} />)) }
 const titles = () => [...host.querySelectorAll('.reading-file-title')].map((entry) => entry.textContent)
 const button = (label: string) => [...host.querySelectorAll<HTMLButtonElement>('button')].find((entry) => entry.textContent?.trim() === label)!
 async function filter(label: string) { await act(async () => [...host.querySelectorAll<HTMLButtonElement>('.reading-filters button')].find((entry) => entry.querySelector('span')?.textContent === label)!.click()) }
@@ -77,16 +77,20 @@ it('creates and renames a folder through the dialog, then removes only its organ
   const originalBytes = Array.from(new Uint8Array(await original!.blob.arrayBuffer()))
   await render(); await act(async () => button('Folder').click())
   await input(host.querySelector('dialog input')!, 'Research shelf')
-  await act(async () => button('Create folder').click())
+  await act(async () => button('Create page').click())
   const folder = useReading.getState().folders.find((entry) => entry.name === 'Research shelf')!
   await act(async () => updateReadingItem(article.sourceId, { folderId: folder.id }))
-  await act(async () => host.querySelector<HTMLButtonElement>('.reading-folders button')!.click())
+  await render()
   expect(titles()).toEqual(['Copper orchard article'])
-  await act(async () => button('Rename').click())
+  await act(async () => button('Customize').click())
   await input(host.querySelector('dialog input')!, 'Long-term archive')
-  await act(async () => button('Save name').click())
+  await act(async () => button('Save changes').click())
   expect(useReading.getState().folders.find((entry) => entry.id === folder.id)?.name).toBe('Long-term archive')
-  await act(async () => button('Remove folder').click())
+  await act(async () => button('Customize').click())
+  await act(async () => button('Remove page, keep contents').click())
+  expect(useReading.getState().folders.find(entry => entry.id === folder.id)?.deletedAt).toBeNull()
+  await act(async () => button('Confirm removal; keep contents').click())
+  await render()
   expect(titles()).toHaveLength(3)
   expect(useReading.getState().items.find((entry) => entry.sourceId === article.sourceId)?.folderId).toBeNull()
   expect(useReading.getState().folders.find((entry) => entry.id === folder.id)?.deletedAt).toBeTypeOf('number')

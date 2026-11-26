@@ -57,7 +57,7 @@ describe('paired browser article capture over HTTP', () => {
     const response = await fetch(`${f.base}/download`, { headers: f.management })
     expect(response.status).toBe(200); expect(response.headers.get('content-disposition')).toContain('WorldviewReader.zip')
     const files = unzipSync(new Uint8Array(await response.arrayBuffer()))
-    expect(Object.keys(files).sort()).toEqual(['README.md', 'background.js', 'content.js', 'folk-content.js', 'extract.js', 'group-icon.js', 'worldview-128.png', 'manifest.json', 'popup.css', 'popup.html', 'popup.js'].map((name) => `WorldviewReader/${name}`).sort())
+    expect(Object.keys(files).sort()).toEqual(['README.md', 'background.js', 'content.js', 'folk-content.js', 'extract.js', 'group-icon.js', 'worldview-128.png', 'manifest.json', 'popup.css', 'popup.html', 'popup.js', 'application-form.js', 'contact-ui.js', 'contact-ui.css', 'todo-ui.js', 'todo-ui.css'].map((name) => `WorldviewReader/${name}`).sort())
     expect(strFromU8(files['WorldviewReader/folk-content.js'])).toContain('MutationObserver')
     expect(JSON.parse(strFromU8(files['WorldviewReader/manifest.json'])).permissions).toEqual(['activeTab', 'scripting', 'storage', 'alarms'])
     expect(Object.keys(files).some((path) => /token|\.env|sqlite|blobs/.test(path))).toBe(false)

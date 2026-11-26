@@ -1,4 +1,5 @@
 import { buildPhotoPlaces } from './build-photo-places.mjs'
+import { buildEnkiBracket } from './build-enki-bracket.mjs'
 import { packager } from '@electron/packager'
 import { checkBundle } from './check-bundle.mjs'
 import { cp, mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
@@ -23,6 +24,7 @@ await Promise.all([
   cp(join(root, 'extensions/worldview-reader'), join(stage, 'runtime/extensions/worldview-reader'), { recursive: true, verbatimSymlinks: true }),
 ])
 buildPhotoPlaces(join(stage, 'electron/photo-places.node'))
+buildEnkiBracket(join(stage, 'electron/enki-bracket.node'))
 await mkdir(join(stage, 'runtime/node/bin'), { recursive: true })
 await cp(join(nodeRoot, 'bin/node'), join(stage, 'runtime/node/bin/node'))
 await cp(join(nodeRoot, 'LICENSE'), join(stage, 'runtime/node/LICENSE'))

@@ -1,5 +1,5 @@
 /* global chrome */
-import { extractArticle, extractFolkPhotos, extractProfile, captureLinkedInExperience } from './extract.js'
+import { extractArticle, extractFolkPhotos, extractProfile, extractVisiblePeople, captureLinkedInExperience } from './extract.js'
 
 const DEFAULT_PORT = 5173
 const RETRY_ALARM = 'worldview-pending-captures'
@@ -215,6 +215,18 @@ async function captureFolk(tabId, entry = null, diagnosticSearch = false, saveSe
   return { result, seen: [...new Set([...previous, ...keys])].slice(-5000), url: batch.url, title: batch.title }
 }
 async function popupAction(message) {
+  if (message.type === 'todos-state' || message.type === 'todos-mutate') {
+    const config = await pairing()
+    if (!config?.token) throw Error('Connect this extension to your Worldview workspace to use TO-DO.')
+    const response = await fetch(endpoint(config.port,message.type), {
+      method:'POST', credentials:'omit', redirect:'error', cache:'no-store',
+      headers:{'content-type':'application/json',authorization:'Bearer ' + config.token},
+      body:JSON.stringify(message.type === 'todos-mutate' ? message.body : {}), signal:AbortSignal.timeout(8000),
+    })
+    const value = await response.json()
+    if (!response.ok) return {ok:false,status:response.status,error:value.error || 'Could not access your Worldview lists.'}
+    return {ok:true,state:value}
+  }
   if (message.type === 'reader-status') { let connectionError = ''; try { await finishConnection() } catch (error) { connectionError = errorText(error) } if (Number.isSafeInteger(message.tabId)) await reconcileFolk(message.tabId); const state = await chrome.storage.local.get(['pairing', 'outbox', 'pendingConnection', 'lastDeliveryAt', 'lastFailure']), session = await chrome.storage.session.get('folkStopReason'); return { port: localPort(state.pendingConnection?.port ?? state.pairing?.port), paired: !!state.pairing?.token, pendingConnection: !!state.pendingConnection, connectionError, extensionId: chrome.runtime.id, queued: state.outbox?.length ?? 0, pending: (state.outbox ?? []).map((entry) => ({ sequence: entry.sequence, title: entry.title ?? 'Reading progress', url: entry.url })), lastDeliveryAt: state.lastDeliveryAt ?? null, lastFailure: state.lastFailure ?? '', tracked: await tracked(), folkTracked: await folkTracked(), folkStopReason: session.folkStopReason || '' } }
   if (message.type === 'reader-connect') {
     if (((await chrome.storage.local.get('outbox')).outbox ?? []).length) throw new Error('Retry or explicitly discard pending captures before connecting a different browser pairing.')
@@ -258,15 +270,35 @@ async function popupAction(message) {
     }
     return { ok: true, result: captured.result }
   }
-  if (['reader-profile-data', 'reader-profile-preview', 'reader-profile-add'].includes(message.type)) {
+  if (message.type === 'reader-visible-people') {
+    const tab = await chrome.tabs.get(tabId), config = await pairing()
+    if (!config?.token || !tab.active || !/^https?:\/\//.test(tab.url || '') || folkPage(tab.url)) return { ok: true, people: [] }
+    const [{ result }] = await chrome.scripting.executeScript({ target: { tabId }, func: extractVisiblePeople, args: [null] })
+    const latest = await chrome.tabs.get(tabId)
+    if (!latest.active || latest.url !== tab.url || result?.pageUrl !== tab.url) throw Error('The page changed. Reopen the reader to see its people.')
+    if (!result.people.length) return { ok: true, people: [] }
+    const response = await fetch(endpoint(config.port, 'profile-people'), { method: 'POST', credentials: 'omit', redirect: 'error',
+      headers: { 'content-type': 'application/json', authorization: 'Bearer ' + config.token },
+      body: JSON.stringify({ urls: result.people.map(row => row.url) }), signal: AbortSignal.timeout(5000) })
+    const matches = await response.json()
+    if (!response.ok) throw Error(matches.error || 'Could not check the visible people in Worldview.')
+    return { ok: true, sourceUrl: tab.url, workspaceFingerprint: matches.workspaceFingerprint,
+      people: result.people.map(row => ({ ...row, existing: matches.existing[row.url] || null })) }
+  }
+  if (['reader-profile-data', 'reader-profile-preview', 'reader-profile-add'].includes(message.type) || message.type === 'reader-profile' && message.selectedUrl) {
     const tab = await chrome.tabs.get(tabId)
     if (!tab.active || !/^https?:\/\//.test(tab.url || '') || folkPage(tab.url)) throw new Error('Choose a person’s profile or company website in the active tab. Folk keeps its separate private import.')
-    const extracted = await chrome.scripting.executeScript({ target: { tabId }, func: extractProfile, args: [null, true] }), profile = extracted[0]?.result
+    const chosen = typeof message.selectedUrl === 'string' && !!message.selectedUrl
+    if (chosen && message.sourceUrl !== tab.url) throw Error('The source page changed. Read its people again.')
+    const extracted = await chrome.scripting.executeScript(chosen
+      ? { target: { tabId }, func: extractVisiblePeople, args: [null, message.selectedUrl] }
+      : { target: { tabId }, func: extractProfile, args: [null, true] })
+    const profile = extracted[0]?.result
     if (typeof profile?.extractorError === 'string') throw new Error(profile.extractorError)
     if (!profile?.profile?.name) throw new Error(extracted[0]?.error?.message || 'Reader could not identify this page’s named profile. Open the main profile, keep its name visible and load the sections you want to save.')
     const latest = await chrome.tabs.get(tabId)
     const pageKey = value => { try { const parsed = new URL(value); return /(^|\.)linkedin\.com$/i.test(parsed.hostname) && /^\/(?:in|company|school)\/[^/]+(?:\/(?:about|people|posts|jobs|life))?\/?$/.test(parsed.pathname) ? `${parsed.origin}${parsed.pathname.replace(/\/$/, '')}${parsed.search}${parsed.hash}` : value } catch { return value } }
-    if (pageKey(profile.url) !== pageKey(tab.url) || pageKey(latest.url) !== pageKey(tab.url)) throw new Error('The tab navigated to a different profile during capture. Choose that person or company again before saving.')
+    if (pageKey(chosen ? profile.sourcePageUrl : profile.url) !== pageKey(tab.url) || pageKey(latest.url) !== pageKey(tab.url)) throw new Error('The tab navigated to a different profile during capture. Choose that person or company again before saving.')
     if (!latest.active) throw new Error('The chosen profile tab is no longer active. Return to it and save again.')
     const { headerEmployer, ...snapshot } = profile
     const { name, entityType, headline = '', location = '', affiliations = [], images = [] } = profile.profile
@@ -290,8 +322,13 @@ async function popupAction(message) {
       return { ok: true, preview: { url: profile.url, name, entityType, headline, location, current, schools, photoUrl: portrait?.url || '', role: jobs.find(row => row.role)?.role || '' }, groups: value.groups, existing: value.existing, workspaceFingerprint: value.workspaceFingerprint }
     }
     const quickAdd = message.type === 'reader-profile-add'
-    if (quickAdd && (message.url !== profile.url || name !== message.name || entityType !== message.entityType)) throw new Error('The profile changed. Reopen the extension to see the current contact.')
-    const experienceNotice = await readExperience(tabId, snapshot, headerEmployer?.organization || affiliations.find(row => row.kind === 'employment' && row.current)?.organization)
+    if ((quickAdd || chosen) && (message.url !== profile.url || name !== message.name || entityType !== message.entityType)) throw new Error('The profile changed. Reopen the extension to see the current contact.')
+    if (message.type === 'reader-profile') {
+      const profileImages = images.filter(image => image.isProfile === true && image.subjectName === name).map(image => ({...image,sourceUrl:profile.url}))
+      if (!profileImages.length) throw new Error('No named portrait is visible for this person.')
+      return {ok:true,result:await enqueue({url:profile.url,title:profile.title,text:profile.text,profileImages,profileLinks:[],saveContactPhoto:true})}
+    }
+    const experienceNotice = !chosen && await readExperience(tabId, snapshot, headerEmployer?.organization || affiliations.find(row => row.kind === 'employment' && row.current)?.organization)
     const result = await enqueue({ ...snapshot, saveProfileData: true, ...(quickAdd ? { quickAdd: true, ...(message.groupId ? { groupId: message.groupId } : {}) } : {}) })
     if (experienceNotice && result) result.experienceNotice = experienceNotice
     return { ok: true, result, ...(result?.profileDraft?.id ? { openUrl: localOrigin((await pairing())?.port) + '/#/people?capture=' + encodeURIComponent(result.profileDraft.id) } : {}) }

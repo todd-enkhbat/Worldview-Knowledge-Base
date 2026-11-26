@@ -1,94 +1,177 @@
 @font-face {
-  font-family: Alte Haas;
+  font-family: 'Alte Haas';
   src: url('../assets/fonts/alte-haas/alte-haas-400.woff2') format('woff2');
+  font-display: swap;
   font-weight: 400;
 }
-* {
-  box-sizing: border-box;
+:root {
+  font: 14px/1.45 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  color: #242c29;
+  background: #fafaf7;
+  color-scheme: light;
+  --surface: #fafaf7;
+  --paper: #fff;
+  --hover: #eeefea;
+  --muted: #57635e;
+  --line: #d7dcd5;
+  --accent: #226458;
+  --accent-hover: #164b40;
+  --danger: #8e341f;
 }
-body {
-  margin: 0;
-  background: #faf9f5;
-  color: #292d29;
-  font:
-    16px/1.45 'Alte Haas',
-    Helvetica,
-    Arial,
-    sans-serif;
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; overflow: hidden; }
+.enki-shell { display: grid; grid-template-rows: auto auto minmax(0,1fr); height: 100%; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button, summary, select { cursor: pointer; }
+button { background: var(--paper); border: 1px solid var(--line); border-radius: 7px; padding: 5px 10px; }
+button:disabled { opacity: .55; cursor: default; }
+button, select, summary { touch-action: manipulation; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+::selection { background: #c4e3d9; color: #142e25; }
+input, textarea { caret-color: var(--accent); }
+.enki-header {
+  display: flex; align-items: center; justify-content: space-between; min-height: 47px;
+  padding: 4px 11px 2px 14px; -webkit-app-region: drag; user-select: none;
 }
-.helper-bar {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  background: #faf9f5;
-  display: flex;
-  gap: 0.3rem;
-  padding: 8px;
-  align-items: center;
-  border-bottom: 1px solid #dedbd2;
-  -webkit-app-region: drag;
+.enki-brand, .enki-window-tools, .enki-header-action, .enki-nav button { display: flex; align-items: center; }
+.enki-brand { gap: 8px; font: 400 21px/1 'Alte Haas', sans-serif; letter-spacing: -.055em; }
+.enki-brand img { object-fit: contain; }
+.enki-window-tools { gap: 2px; }
+.enki-header-action { width: 30px; height: 30px; justify-content: center; padding: 0; color: var(--muted); background: transparent; border: 0; }
+.enki-window-tools, #enki-shortcuts { -webkit-app-region: no-drag; }
+.enki-nav {
+  display: grid; grid-template-columns: 1.15fr .85fr 1.22fr .9fr;
+  padding: 0 9px; border-bottom: 1px solid var(--line);
 }
-.helper-bar button {
-  -webkit-app-region: no-drag;
-  text-transform: capitalize;
+.enki-nav button {
+  position: relative; justify-content: center; gap: 6px; min-width: 0; min-height: 36px; padding: 0 4px;
+  border: 0; background: transparent; color: var(--muted); font-size: 13px; font-weight: 540;
 }
-.helper-bar > button:last-child {
-  margin-left: auto;
+.enki-nav button[aria-selected=true] { color: var(--accent); font-weight: 650; }
+.enki-nav button[aria-selected=true]::after {
+  position: absolute; content: ''; inset: auto 7px -1px; height: 2px; border-radius: 2px; background: currentColor;
 }
-button,
-input,
-textarea,
-select {
-  font: inherit;
+.enki-nav button:focus-visible { outline-offset: -3px; }
+.enki-panes { min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.helper-pane { max-width: 650px; padding: 16px 18px; margin: auto; }
+.helper-pane[hidden] { display: none; }
+.enki-shell [hidden] { display: none !important; }
+.helper-pane h1, .helper-pane .enki-todo-heading h1 {
+  margin: 0 0 13px; font: 400 30px/1.07 'Alte Haas', Helvetica, sans-serif;
+  letter-spacing: -.062em; color: inherit; overflow-wrap: anywhere;
 }
-button {
-  cursor: pointer;
-  border: 1px solid #d6d3c8;
-  border-radius: 6px;
-  background: white;
-  padding: 5px 10px;
-  color: inherit;
+.helper-pane :is(h2, h3) { margin: 0 0 5px; font: 400 21px/1.12 'Alte Haas', sans-serif; letter-spacing: -.045em; }
+.helper-pane :is(.study-desk, .study-lookup, .enki-todos) { font: inherit; color: inherit; }
+.enki-field, .helper-pane :is(.study-desk,.study-lookup) label {
+  display: grid; gap: 4px; min-width: 0; color: var(--muted); font: 500 12px/1.45 -apple-system,BlinkMacSystemFont,sans-serif;
 }
-button[aria-pressed='true'] {
-  background: #323c34;
-  color: white;
+.enki-field :is(input, select), .helper-pane :is(.study-desk,.study-lookup) :is(select,textarea,input:not([type=checkbox])) {
+  box-sizing: border-box; width: 100%; min-width: 0; max-width: 100%; padding: 7px 9px; min-height: 35px;
+  border: 1px solid var(--line); border-radius: 7px; background: var(--paper); color: #27332c;
+  font: 400 14px/1.4 -apple-system,BlinkMacSystemFont,sans-serif;
 }
-.helper-body {
-  padding: 16px;
+.enki-field { flex: 1; }
+.enki-primary, .helper-pane .study-lookup form > button,
+.helper-pane .study-desk .study-tools:first-child > button:first-child,
+.helper-pane .study-edit .enki-save-application {
+  background: var(--accent); border: 1px solid var(--accent); border-radius: 7px; color: white;
+  padding: 7px 12px; font: 550 13px/1.45 -apple-system,BlinkMacSystemFont,sans-serif; min-height: 35px;
 }
-.helper-body .study-desk {
-  padding: 0;
+.helper-pane .study-lookup form, .enki-profile-tools, .enki-address, #enki-shortcuts form {
+  display: flex; flex-wrap: nowrap; gap: 8px; align-items: end; margin: 0 0 10px;
 }
-.helper-body details {
-  margin-top: 1em;
+.helper-pane .study-lookup form label { min-width: 0; }
+.enki-hint, .enki-help-status, .enki-help-error { margin: 9px 0; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.enki-hint, .enki-help-status { color: var(--muted); }
+.enki-help-error, .helper-pane [role=alert] { color: var(--danger); }
+.enki-help-status:empty { display: none; }
+.helper-pane .study-lookup article { max-height: none; overflow: visible; }
+.helper-pane .study-lookup :is(article, [role=status]:not(:empty)) { margin-top: 8px; }
+.helper-pane .study-lookup article ol { padding-left: 19px; margin: 6px 0; }
+.helper-pane .study-lookup article h3 { overflow-wrap: anywhere; }
+.enki-recent { margin-top: 15px; }
+.enki-recent h2 { font: 600 12px/1.4 -apple-system,BlinkMacSystemFont,sans-serif; color: var(--muted); letter-spacing: 0; }
+.enki-recent details, .enki-profile details, .helper-pane .study-desk details {
+  border-bottom: 1px solid var(--line); padding: 5px 0; overflow-wrap: anywhere;
 }
-.helper-body input,
-.helper-body textarea,
-.helper-body select {
-  max-width: 100%;
+.enki-recent summary, .enki-profile summary, .helper-pane .study-desk summary { min-height: 26px; padding: 3px 0; }
+.enki-recent details p { color: var(--muted); margin: 3px 0 6px; }
+.enki-profile { margin:0; }
+.enki-identity { margin:0 0 12px; }
+.enki-profile dl { color:var(--muted); font-size:13px; }
+.enki-profile details { margin: 8px 0; }
+.enki-change-source[open] summary { margin-bottom:5px; }
+.enki-profile dl { display:grid; gap:6px; margin: 4px 0 8px; }
+.enki-profile dl div { display:grid; grid-template-columns:100px minmax(0,1fr); gap:8px; }
+.enki-profile dd { margin:0; overflow-wrap:anywhere; color:#27332c; }
+.enki-profile small { display:block; color:var(--muted); }
+.enki-text-action { display:flex; align-items:center; gap:4px; border:0; padding:4px 0; color:var(--accent); background:transparent; }
+.helper-pane .study-desk .study-tools { align-items:end; margin:0 0 10px; }
+.helper-pane .study-desk .study-tools > input { width:auto; flex:1 1 110px; }
+.helper-pane .study-desk .study-tools > button:first-child { white-space:nowrap; }
+.helper-pane .study-edit { display:grid; gap:8px; padding:0 0 12px; }
+.helper-pane .study-edit > button { justify-self:start; }
+.helper-pane .study-edit .study-tools { margin:0; }
+.helper-pane .enki-form-address { margin:0; }
+.helper-pane .study-edit .study-tools > select { min-width:0; flex:1; }
+.helper-pane .study-edit .study-tools > button { flex:none; }
+.helper-pane .study-edit .study-edit-actions {
+  display:flex; align-items:center; flex-wrap:wrap; gap:7px; position:sticky; bottom:-1px; z-index:1;
+  padding:8px 0; background:var(--surface); border-top:1px solid var(--line);
+}
+.enki-application-status:not(:empty) { flex:1 1 105px; color:var(--muted); font-size:12px; overflow-wrap:anywhere; }
+.enki-application-status:empty { display:none; }
+.helper-pane .study-edit :is(input,select,textarea,summary,button) { scroll-margin-block:8px 55px; }
+.helper-pane .enki-step-details[open] .study-fields { margin-top:6px; }
+.helper-pane .enki-import-tools[open] > div { display:grid; gap:6px; margin-top:5px; }
+.helper-pane .enki-import-tools button { justify-self:start; }
+.helper-pane .study-edit textarea { resize:vertical; }
+.helper-pane .study-edit fieldset { min-width:0; margin:0; border:0; padding:7px 0; }
+.helper-pane .study-edit .study-pair { gap:7px; margin:0; }
+.helper-pane .study-edit input[type=file] { overflow:hidden; }
+.helper-pane .study-answer small, .helper-pane .study-evidence { overflow-wrap:anywhere; }
+.helper-pane .enki-todos { --todo-accent:var(--accent); --todo-line:var(--line); --todo-quiet:var(--muted); max-width:none; }
+.helper-pane .enki-todo-heading { margin-bottom:8px; }
+.helper-pane .enki-todo-heading h1 { margin:0; }
+.enki-list-controls, .enki-delete-actions { display:flex; align-items:center; gap:6px; }
+.enki-list-controls { justify-content:space-between; margin-bottom:6px; }
+.enki-list-controls .enki-list-picker { margin:0; min-width:0; flex:1; }
+.enki-delete-confirm { margin:3px 0 10px; padding:9px 11px; border:1px solid var(--line); border-radius:7px; }
+.enki-delete-confirm p { margin:0 0 6px; overflow-wrap:anywhere; }
+.enki-confirm-delete { color:var(--danger); border-color:#c8978c; }
+.enki-todos .enki-completed { margin-top:8px; }
+#enki-shortcuts {
+  position:fixed; top:40px; left:auto; right:10px; margin:0; width:min(305px,calc(100% - 20px)); max-height:75vh; overflow:auto;
+  border:1px solid var(--line); border-radius:10px; padding:12px; color:inherit; background:var(--paper);
+  box-shadow:0 5px 17px #18352a1c;
+}
+#enki-shortcuts h2 { font:400 20px 'Alte Haas',sans-serif; letter-spacing:-.04em; margin:0 0 6px; }
+#enki-shortcuts > p:not(:empty) { margin:5px 0 10px; }
+#enki-shortcuts kbd { float:right; color:var(--muted); font-size:12px; }
+#enki-shortcuts form { margin:0; }
+@media (hover:hover) {
+  .enki-header-action:hover, .enki-nav button:hover, .enki-new-list:hover { background:var(--hover); }
+  .enki-primary:enabled:hover, .helper-pane .study-lookup form > button:enabled:hover, .helper-pane .study-tools:first-child > button:first-child:enabled:hover { background:var(--accent-hover); }
+}
+@media (max-width:360px) {
+  .helper-pane { padding:12px; }
+  .enki-nav { padding:0 3px; }
+  .enki-nav button { gap:3px; font-size:12px; }
+  .enki-nav svg { width:14px; }
+}
+@media (max-width:270px) {
+  .enki-nav svg { display:none; }
+  .enki-profile-tools, .enki-address { flex-wrap:wrap; }
+  .enki-profile-tools label, .enki-address label { flex-basis:100%; }
 }
 
-.capture-modes {
-  display:flex; align-items:stretch; gap:clamp(8px,3vw,18px);
-  border-bottom:1px solid var(--line,#d6dcd6);
-}
-.capture-modes > button {
-  position:relative; width:auto; flex:0 1 auto; margin:0; padding:0 3px; min-height:42px;
-  border:0; border-radius:0; background:transparent; color:var(--secondary,#59645e);
-  font:500 14px/1.25 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-  text-transform:none; cursor:pointer;
-}
-.capture-modes > button:is([aria-current=true],[aria-pressed=true]) {
-  color:var(--mode-active,#235d45); background:transparent; font-weight:650;
-}
-.capture-modes > button::after {
-  content:""; position:absolute; bottom:0; left:3px; right:3px; height:2px;
-  border-radius:2px; background:currentColor; transform:scaleX(0);
-}
-.capture-modes > button:is([aria-current=true],[aria-pressed=true])::after { transform:scaleX(1); }
-.capture-modes > button:hover:enabled { color:var(--mode-active,#235d45); background:transparent; }
-.capture-modes > button:focus-visible { outline:2px solid currentColor; outline-offset:-3px; border-radius:4px; }
-@media (prefers-reduced-motion:no-preference) {
-  .capture-modes > button::after { transition:transform 140ms ease-out; }
-}
-.helper-bar .capture-modes {border:0;}
+.enki-reader-scroll { height:100%; overflow:auto; overscroll-behavior:contain; background:var(--surface); }
+.enki-reader-scroll > .helper-pane { padding:14px 18px 18px; }
+.enki-membership { display:flex; align-items:center; justify-content:space-between; gap:8px; border-block:1px solid var(--line); padding:5px 0; margin-block:8px; font-size:12px; color:var(--muted); }
+.enki-membership > div { display:flex; align-items:center; min-width:0; flex-wrap:wrap; gap:4px; }
+.enki-membership span { background:#eef1eb; color:#374e3e; padding:2px 7px; border-radius:5px; overflow-wrap:anywhere; }
+.enki-membership button { flex:none; }
+.enki-record-actions { display:flex; align-items:center; gap:12px; }
+.helper-pane .wv-people h2 { margin:10px 0 5px; font:600 12px/1.4 -apple-system,BlinkMacSystemFont,sans-serif; letter-spacing:0; }
+.enki-profile .wv-person-avatar img { width:100%; height:100%; }
+.enki-profile-detail-actions { display:flex; flex-wrap:wrap; gap:4px 12px; align-items:center; }

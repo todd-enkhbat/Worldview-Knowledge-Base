@@ -13,7 +13,8 @@ class Child extends EventEmitter {
 }
 function launcher(success: boolean, platform = 'darwin') {
   const old = new Child(), spawned: Child[] = [], events: string[] = [], permission: { handler?: (...args: unknown[]) => Promise<void>; check?: (...args: unknown[]) => boolean } = {}
-  const ask = vi.fn(async () => true), capture = { show: vi.fn(), close: vi.fn() }
+  const ask = vi.fn(async () => true), capture = { show: vi.fn(), close: vi.fn(), dismissIfVisible: vi.fn() }
+  const enki = { show: vi.fn(), hide: vi.fn(), summon: vi.fn() }
   const createFloatingCapture = vi.fn((_options: { loadRecord: (hash: string) => Promise<void> }) => capture)
   const dockMenu = vi.fn<(_items: { label: string; click: () => void }[]) => void>()
   class Window extends EventEmitter {
@@ -28,6 +29,7 @@ function launcher(success: boolean, platform = 'darwin') {
     require: (name: string) => {
       if (name === 'electron') return electron
       if (name === './floating-capture.cjs') return { createFloatingCapture }
+      if (name === './enki-window.cjs') return { createEnki: () => enki }
       if (name === './photo-places.cjs') return require('../../electron/photo-places.cjs')
       if (name === './policy.cjs') return require('../../electron/policy.cjs')
       if (name === 'node:fs') return { existsSync: () => true, mkdirSync: () => {}, readFileSync: () => '{}', realpathSync: (value: string) => value, renameSync: () => {}, writeFileSync: () => {} }
@@ -38,7 +40,7 @@ function launcher(success: boolean, platform = 'darwin') {
   runInContext(code, context)
   old.kill.mockImplementation((signal: string) => { events.push('previous stopped'); old.signalCode = signal; queueMicrotask(() => old.emit('exit', null, signal)); return true })
   runInContext("server = fixtureOldChild; workspace = '/vault/old'; origin = 'http://127.0.0.1:5173'", context)
-  return { context, old, spawned, events, permission, ask, capture, createFloatingCapture, dockMenu, electron, run: (value: string) => runInContext(value, context) }
+  return { context, old, spawned, events, permission, ask, capture, createFloatingCapture, dockMenu, electron, enki, run: (value: string) => runInContext(value, context) }
 }
 
 it('keeps the current service and desktop context intact when another workspace fails to open', async () => {
@@ -120,6 +122,17 @@ it('opens Quick Capture from the Mac Dock and restores a hidden minimized worksp
   expect(view.show).toHaveBeenCalledOnce()
   expect(view.focus).toHaveBeenCalledOnce()
   expect(view.url).toBe('http://127.0.0.1:5173/#/people')
+})
+
+it('can restore a hidden pet and open its to-do list directly from the Dock', async () => {
+  const app = launcher(true)
+  await app.run('start()')
+  const menu = app.dockMenu.mock.calls[0][0]
+  for (const label of ['Hide Enki', 'Show Enki', 'Open Enki TO-DO']) menu.find(item => item.label === label)!.click()
+  expect(app.enki.hide).toHaveBeenCalledOnce()
+  expect(app.enki.show).toHaveBeenCalledOnce()
+  expect(app.enki.summon).toHaveBeenCalledOnce()
+  expect(app.run('window.url')).toBe('http://127.0.0.1:5173/#/today')
 })
 
 it('reopens a closed Mac workspace through the Dock or a second launch and keeps the local service', async () => {

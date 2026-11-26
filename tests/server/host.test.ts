@@ -189,6 +189,33 @@ describe('live changes between devices', () => {
 })
 
 describe('static app server', () => {
+  it('allows only a currently paired extension to frame the two local study tools', async () => {
+    const dist = tmp(), host = createHost({ dataDir: tmp() })
+    writeFileSync(join(dist, 'study-helper.html'), '<title>Enki</title>')
+    writeFileSync(join(dist, 'index.html'), '<title>Worldview</title>')
+    const files = createStatic({ dist, readerFrameAncestor: host.readerFrameAncestor })
+    const server = createServer((req, res) => {
+      if (req.url?.startsWith('/api/')) host.handler(req, res)
+      else void files(req, res)
+    })
+    await new Promise<void>(ready => server.listen(0, '127.0.0.1', ready))
+    servers.push({ server, host })
+    const base = 'http://127.0.0.1:' + (server.address() as AddressInfo).port
+    const id = 'b'.repeat(32), origin = 'chrome-extension://' + id
+    const headers = async (path: string) => (await fetch(base + path, { method:'HEAD' })).headers
+    const tool = '/study-helper.html?reader=' + id + '&mode='
+    expect((await headers(tool + 'word')).get('x-frame-options')).toBe('DENY')
+    const pair = await fetch(base + '/api/reading-capture', json({ name:'Test Reader', origin }))
+    expect(pair.status).toBe(201)
+    const {clientId} = await pair.json()
+    for (const mode of ['word','application']) {
+      expect((await headers(tool + mode)).get('content-security-policy')).toBe('frame-ancestors ' + origin)
+    }
+    expect((await headers(tool + 'person')).get('x-frame-options')).toBe('DENY')
+    expect((await headers('/index.html?reader=' + id)).get('x-frame-options')).toBe('DENY')
+    await fetch(base + '/api/reading-capture/' + clientId, { method:'DELETE', headers:{'x-wv-client':'test'} })
+    expect((await headers(tool + 'word')).get('x-frame-options')).toBe('DENY')
+  })
   it('serves files, falls back to index.html for routes, and refuses traversal', async () => {
     const dist = tmp()
     mkdirSync(join(dist, 'assets'))

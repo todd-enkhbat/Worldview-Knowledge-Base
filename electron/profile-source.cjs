@@ -118,6 +118,17 @@ async function snapshot(adapter, ref, extract) {
   if (!data?.profile?.name || !samePage(data.url, ref.url)) throw new Error(data?.extractorError || 'Open one person’s profile or an organization page, then read it again.')
   return data
 }
+// Read only people actually presented in this tab. Detail captures use the
+// selected card's own evidence, never a directory's full text or another card.
+async function visibleProfiles(adapter, ref, extract, selectedUrl = '') {
+  assertSource(await adapter.identify(), ref)
+  const data = await adapter.evaluate(ref, script(extract.extractVisiblePeople, null, selectedUrl), false)
+  assertSource(await adapter.identify(), ref)
+  if (data?.extractorError) throw new Error(data.extractorError)
+  if (!samePage(selectedUrl ? data?.sourcePageUrl : data?.pageUrl, ref.url)) throw new Error('The visible page changed. Scan it again.')
+  if (selectedUrl && (!data?.profile?.name || data.url !== selectedUrl || data.profile.entityType !== 'person')) throw new Error('This person is no longer visible. Scan the page again.')
+  return data
+}
 async function waitFor(adapter, ref) {
   for (let i = 0; i < 45; i++) {
     const current = await adapter.identify()
@@ -218,4 +229,4 @@ async function collect(adapter, ref, extract, expectedName) {
   if (data.profile.name !== expectedName) throw new Error('The selected profile changed. Read the profile again.')
   return { data, notice }
 }
-module.exports = { publicPage, samePage, assertSource, diaSource, ownedSource, snapshot, visibleEducation, collect, mergeExperience, experienceLink }
+module.exports = { publicPage, samePage, assertSource, diaSource, ownedSource, snapshot, visibleProfiles, visibleEducation, collect, mergeExperience, experienceLink }

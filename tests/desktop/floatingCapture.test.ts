@@ -1,5 +1,4 @@
 import { createRequire } from 'node:module'
-import { readFileSync } from 'node:fs'
 import { expect, it, vi } from 'vitest'
 import * as extract from '../../extensions/worldview-reader/extract.js'
 import { educationStatus } from '../../src/crm/affiliationStatus.ts'
@@ -52,25 +51,6 @@ it('refuses a switched tab or changed identity and never follows another person�
   expect(experienceLink('https://www.linkedin.com/in/other/details/experience/', url)).toBeNull()
   for (const bad of ['file:///etc/hosts', 'http://127.0.0.1/', 'https://u:p@example.com/', 'https://work.local/']) expect(publicPage(bad)).toBeNull()
 })
-it('shows both affiliation labels even for a profile with empty fields and drives explicit controls through the limited bridge', async () => {
-  const dom = new JSDOM(readFileSync('electron/capture-panel.html', 'utf8'), { runScripts: 'outside-only' })
-  const p = preview({ url, profile: { entityType: 'person', name: 'Ada Example', affiliations: [] } }, educationStatus)
-  expect(p).toMatchObject({ companies: [], schools: [] })
-  const api = { read: vi.fn(async () => ({ id: 'chosen', profile: p, workspace: 'Example', groups: [{ id: 'founders', name: 'Founders', emoji: '🌱' }] })), save: vi.fn(async () => ({ status: 'saved' })) }
-  dom.window.profileCapture = api
-  try {
-    dom.window.eval(readFileSync('electron/capture-panel.js', 'utf8'))
-    expect(api.read).not.toHaveBeenCalled()
-    const el = (id: string) => dom.window.document.getElementById(id)
-    await el('read').onclick()
-    expect(el('companies').textContent).toBe('Not shown'); expect(el('schools').textContent).toBe('Not shown')
-    expect(el('group').textContent).toContain('🌱 Founders')
-    el('group').value = 'founders'; await el('save').onclick()
-    expect(api.save).toHaveBeenCalledWith('chosen', 'founders')
-    expect(el('record').hidden).toBe(false)
-  } finally { dom.window.close() }
-})
-
 it('reads Education only from its named section and accepts the same-person Education continuation', async () => {
   const { captureEducation } = require('../../electron/profile-education.cjs')
   const end = url + 'details/education/'
@@ -85,61 +65,42 @@ it('reads Education only from its named section and accepts the same-person Educ
   } finally { page.window.close() }
 })
 
-it('starts as a compact explicit button and shows the business fields for an organization preview', async () => {
-  const dom = new JSDOM(readFileSync('electron/capture-panel.html', 'utf8'), { runScripts: 'outside-only' })
-  const p = preview({ url: 'https://www.linkedin.com/company/example/', profile: { entityType: 'company', name: 'Example', urls: ['https://www.linkedin.com/company/example/', 'https://example.com/'], industry: 'Software' } }, educationStatus)
-  const api = { compact: vi.fn(async () => {}), read: vi.fn(async () => ({ id: 'company-preview', profile: p, groups: [], workspace: 'Sample' })) }
-  dom.window.profileCapture = api
-  try {
-    dom.window.eval(readFileSync('electron/capture-panel.js', 'utf8'))
-    expect(dom.window.document.querySelector('main').hidden).toBe(true)
-    expect(api.read).not.toHaveBeenCalled()
-    await dom.window.document.getElementById('expand').onclick()
-    expect(api.compact).toHaveBeenCalledWith(false)
-    expect(api.read).toHaveBeenCalledTimes(1)
-    expect(api.read).toHaveBeenCalledWith('dia')
-    expect(dom.window.document.getElementById('sources').open).toBe(false)
-    expect(dom.window.document.getElementById('person-facts').hidden).toBe(true)
-    expect(dom.window.document.getElementById('company-facts').hidden).toBe(false)
-    expect(dom.window.document.getElementById('website').textContent).toBe('https://example.com/')
-    expect(dom.window.document.getElementById('industry').textContent).toBe('Software')
-  } finally { dom.window.close() }
-})
-
 it('binds native preview and save to the selected SQLite path and incarnation, and refuses an older server before saving', async () => {
   const { createFloatingCapture } = require('../../electron/floating-capture.cjs')
   const { createHash } = require('node:crypto')
-  const { pathToFileURL } = require('node:url')
   const { resolve } = require('node:path')
   const handlers: Record<string, (...args: unknown[]) => Promise<unknown>> = {}
   const windows: FixtureWindow[] = []
   const source = 'https://person.example/'
+  const team = source + 'team'
+  let teamHtml = '<main><article><a href="/team/ada">Ada Example</a><p class="person-title">Editor</p></article><article><a href="/team/ira">Ira Example</a><p class="person-title">Producer</p></article></main>'
   class FixtureWindow {
     location = ''
     constructor() { windows.push(this) }
     readonly webContents = {
       id: 71, mainFrame: { url: '' }, setWindowOpenHandler() {}, on() {}, getURL: () => this.location,
       executeJavaScriptInIsolatedWorld: async (_world: number, items: {code: string}[]) => {
-        const dom = new JSDOM('<script type="application/ld+json">{"@type":"Person","name":"Sample Person","url":"https://person.example/"}</script><main><h1>Sample Person</h1><p>A researcher.</p></main>', { url: source, runScripts: 'outside-only' })
+        const dom = new JSDOM(this.location === team ? teamHtml : '<script type="application/ld+json">{"@type":"Person","name":"Sample Person","url":"https://person.example/"}</script><main><h1>Sample Person</h1><p>A researcher.</p></main>', { url: this.location, runScripts: 'outside-only' })
         dom.window.TextEncoder = TextEncoder
         try { return await dom.window.eval(items[0].code) } finally { dom.window.close() }
       },
     }
-    on() {} once() {} setVisibleOnAllWorkspaces() {} show() {} isDestroyed() { return false }
-    async loadFile(path: string) { this.webContents.mainFrame.url = pathToFileURL(path).href }
-    async loadURL(address: string) { this.location = address }
+    on() {} once() {} setVisibleOnAllWorkspaces() {} show() {} focus() {} isDestroyed() { return false }
+    async loadURL(address: string) { this.location = this.webContents.mainFrame.url = address }
   }
   const requests: { url: string; init: RequestInit }[] = []
   let upgraded = false
   vi.stubGlobal('fetch', async (address: string, init: RequestInit) => {
     requests.push({ url: address, init })
+    if (address.endsWith('/visible-matches')) return Response.json({ matches: {}, workspaceToken:'original-incarnation' })
     if (address.includes('/groups?')) return Response.json({ groups: [{ id: 'g', name: 'Group' }], ...(upgraded ? { workspaceToken: 'original-incarnation', savedAffiliations: { companies: ['Existing Lab'], schools: [{organization:'Saved University',status:'attended'}] } } : {}) })
     return Response.json({ status: 'saved', recordId: 'person-one' })
   })
   try {
     const runtime = resolve('.'), ctx = { workspace: '/sample/workspace', origin: 'http://127.0.0.1:5173' }
-    const control = createFloatingCapture({ runtime, context: () => ctx, loadRecord: vi.fn(), electron: { BrowserWindow: FixtureWindow, ipcMain: { handle: (name: string, handler: (...args: unknown[]) => Promise<unknown>) => { handlers[name] = handler } }, session: { fromPartition: () => ({ setPermissionCheckHandler() {}, setPermissionRequestHandler() {} }) } } })
-    control.show()
+    const loadRecord = vi.fn()
+    const control = createFloatingCapture({ runtime, context: () => ctx, loadRecord, electron: { BrowserWindow: FixtureWindow, ipcMain: { handle: (name: string, handler: (...args: unknown[]) => Promise<unknown>) => { handlers[name] = handler } }, session: { fromPartition: () => ({ setPermissionCheckHandler() {}, setPermissionRequestHandler() {} }) } } })
+    await control.show()
     const panel = windows[0].webContents
     const call = (name: string, ...args: unknown[]) => handlers['worldview:capture-' + name]({ sender: panel, senderFrame: panel.mainFrame }, ...args)
     await call('browser', source)
@@ -154,36 +115,35 @@ it('binds native preview and save to the selected SQLite path and incarnation, a
     expect(JSON.parse(String(requests.at(-1)?.init.body))).toMatchObject({ workspaceToken: 'original-incarnation', groupId: 'g', url: source, profile: { affiliations: [] } })
     expect(String(requests.at(-1)?.init.body)).not.toContain('Existing Lab')
     expect(String(requests.at(-1)?.init.body)).not.toContain('Saved University')
+    await call('browser', 'https://fellowship.example/apply')
+    await call('record')
+    expect(loadRecord).toHaveBeenCalledWith('#/people?person=person-one')
+    await expect(call('save', result.id, '')).rejects.toThrow('changed')
     ctx.workspace = '/another/workspace'
     await expect(call('save', result.id,'g')).rejects.toThrow('workspace changed')
     expect(requests.filter(request => request.init.method === 'POST')).toHaveLength(1)
+    ctx.workspace = '/sample/workspace'
+    await call('browser', team)
+    expect(await call('people', 'browser')).toMatchObject({ sourceUrl: team, people: [{ name:'Ada Example' }, { name:'Ira Example' }] })
+    expect(await call('read', 'browser', source + 'team/absent')).toMatchObject({ error: expect.stringContaining('visible person') })
+    const selected = await call('read', 'browser', source + 'team/ira') as { id:string }
+    expect(selected).toMatchObject({ profile: { name:'Ira Example', headline:'Producer' } })
+    expect(await call('save', selected.id, '')).toMatchObject({ status:'saved', existing:{recordId:'person-one',groupIds:[]} })
+    const captured = JSON.parse(String(requests.at(-1)?.init.body))
+    expect(captured).toMatchObject({ url:source + 'team/ira', profile:{name:'Ira Example'} })
+    expect(captured.text).toContain(team)
+    expect(JSON.stringify(captured)).not.toContain('Ada Example')
+    await call('record', 'activity')
+    expect(loadRecord).toHaveBeenLastCalledWith('#/people?person=person-one&action=log-interaction')
+    teamHtml = teamHtml.replace('Ira Example', 'New Name')
+    await expect(call('save', selected.id, 'g')).rejects.toThrow('changed')
+    await call('browser', source)
+    expect(await call('read', 'browser', source + 'team/ira')).toMatchObject({error:expect.stringContaining('changed')})
   } finally { vi.unstubAllGlobals() }
-})
-
-it('opens the local browser source directly from the pill without requesting Dia automation', async () => {
-  const dom = new JSDOM(readFileSync('electron/capture-panel.html', 'utf8'), { runScripts: 'outside-only' })
-  const api = { compact: vi.fn(async () => {}), read: vi.fn() }
-  dom.window.profileCapture = api
-  try {
-    dom.window.eval(readFileSync('electron/capture-panel.js', 'utf8'))
-    await dom.window.document.getElementById('choose-source').onclick()
-    expect(api.read).not.toHaveBeenCalled()
-    expect(dom.window.document.getElementById('source').value).toBe('browser')
-    expect(dom.window.document.getElementById('browser-tools').hidden).toBe(false)
-    expect(dom.window.document.activeElement.id).toBe('address')
-  } finally { dom.window.close() }
 })
 
 it('prefers freshly observed affiliations per field and labels only the fields filled from the saved record', async () => {
   const saved = { companies:['Example Institute'], schools:[{ organization:'Previously Saved School', status:'attended' }] }
   const p = preview({ url, profile:{ entityType:'person',name:'Ada Example',affiliations:[{kind:'education',organization:'Primary School',evidence:[]}] } }, educationStatus, saved)
   expect(p).toMatchObject({companies:['Example Institute'],savedCompanies:true,schools:['Primary School · Attended'],savedSchools:false})
-  const dom = new JSDOM(readFileSync('electron/capture-panel.html', 'utf8'), { runScripts:'outside-only' })
-  dom.window.profileCapture = { read: async () => ({id:'a',profile:p,groups:[],workspace:'Example'}), compact: async () => {} }
-  try {
-    dom.window.eval(readFileSync('electron/capture-panel.js','utf8')); await dom.window.document.getElementById('expand').onclick(); await dom.window.document.getElementById('read').onclick()
-    const company = dom.window.document.getElementById('companies-origin')
-    expect(company.hidden).toBe(false); expect(company.textContent).toBe('From Worldview')
-    expect(dom.window.document.getElementById('schools-origin').hidden).toBe(true)
-  } finally { dom.window.close() }
 })

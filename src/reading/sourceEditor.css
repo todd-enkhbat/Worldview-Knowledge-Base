@@ -1,0 +1,43 @@
+.knowledge-workbench .reading-library .source-workspace .knowledge-reader-header { padding:10px 24px; border-bottom:1px solid var(--kb-line); }
+.source-document-bar { display:flex; align-items:center; gap:16px; min-width:0; font-size:12px; }
+.knowledge-workbench .source-document-bar .knowledge-reader-back { margin:0 auto 0 0; max-width:50%; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+.source-document-details { position:relative; flex-shrink:0; }
+.source-document-details > summary { cursor:pointer; padding:7px 0; color:var(--kb-muted); }
+.source-document-details[open] { position:absolute; z-index:12; right:24px; top:8px; width:min(410px,calc(100% - 32px)); padding:12px; background:var(--kb-panel); border:1px solid var(--kb-line); border-radius:7px; box-shadow:0 8px 24px #0002; }
+.source-document-details .knowledge-reader-kicker { margin:12px 0; font-size:11px; }
+.knowledge-workbench .reading-library .source-workspace { position:relative; height:100%; }
+.knowledge-workbench .reading-library .source-workspace .knowledge-reader-content { padding:12px 24px 60px; }
+.knowledge-workbench .reading-library .source-workspace .knowledge-reader-header h2 { margin:8px 0 2px; font-size:24px; }
+.source-editor { position:relative; max-width:100%; color:var(--kb-text); --write-font:Inter,system-ui,sans-serif; --write-ink:var(--kb-text); --write-accent:var(--kb-cyan); }
+.source-editor-status { display:flex; justify-content:flex-end; min-height:18px; color:var(--kb-muted); font-size:10px; }
+.source-editor-title { display:block; width:100%; box-sizing:border-box; margin:0 0 8px; padding:0; field-sizing:content; resize:none; overflow:hidden; background:transparent; border:0; border-radius:2px; color:inherit; font:500 clamp(24px,2.3vw,32px)/1.3 Inter,system-ui,sans-serif; letter-spacing:-.7px; }
+.source-editor-title:focus-visible { outline:2px solid var(--kb-cyan); outline-offset:5px; }
+.source-editor .writing-notebook-toolbar { padding:3px 0; border-color:var(--kb-line); position:sticky; top:-12px; z-index:3; background:var(--kb-bg); }
+.knowledge-workbench .source-editor .writing-rich-editor.is-notebook .writing-editor-page { padding:16px 0 0; font:16px/1.8 Inter,system-ui,sans-serif; }
+.source-editor .writing-rich-body { max-width:85ch; min-height:50vh; }
+.source-editor .writing-rich-body:focus { outline:none; }
+.source-editor .writing-rich-body:focus-visible { box-shadow:inset 2px 0 var(--kb-line); }
+.source-editor .writing-rich-body p { margin:0 0 1em; }
+@media(max-width:760px) {
+ .knowledge-workbench .reading-library .source-workspace .knowledge-reader-header { padding:7px 16px; }
+ .knowledge-workbench .reading-library .source-workspace .knowledge-reader-content { padding:8px 16px 40px; }
+ .source-document-bar { gap:10px; font-size:11px; flex-wrap:wrap; }
+ .source-document-bar > button { font-size:11px; }
+ .source-editor-title { font-size:24px; }
+ .source-editor .writing-notebook-toolbar { top:-8px; }
+}
+
+/* Source notes share the studio's editing tools and keep their own page layout. */
+.source-editor-heading { display:flex; align-items:baseline; column-gap:12px; }
+.source-editor-heading .source-editor-title { order:-1; flex:1; min-width:0; font:400 clamp(28px,3.4vw,44px)/1.12 'Alte Haas',Helvetica,sans-serif; letter-spacing:-.045em; }
+.source-editor-heading .source-editor-status { flex:none; font:11px/1.5 var(--font-sans,system-ui); }
+.source-editor .writing-tools-line { padding-left:0; }
+.source-editor .writing-rich-editor.is-source .writing-editor-page { width:100%; min-height:0; margin:0; padding:18px 0 0; border:0; box-shadow:none; background:transparent; font:16px/1.68 var(--write-font); }
+.source-editor .writing-rich-body { min-height:54vh; max-width:none; }
+.source-editor .writing-rich-body :is(h1,h2,h3,h4,h5,h6) { font-family:'Alte Haas',Helvetica,sans-serif; line-height:1.16; letter-spacing:-.032em; }
+.source-editor .writing-rich-body p { margin:0 0 .78em; }
+.source-editor .writing-rich-body:focus-visible { box-shadow:none; }
+@media (max-width:520px) {
+ .source-editor-heading { align-items:flex-start; flex-direction:column; gap:3px; padding-bottom:6px; }
+ .source-editor-heading .source-editor-title { flex:none; margin-bottom:0; }
+}

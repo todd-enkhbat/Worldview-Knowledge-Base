@@ -1,3 +1,4 @@
+import { matchesPublisher, publisherSearch } from '../src/bookshelf/publishers.ts'
 import {fetchReadable} from './fetchUrl.ts'
 import {memoryOriginAllowed,readMemoryBody} from './memoryHttp.ts'
 import type { IncomingMessage, ServerResponse } from 'node:http'
@@ -54,7 +55,7 @@ async function read(url: URL, cover = false): Promise<Buffer> {
       const imageFile = target.pathname === '/view_archive.php' ? target.searchParams.get('file') : target.pathname.split('/').at(-1)
       const fileId = /^0*(\d+)-L\.jpg$/.exec(imageFile ?? '')?.[1]
       const coverId = url.pathname.split('/').at(-1)?.split('-')[0]
-      if (target.protocol !== 'https:' || target.username || target.password || target.port || !/(?:^|\.)archive\.org$/.test(target.hostname) || !/\/(?:download|items)\/l_covers_\d+\//.test(archivePath) || fileId !== coverId) throw new CatalogError(502, 'The catalog returned an unsupported cover location.')
+      if (target.protocol !== 'https:' || target.username || target.password || target.port || !/(?:^|\.)archive\.org$/.test(target.hostname) || !/\/(?:download|items)\/(?:l_covers_\d+|olcovers\d+)\//.test(archivePath) || fileId !== coverId) throw new CatalogError(502, 'The catalog returned an unsupported cover location.')
       response = await fetch(target, init)
     }
     if (!response.ok || !response.body) throw new CatalogError(response.status === 404 ? 404 : response.status === 429 ? 429 : 502, response.status === 404 ? 'Open Library has no record or cover at this address.' : 'Open Library is unavailable. Try again shortly.')
@@ -84,13 +85,10 @@ async function read(url: URL, cover = false): Promise<Buffer> {
   try { return await task } finally { pending.delete(url.href) }
 }
 function strings(value:unknown) { return list(value).map(v=>text(v,300)).filter(Boolean) }
-async function visibleEditions(provider:string, input:string, offset:number) {
+async function visibleEditions(provider:string, input:string, offset:number, selectedPublisher = '') {
   const q=input.replace(/\bphenom(?:on|en)ology\b/ig,'Phenomenology').replace(/\billiad\b/ig,'Iliad')
-  const press = q.match(/\b(Easton Press|Franklin Library|Logos Publishing)\b/i)
-  const remaining = press ? q.replace(press[0], '').trim() : q
-  const publisherQuery = (field: string) => press
-    ? [remaining, field + ':"' + press[0] + '"'].filter(Boolean).join(' ')
-    : q
+  const selection = publisherSearch(q, selectedPublisher)
+  const publisherQuery = selection.forProvider
   if(provider==='google'){
     const target=new URL('https://www.googleapis.com/books/v1/volumes')
     target.searchParams.set('q',publisherQuery('inpublisher'));target.searchParams.set('maxResults','20');target.searchParams.set('startIndex',String(offset))
@@ -105,7 +103,7 @@ async function visibleEditions(provider:string, input:string, offset:number) {
       const edition={id:'gb:'+id,title,subtitle:text(v.subtitle),editionLabel:'',publisher:text(v.publisher),date,year,language:text(v.language),isbn:text(isbn?.identifier),pages:integer(v.pageCount,1e6),coverId:null,googleCover:!!object(v.imageLinks).thumbnail}
       return [{work:{id:edition.id,title,authors,year,editionCount:1,preferredEdition:edition.id},edition}]
     })
-    return {results,nextOffset:items.length===20?offset+20:null}
+    return {results:results.filter(row => matchesPublisher(row.edition.publisher, selection.publisher)),nextOffset:items.length===20?offset+20:null}
   }
   const isbn=q.replace(/[-\s]/g,'')
   if(/^(?:97[89]\d{10}|\d{9}[\dXx])$/.test(isbn)){
@@ -115,7 +113,7 @@ async function visibleEditions(provider:string, input:string, offset:number) {
     if(!w?.preferredEdition)return {results:[],nextOffset:null}
     const details=await json(new URL('/books/'+w.preferredEdition+'.json',api))
     const editions=edition(details).filter(()=>[...list(details.isbn_10),...list(details.isbn_13)].includes(isbn.toUpperCase()))
-    return {results:editions.map(e=>({work:w,edition:e})),nextOffset:null}
+    return {results:editions.filter(e => matchesPublisher(e.publisher, selection.publisher)).map(e=>({work:w,edition:e})),nextOffset:null}
   }
   const target=new URL('/search.json',api)
   target.searchParams.set('q',publisherQuery('publisher'));target.searchParams.set('lang','en');target.searchParams.set('limit','12');target.searchParams.set('offset',String(offset))
@@ -149,7 +147,7 @@ async function visibleEditions(provider:string, input:string, offset:number) {
       }
     }catch{/* Work search results remain available. */}
   }
-  return {results,nextOffset:docs.length===12?offset+12:null}
+  return {results:results.filter(row => matchesPublisher(row.edition.publisher, selection.publisher)),nextOffset:docs.length===12?offset+12:null}
 }
 
 async function json(url: URL) { return object(JSON.parse((await read(url)).toString('utf8'))) }
@@ -168,9 +166,11 @@ export async function handleBookCatalog(req: IncomingMessage, res: ServerRespons
   if (req.method !== 'GET') return reply(405, { error: 'Use GET for catalog lookups.' })
   try {
     if (url.pathname === '/api/book-catalog/visual') {
+      const publisher = text(url.searchParams.get('publisher'), 121)
+      if (publisher.length > 120) bad('Publisher names must be at most 120 characters.')
       const query=text(url.searchParams.get('q'),241), provider=url.searchParams.get('provider')??'', offset=Number(url.searchParams.get('offset')??0)
       if (query.length<2||query.length>240||!['openlibrary','google'].includes(provider)||!Number.isInteger(offset)||offset<0||offset>2000) bad('Invalid edition search.')
-      return reply(200,await visibleEditions(provider,query,offset))
+      return reply(200,await visibleEditions(provider,query,offset,publisher))
     }
     if (url.pathname === '/api/book-catalog/google-cover') {
       const id=url.searchParams.get('id')??''

@@ -160,3 +160,25 @@
 .knowledge-workbench .writing-rich-toolbar:not(.is-expanded) .writing-toolbar-secondary,
 .knowledge-workbench .writing-rich-toolbar:not(.is-expanded) :is(select[aria-label="Font family"],select[aria-label="Font size"],button[aria-label="Strikethrough"],button[aria-label="Inline code"],button[aria-label="Insert divider"]) { display: none; }
 .knowledge-workbench .writing-toolbar-more { display: inline-flex; align-items: center; padding: 5px 8px; border: 0; border-radius: 4px; background: transparent; color: var(--kb-text); font-size: 12px; cursor: pointer; }
+
+.knowledge-workbench .writing-canvas .writing-tools-line { width:min(var(--write-width),100%); box-sizing:border-box; margin-inline:auto; padding-inline:clamp(8px,2vw,24px); }
+.knowledge-workbench .writing-canvas .writing-tools-tray { left:max(0px,calc((100% - var(--write-width))/2)); }
+.knowledge-workbench .writing-canvas .writing-editor-page { margin-top:12px; padding:clamp(20px,3.5vw,42px) clamp(18px,4.5%,58px); }
+.knowledge-workbench .writing-document-format { margin-bottom:12px; }
+.knowledge-workbench .writing-document-title { margin-bottom:8px; }
+.knowledge-workbench .writing-document-subtitle { margin-bottom:9px; }
+.knowledge-workbench .writing-document-byline { margin-bottom:22px; }
+.knowledge-workbench .writing-credits-toggle { margin-left:auto; padding:3px 0; border:0; background:transparent; color:var(--write-ink); opacity:.7; cursor:pointer; font:11px/1.4 var(--font-sans); }
+.writing-document-heading { margin-bottom:14px; }
+@media (max-width:600px) {
+ .knowledge-workbench .writing-studio .writing-studio-header { flex-wrap:nowrap; gap:5px; min-height:46px; padding:6px 8px; }
+ .knowledge-workbench .writing-studio .writing-studio-location { min-width:35px; flex:1; gap:3px; }
+ .knowledge-workbench .writing-studio-location>div { min-width:0; overflow:hidden; }
+ .knowledge-workbench .writing-studio .writing-studio-location strong { max-width:100%; font-size:11px; }
+ .knowledge-workbench .writing-studio .writing-studio-actions { width:auto; flex-shrink:0; gap:3px; flex-wrap:nowrap; }
+ .knowledge-workbench .writing-studio-actions > .knowledge-button:not(.is-primary)>span,
+ .knowledge-workbench .writing-studio-actions .writing-export-menu summary>span { display:none; }
+ .knowledge-workbench .writing-studio .writing-studio-actions :is(.knowledge-button,summary) { min-height:30px; padding:5px; }
+ .knowledge-workbench .writing-document-format { flex-wrap:wrap; gap:4px 8px; }
+ .knowledge-workbench .writing-credits-toggle { font-size:10px; }
+}

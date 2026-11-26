@@ -7,6 +7,7 @@ import { writingPassages } from '../../src/writing/concepts.ts'
 import { selectWritingPassage } from '../../src/writing/passageNavigation.ts'
 import type { Editor } from '@tiptap/core'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { EmailClipboard } from '../../src/workspace/EmailClipboard.tsx'
 import RichEditor, { type RichEditorProps } from '../../src/writing/RichEditor.tsx'
 import { normalizedWritingJSON, sanitizeWritingPasteHTML } from '../../src/writing/extensions.ts'
 import { validateWritingContent } from '../../src/writing/model.ts'
@@ -438,4 +439,61 @@ it('links only an unchanged selection to its saved quotation and removes the ann
   act(() => editor.view.dispatch(editor.state.tr.insertText('x', 8)))
   expect(editor.view.dom.querySelector('[data-saved-quote]')).toBeNull()
   expect(linkSavedQuote(editor, selection, 'quote-2', 'original')).toBe(false)
+})
+
+it('gives source notes full formatting and keeps strokes editable across a reopen', async () => {
+  await render({ variant: 'source' })
+  range(1, 6)
+  select('Selection highlight color', '#bfdbfe')
+  expect(editor.isActive('highlight', { color: '#bfdbfe' })).toBe(true)
+  const sketchButton = [...host.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === 'Sketch')!
+  act(() => sketchButton.click())
+  await until(() => !!host.querySelector('.writing-sketch svg[aria-label]'))
+  const board = byLabel<HTMLElement>('Freehand sketch')
+  for (const key of [' ', 'ArrowRight', 'ArrowDown', ' ']) {
+    act(() => board.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })))
+  }
+  const saved = normalizedWritingJSON(editor.getJSON())
+  expect(saved.content?.[0].content?.map(part => part.text).join('')).toBe('Alpha beta gamma')
+  expect(saved.content?.[1]).toMatchObject({ type: 'writingSketch', attrs: { strokes: [{ points: [[400,130],[408,130],[408,138]] }] } })
+  const copied = sanitizeWritingPasteHTML(editor.getHTML())
+  act(() => editor.commands.setContent(copied))
+  expect(normalizedWritingJSON(editor.getJSON()).content?.[1]).toEqual(saved.content?.[1])
+  expect(sanitizeWritingPasteHTML('<figure data-writing-sketch="invalid">Sketch</figure>')).not.toContain('data-writing-sketch')
+  await render({ variant: 'source', documentId: 'reopen-drawing', content: saved })
+  await until(() => !!host.querySelector('[aria-label="Edit sketch"]'))
+  click('Edit sketch'); click('Undo last stroke')
+  expect(normalizedWritingJSON(editor.getJSON()).content?.[1].attrs?.strokes).toEqual([])
+  await render({ variant: 'source', documentId: 'read-only', content: saved, preview: true })
+  await until(() => !!host.querySelector('.writing-sketch svg path'))
+  expect(host.querySelector('[aria-label="Sketch tools"]')).toBeNull()
+  expect(host.querySelector('.writing-sketch svg path')).not.toBeNull()
+})
+
+it.each([false, true])('copies a focused authored mailto before editor Enter navigation (preview=%s)', async preview => {
+  const writeText = vi.fn(async () => {})
+  const previous = Object.getOwnPropertyDescriptor(navigator, 'clipboard')
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+  const open = vi.spyOn(window, 'open').mockImplementation(() => null)
+  const content: WritingNode = { type: 'doc', content: [{ type: 'paragraph', content: [
+    { type: 'text', text: 'Mail', marks: [{ type: 'link', attrs: { href: 'mailto:mail%2Bink@example.test?subject=Note&to=team%40example.test' } }] },
+    { type: 'text', text: ' Page', marks: [{ type: 'link', attrs: { href: 'https://example.test/' } }] },
+  ] }] }
+  try {
+    await act(async () => root.render(<><EmailClipboard /><RichEditor documentId="email-link-test" content={content} preview={preview} onChange={changed} onReady={e => { editor = e }} /></>))
+    await until(() => !!editor && !!host.querySelector('a[href^="mailto"]'))
+    const mail = host.querySelector<HTMLAnchorElement>('a[href^="mailto"]')!, site = host.querySelector<HTMLAnchorElement>('a[href^="https"]')!
+    expect(mail.getAttribute('tabindex')).toBe('0')
+    const enter = () => new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+    await act(async () => { mail.focus(); mail.dispatchEvent(enter()) })
+    expect(writeText).toHaveBeenCalledExactlyOnceWith('mail+ink@example.test, team@example.test')
+    expect(host.querySelector('.email-copy-feedback')?.textContent).toBe('Email address copied')
+    expect(open).not.toHaveBeenCalled()
+    await act(async () => { site.focus(); site.dispatchEvent(enter()) })
+    expect(open).toHaveBeenCalledWith('https://example.test/', '_blank', 'noopener,noreferrer')
+    expect(writeText).toHaveBeenCalledTimes(1)
+  } finally {
+    if (previous) Object.defineProperty(navigator, 'clipboard', previous)
+    else Reflect.deleteProperty(navigator, 'clipboard')
+  }
 })

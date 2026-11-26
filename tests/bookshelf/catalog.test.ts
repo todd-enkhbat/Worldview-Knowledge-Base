@@ -43,3 +43,28 @@ it('follows a verified Archive cover redirect, rejects unrelated hosts, and neve
   expect((await lookup('search?q=A', 'POST')).status).toBe(405)
   expect(upstream.mock.calls.some(([url]) => url.hostname === 'unrelated.example')).toBe(false)
 })
+it('recognizes scholarly and collectors publishers and supplies the verified Franklin LOA edition', async () => {
+  const { publisherSearch, verifiedPublisherEditions } = await import('../../src/bookshelf/publishers.ts')
+  expect(publisherSearch('Benjamin Franklin LOA').forProvider('publisher')).toBe('Benjamin Franklin publisher:"Library of America"')
+  expect(publisherSearch('Franklin', 'Easton Press').forProvider('inpublisher')).toBe('Franklin inpublisher:"Easton Press"')
+  expect(publisherSearch('Homer Everyman’s Library').publisher).toBe("Everyman's Library")
+  expect(verifiedPublisherEditions('Benjamin Franklin')[0].edition).toMatchObject({ id: 'OL675426M', publisher: 'Library of America', isbn: '9781883011536', pages: 816 })
+  expect(verifiedPublisherEditions('Benjamin Franklin', 'Easton Press')).toEqual([])
+})
+it('keeps other publishers out of a publisher-filtered edition search', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json({ items: [
+    { id: 'loa-test', volumeInfo: { title: 'Franklin', publisher: 'Library of America' } },
+    { id: 'other-test', volumeInfo: { title: 'Franklin', publisher: 'Cambridge University Press' } }
+  ] })))
+  const result = await lookup('visual?provider=google&q=Franklin&publisher=Library%20of%20America')
+  expect(result.body).toMatchObject({ results: [{ edition: { id: 'gb:loa-test' } }] })
+  expect((result.body as { results: unknown[] }).results).toHaveLength(1)
+})
+it('accepts the current Open Library cover archive format for the requested cover only', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (url: URL) => {
+    if (url.hostname === 'covers.openlibrary.org') return new Response(null, { status: 302, headers: { location: 'https://archive.org/download/olcovers92/olcovers92-L.zip/929370-L.jpg' } })
+    return new Response(Uint8Array.from([255,216,255,224]))
+  }))
+  expect((await lookup('cover?id=929370')).body).toEqual(Buffer.from([255,216,255,224]))
+  expect((await lookup('cover?id=929371')).status).toBe(502)
+})

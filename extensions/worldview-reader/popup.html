@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Worldview Reader</title>
   <link rel="stylesheet" href="popup.css">
+  <link rel="stylesheet" href="contact-ui.css">
+  <link rel="stylesheet" href="todo-ui.css">
 </head>
 <body>
   <header class="workspace">
@@ -14,9 +16,14 @@
   <main>
     <nav class="capture-modes" aria-label="Capture mode">
       <button type="button" id="mode-word">Dictionary</button>
-      <button type="button" id="mode-person" aria-current="true">Person</button>
+      <button type="button" id="mode-person" aria-current="true">CRM</button>
       <button type="button" id="mode-application">Application</button>
+      <button type="button" id="mode-todo">TO-DO</button>
     </nav>
+    <section id="todo-panel" hidden aria-label="TO-DO"></section>
+    <section id="word-panel" class="study-panel" aria-label="Dictionary" hidden></section>
+    <section id="application-panel" class="study-panel" aria-label="Application" hidden></section>
+    <div id="crm-panel">
     <section id="connection" hidden>
       <button id="connect">Connect to Worldview</button>
       <p id="connection-help">Approve this browser in the local app.</p>
@@ -24,48 +31,42 @@
 
     <section id="no-profile" hidden>
       <h1>No profile on this page</h1>
-      <p>Open someone’s LinkedIn profile or personal website to see their CRM record.</p>
+      <p>Open someone’s LinkedIn, Instagram, Facebook profile or personal website to see their CRM record.</p>
       <button id="browse-people" type="button">Open my contacts <span aria-hidden="true">↗</span></button>
     </section>
+    <button type="button" id="return-people" hidden>‹ People on this page</button>
     <section id="quick-panel" hidden aria-labelledby="profile-name">
-      <p id="profile-kind"></p>
-      <div class="identity">
-        <div class="portrait">
-          <span id="profile-initials" aria-hidden="true"></span>
-          <img id="profile-avatar" alt="" referrerpolicy="no-referrer" hidden>
-        </div>
-        <div class="identity-copy">
-          <h1 id="profile-name"></h1>
-          <p id="profile-summary"></p>
-          <p id="profile-affiliations"></p>
-          <p id="profile-location"></p>
-        </div>
-      </div>
+      <div id="profile-identity" class="identity wv-profile-identity"></div>
       <div id="group-picker">
         <button id="profile-group" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="group-options">
-          <span class="group-label">Save to</span>
+          <span class="group-label">Group</span>
           <span id="group-selected-icon" aria-hidden="true"></span>
           <span id="group-selected-name">All contacts</span>
           <span class="chevron" aria-hidden="true"></span>
         </button>
+        <div id="memberships" hidden>
+          <div id="membership-summary" aria-label="Current groups"></div>
+          <button type="button" id="add-another-group" aria-haspopup="listbox" aria-controls="group-options" aria-expanded="false" hidden>+ Add group</button>
+        </div>
         <div id="group-popover" hidden>
           <div class="group-search-field">
             <span class="magnifier" aria-hidden="true"></span>
-            <input id="group-search" type="search" role="combobox" aria-label="Search groups" aria-autocomplete="list" aria-expanded="true" aria-controls="group-options" autocomplete="off" placeholder="Search groups">
+            <input id="group-search" type="search" role="combobox" aria-label="Search groups" aria-autocomplete="list" aria-expanded="true" aria-controls="group-options" autocomplete="off" placeholder="Search groups…">
           </div>
           <div id="group-options" role="listbox" aria-label="Groups"></div>
           <p id="group-empty" hidden>No groups found.</p>
         </div>
       </div>
-      <button id="quick-add" class="primary" disabled>Add to CRM</button>
-      <div class="save-result">
-        <p id="quick-status" role="status"></p>
-        <a id="open-desktop-record" hidden>Open in Mac app ↗</a>
-        <a id="log-interaction" hidden>Log interaction ↗</a>
-        <a id="open-record" hidden>Open in Worldview <span aria-hidden="true">↗</span></a>
+      <div id="record-actions">
+        <button id="quick-add" class="primary" disabled>Save contact</button>
+        <a id="open-desktop-record" class="record-primary" hidden>Open contact <span aria-hidden="true">↗</span></a>
+        <a id="open-record" class="record-primary" hidden>Open contact</a>
+        <a id="log-interaction" hidden>Log interaction</a>
       </div>
+      <p id="quick-status" role="status"></p>
     </section>
 
+    <section id="visible-people" class="wv-people" hidden><h2>People on this page</h2><ul id="visible-rows"></ul></section>
     <section id="folk-panel" class="tool-section" hidden>
       <button id="folk-photos" class="primary" disabled>Capture visible Folk photos</button>
       <button id="folk-follow" disabled>Follow visible Folk photos</button>
@@ -81,6 +82,9 @@
     <p id="notice" role="status"></p>
     <p id="error" role="alert"></p>
 
+    <details id="more-tools">
+      <summary>More tools</summary>
+      <div id="other-record-destinations"></div>
     <details id="capture-tools">
       <summary>Profile tools</summary>
       <div class="tools-body">
@@ -129,6 +133,8 @@
           <button id="pair">Save pairing</button><button id="discard">Discard pending captures</button><button id="disconnect">Disconnect this browser</button>
           <p>Find your local address in Worldview for Mac under Sources → Desktop. The default port is 5173.</p>
         </details>
+    </details>
+    </div>
   </main>
   <script type="module" src="popup.js"></script>
 </body>

@@ -198,3 +198,24 @@ it('exports marked reading concepts as Obsidian links while preserving examples 
   expect(strFromU8(entries['document.html'])).toContain('data-topic-id="concept-1" data-relation="example"')
   expect(JSON.parse(strFromU8(entries['writing.json'])).document.content).toEqual(doc.content)
 })
+
+it('round-trips editable freehand geometry and exports its colors, points and description', async () => {
+  const doc = document(), sketch = { type: 'writingSketch', attrs: {
+    title: 'Side <view> & notes',
+    strokes: [{ ink: '#365e8a', width: 4, points: [[30, 40], [100, 15], [135, 28]] }],
+  } }
+  doc.content.content!.push(sketch)
+  const result = await exportWritingDocument(doc, 'bundle')
+  const entries = unzipSync(new Uint8Array(await result.blob.arrayBuffer()))
+  const restored = validateWritingDocument(JSON.parse(strFromU8(entries['writing.json'])).document)
+  expect(restored.content.content?.at(-1)).toEqual(sketch)
+  for (const name of ['document.md', 'document.html']) {
+    const parser = new DOMParser().parseFromString(strFromU8(entries[name]), 'text/html')
+    expect(parser.querySelector('svg title')?.textContent).toBe('Side <view> & notes')
+    expect(parser.querySelector('svg path')?.getAttribute('d')).toBe('M30 40 L100 15 L135 28')
+    expect(parser.querySelector('svg path')?.getAttribute('stroke')).toBe('#365e8a')
+  }
+  const invalid = structuredClone(doc)
+  invalid.content.content!.at(-1)!.attrs!.strokes = [{ ink: 'red', width: 4, points: [[-1, 0]] }]
+  expect(() => validateWritingDocument(invalid)).toThrow()
+})

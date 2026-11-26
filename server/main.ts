@@ -47,11 +47,12 @@ const SECURITY_HEADERS = {
 }
 
 export interface StaticOptions {
+  readerFrameAncestor?: (req: IncomingMessage) => string | null
   dist: string
 }
 
 /** Serves dist/ with an index.html fallback for client routes; hashed assets are cached for a year. */
-export function createStatic({ dist }: StaticOptions) {
+export function createStatic({ dist, readerFrameAncestor }: StaticOptions) {
   const root = resolve(dist)
   let index: Buffer | null = null
   return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
@@ -75,8 +76,14 @@ export function createStatic({ dist }: StaticOptions) {
     const s = await stat(file).catch(() => null)
     if (s?.isFile()) {
       const immutable = path.startsWith('/assets/')
+      const headers: Record<string,string> = { ...SECURITY_HEADERS }
+      const ancestor = path === '/study-helper.html' && readerFrameAncestor?.(req)
+      if (ancestor) {
+        delete headers['x-frame-options']
+        headers['content-security-policy'] = 'frame-ancestors ' + ancestor
+      }
       res.writeHead(200, {
-        ...SECURITY_HEADERS,
+        ...headers,
         'content-type': MIME[extname(file).toLowerCase()] ?? 'application/octet-stream',
         'content-length': String(s.size),
         'cache-control': immutable ? 'public, max-age=31536000, immutable' : 'no-cache',
@@ -107,7 +114,7 @@ export function startServer(env: NodeJS.ProcessEnv = process.env) {
     chat: ai.chat,
     telegram: { token: env.TELEGRAM_BOT_TOKEN, allowedUserIds: telegramIds(env.TELEGRAM_ALLOWED_USER_IDS), allowedChatIds: telegramIds(env.TELEGRAM_ALLOWED_CHAT_IDS) },
   })
-  const serveStatic = createStatic({ dist: env.HYPERSPACE_DIST ?? 'dist' })
+  const serveStatic = createStatic({ dist: env.HYPERSPACE_DIST ?? 'dist', readerFrameAncestor: host.readerFrameAncestor })
   const server = createServer((req, res) => {
     if ((req.url ?? '').startsWith('/api/')) return host.handler(req, res)
     serveStatic(req, res).catch((e: unknown) => {

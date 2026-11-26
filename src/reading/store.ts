@@ -1,8 +1,10 @@
+import { canMoveFolder, folderTrail } from './hierarchy.ts'
+import type { ReadingFolder } from './types.ts'
 import { create } from 'zustand'
 import { compareAndSwapWorldState, getStore, getWorldGeneration, isRepoReady, subscribeRepo, useRepoStatus } from '../data/repo.ts'
 import type { WorldStore } from '../data/WorldStore.ts'
 import type { KnowledgeSnapshot } from '../knowledge/types.ts'
-import { applyReadingHighlight, applyReadingItem, decodeReading, emptyReading, pdfHighlightSchema, readingName, validateReadingHighlightPatch } from './model.ts'
+import { applyReadingHighlight, applyReadingItem, decodeReading, emptyReading, pdfHighlightSchema, folderSchema, readingName, validateReadingHighlightPatch } from './model.ts'
 import { READING_KV, type HighlightInput, type ReadingConnection, type ReadingEndpoint, type ReadingHighlight, type ReadingItemPatch, type ReadingPdfHighlight, type ReadingRelation, type ReadingSavedView, type ReadingSnapshot, type ReadingTopic } from './types.ts'
 import { useBookshelf } from '../bookshelf/store.ts'
 import { useWriting } from '../writing/store.ts'
@@ -94,21 +96,42 @@ function folderOf(snapshot: ReadingSnapshot, id: string) { const item = snapshot
 function topicOf(snapshot: ReadingSnapshot, id: string) { const item = snapshot.topics.find((entry) => entry.id === id); if (!item) throw new Error('This topic is no longer available.'); return item }
 const normalized = (value: string) => value.normalize('NFKC').trim().toLocaleLowerCase().replace(/[-_\s]+/g, ' ')
 
-export function createFolder(name: string, parentId: string | null = null) {
+export function createFolder(name: string, parentId: string | null = null, details: Partial<Pick<ReadingFolder, 'kind' | 'typeLabel' | 'description' | 'icon' | 'iconAssetId' | 'coverAssetId' | 'coverPreset' | 'coverPosition'>> = {}) {
   return mutate((snapshot) => {
     const clean = readingName(name)
     if (parentId) folderOf(snapshot, parentId)
     const existing = snapshot.folders.find((entry) => entry.deletedAt == null && entry.parentId === parentId && normalized(entry.name) === normalized(clean))
     if (existing) return existing
-    const folder = { id: crypto.randomUUID(), name: clean, parentId, createdAt: Date.now(), deletedAt: null }
+    const folder: ReadingFolder = { ...details, id: crypto.randomUUID(), name: clean, parentId, createdAt: Date.now(), deletedAt: null }
+    if (folder.kind === 'concept') { folder.linkedTopicId = folder.id; snapshot.topics.push({ id: folder.id, name: folder.name, createdAt: folder.createdAt }) }
     snapshot.folders.push(folder); return folder
   })
 }
 export function renameFolder(id: string, name: string) {
   return mutate((snapshot) => { const folder = folderOf(snapshot, id), clean = readingName(name); if (snapshot.folders.some((entry) => entry.id !== id && entry.deletedAt == null && entry.parentId === folder.parentId && normalized(entry.name) === normalized(clean))) throw new Error('A folder with this name already exists here.'); folder.name = clean; return folder })
 }
+/** Every kind is a container; moving checks ancestry before committing one revision. */
+export function updateFolder(id: string, patch: Partial<Omit<ReadingFolder, 'id' | 'createdAt' | 'deletedAt'>>) {
+  return mutate(snapshot => {
+    const folder = folderOf(snapshot, id)
+    if (!folderSchema.omit({ id: true, createdAt: true, deletedAt: true }).partial().strict().safeParse(patch).success) throw new Error('These folder details are invalid.')
+    const parentId = patch.parentId === undefined ? folder.parentId : patch.parentId
+    if (parentId) folderOf(snapshot, parentId)
+    if (!canMoveFolder(snapshot.folders, id, parentId)) throw new Error('A page cannot be moved inside itself or one of its descendants.')
+    const name = patch.name === undefined ? folder.name : readingName(patch.name)
+    if (snapshot.folders.some(entry => entry.id !== id && !entry.deletedAt && entry.parentId === parentId && normalized(entry.name) === normalized(name))) throw new Error('A page with this name already exists here.')
+    Object.assign(folder, patch, { name, parentId })
+    if (folder.kind === 'concept' && !folder.linkedTopicId) { folder.linkedTopicId = folder.id; snapshot.topics.push({ id: folder.id, name: folder.name, createdAt: Date.now() }) }
+    if (folder.linkedTopicId) {
+      const topic = snapshot.topics.find(topic => topic.id === folder.linkedTopicId)
+      if (topic && topic.id === folder.id) topic.name = name
+      for (const item of snapshot.items) if (folderTrail(snapshot.folders, item.folderId).some(entry => entry.id === folder.id)) item.topicIds = [...new Set([...item.topicIds, folder.linkedTopicId])]
+    }
+    return folder
+  })
+}
 export function deleteFolder(id: string): Promise<void> {
-  return mutate((snapshot) => { const folder = folderOf(snapshot, id); for (const entry of snapshot.items) if (entry.folderId === id) entry.folderId = folder.parentId; for (const child of snapshot.folders) if (child.parentId === id) child.parentId = folder.parentId; folder.deletedAt = Date.now() })
+  return mutate((snapshot) => { const folder = folderOf(snapshot, id); const siblings = snapshot.folders.filter(entry => !entry.deletedAt && entry.id !== id && entry.parentId === folder.parentId); if (snapshot.folders.some(child => !child.deletedAt && child.parentId === id && siblings.some(sibling => normalized(sibling.name) === normalized(child.name)))) throw new Error('A child page has the same name as a page in the parent folder. Rename or move that child before removing this page.'); for (const entry of snapshot.items) if (entry.folderId === id) entry.folderId = folder.parentId; for (const child of snapshot.folders) if (child.parentId === id) child.parentId = folder.parentId; folder.deletedAt = Date.now() })
 }
 export function updateReadingItem(sourceId: string, patch: ReadingItemPatch) { return mutate((snapshot, corpus) => { sourceOf(corpus, sourceId); return applyReadingItem(snapshot, sourceId, patch) }) }
 /** A single revision applies the whole filing operation or changes nothing. Originals are untouched. */

@@ -28,11 +28,13 @@ export function Lookup({
   initial = '',
   language = 'en',
   context = {},
+  fieldLabel = 'Dictionary',
   changed
 }: {
   initial?: string
   language?: string
   context?: WordContext
+  fieldLabel?: string
   changed?: () => void
 }) {
   const [term, setTerm] = useState(initial),
@@ -112,13 +114,13 @@ export function Lookup({
         }}
       >
         <label>
-          Dictionary
+          {fieldLabel}
           <input
             autoFocus
             value={term}
             onChange={(e) => setTerm(e.target.value)}
             maxLength={160}
-            placeholder="A word or phrase"
+            placeholder="Enter a word or phrase…"
           />
         </label>
         <button disabled={busy || !term.trim()}>Look up</button>
@@ -438,8 +440,10 @@ export function Applications({
   refresh,
   adapt,
   native,
+  helper = false,
   initialQuery = ''
 }: {
+  helper?: boolean
   initialQuery?: string
   state: StudyState
   refresh: () => void
@@ -455,7 +459,18 @@ export function Applications({
     [msg, setMsg] = useState(''),
     [files, setFiles] = useState<File[]>([]),
     [source, setSource] = useState('dia'),
+    [formUrl, setFormUrl] = useState(''),
+    [openingForm, setOpeningForm] = useState(false),
+    [reading, setReading] = useState(false),
     [saving, setSaving] = useState(false)
+  const opportunityField = useRef<HTMLInputElement>(null)
+  const startCapture = useRef<HTMLButtonElement>(null)
+  const wasEditing = useRef(edit)
+  useEffect(() => {
+    if (helper && edit) opportunityField.current?.focus({ preventScroll: true })
+    else if (helper && wasEditing.current) startCapture.current?.focus({ preventScroll: true })
+    wasEditing.current = edit
+  }, [edit, helper])
   useEffect(() => {
     if (initialQuery) setQ(initialQuery)
   }, [initialQuery])
@@ -481,10 +496,125 @@ export function Applications({
       )
     )
     .reverse()
+  const matches = answers
+    .map(v => ({ ...v, score: answerRelevance(q, v.question, v.answer, v.application.organization + ' ' + v.application.opportunity) }))
+    .filter(v => v.score > 0)
+    .sort((a, b) => b.score - a.score || b.revision.at - a.revision.at)
+  const field = (name: 'organization' | 'opportunity' | 'step' | 'source') => (
+    <label key={name}>{name}<input ref={name === 'opportunity' ? opportunityField : undefined} name={name} value={entry[name]} onChange={e => patch({ [name]: e.target.value })} /></label>
+  )
+  const appendTo = (
+    <label>
+      Append to
+      <select
+        value={entry.id ?? ''}
+        onChange={(e) => {
+          const app = state.applications.find((a) => a.id === e.target.value)
+          patch({
+            id: app?.id,
+            organization: app?.organization ?? '',
+            opportunity: app?.opportunity ?? '',
+            step: app ? 'Step ' + (new Set(app.revisions.map((r) => r.step)).size + 1) : 'Application'
+          })
+        }}
+      >
+        <option value="">New application</option>
+        {state.applications.map((a) => (
+          <option key={a.id} value={a.id}>
+            {a.opportunity}
+          </option>
+        ))}
+      </select>
+    </label>
+  )
+  const captureScreen = native?.ocr && (
+    <button
+      onClick={async () => {
+        try {
+          const text = await native.ocr!()
+          setRaw((old) => old + (old ? '\n' : '') + text)
+          setMsg('Scroll to the next section and capture again, or review the text.')
+        } catch (e) {
+          setMsg(explain(e))
+        }
+      }}
+    >
+      Capture screen region
+    </button>
+  )
+  const imports = edit && <>
+    <label>
+      Application text
+      <textarea
+        value={raw}
+        onChange={(e) => setRaw(e.target.value)}
+        placeholder="Paste the questions and your answers"
+        rows={3}
+      />
+    </label>
+    <button disabled={!raw.trim()} onClick={() => parse(raw, '')}>
+      Review pasted text
+    </button>
+    <Discovery
+      choose={(item) => {
+        setRaw(item.text)
+        patch({
+          organization: entry.organization,
+          opportunity: entry.opportunity || item.title,
+          source: item.source,
+          step: item.confirmation ? 'Submission confirmation' : parseApplicationPaste(item.text).length ? 'Imported document' : 'Supporting document',
+          submitted: item.confirmation,
+          answers: item.confirmation ? [] : parseApplicationPaste(item.text),
+          evidence: safeApplicationText(item.text),
+          sourceDate: item.date
+        })
+        setMsg(item.confirmation?'Confirmation found. Review before saving.':parseApplicationPaste(item.text).length?'Review the questions and your answers.':'Supporting document · No questions or answers detected.')
+      }}
+    />
+    <details>
+      <summary>Import from files or folder</summary>
+      {[false, true].map((folder) => (
+        <label key={String(folder)}>
+          {folder ? 'Choose folder' : 'Choose files'}
+          <input
+            type="file"
+            multiple
+            {...(folder ? { webkitdirectory: '' } : {})}
+            accept=".txt,.md,.html,.htm,.eml,.pdf,.docx"
+            onChange={(e) =>
+              setFiles(
+                Array.from(e.target.files ?? []).filter((f) =>
+                  /\.(txt|md|html?|eml|docx|pdf)$/i.test(f.name)
+                )
+              )
+            }
+          />
+        </label>
+      ))}
+      {files.map((f, i) => (
+        <button
+          key={i}
+          onClick={async () => {
+            try {
+              const { readApplicationFile } = await import('./importFile.ts')
+              const text = await readApplicationFile(f)
+              setRaw(text)
+              parse(text, f.name)
+            } catch (e) {
+              setMsg(explain(e))
+            }
+          }}
+        >
+          {f.name}
+        </button>
+      ))}
+    </details>
+  </>
   return (
     <>
-      <div className="study-tools">
+      <div className="study-tools" hidden={helper && edit}>
         <button
+          ref={startCapture}
           onClick={() => {
             setEntry(blankApplication())
             setRaw('')
@@ -501,38 +631,22 @@ export function Applications({
           onChange={(e) => setQ(e.target.value)}
         />
       </div>
+      {helper && !edit && !state.applications.length && <p className="enki-hint">Capture a form to keep its questions and your answers together.</p>}
+      {helper && !edit && !!state.applications.length && !!q && !matches.length && <p className="enki-hint">No saved answers match this search.</p>}
       {edit && (
         <section className="study-edit">
-          <label>
-            Append to
-            <select
-              value={entry.id ?? ''}
-              onChange={(e) => {
-                const app = state.applications.find((a) => a.id === e.target.value)
-                patch({
-                  id: app?.id,
-                  organization: app?.organization ?? '',
-                  opportunity: app?.opportunity ?? '',
-                  step: app ? 'Step ' + (new Set(app.revisions.map((r) => r.step)).size + 1) : 'Application'
-                })
-              }}
-            >
-              <option value="">New application</option>
-              {state.applications.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.opportunity}
-                </option>
-              ))}
-            </select>
-          </label>
+          {!helper && appendTo}
           {native && (
             <div className="study-tools">
-              <select aria-label="Capture source" value={source} onChange={(e) => setSource(e.target.value)}>
+              {!native.activeTab && <select aria-label="Capture source" value={source} onChange={(e) => setSource(e.target.value)}>
                 <option value="dia">Active Dia tab</option>
                 <option value="browser">Worldview browser</option>
-              </select>
+              </select>}
               <button
+                disabled={reading || openingForm || saving}
                 onClick={async () => {
+                  setReading(true)
+                  setMsg('Reading form…')
                   try {
                     const form = await native.form(source)
                     const matching =
@@ -561,100 +675,37 @@ export function Applications({
                     setMsg('Review this step before saving.')
                   } catch (e) {
                     setMsg(explain(e))
-                  }
+                  } finally { setReading(false) }
                 }}
               >
-                Read this form
+                {reading ? 'Reading…' : 'Read this form'}
               </button>
-              <button
-                onClick={async () => {
-                  try {
-                    const text = await native.ocr()
-                    setRaw((old) => old + (old ? '\n' : '') + text)
-                    setMsg('Scroll to the next section and capture again, or review the text.')
-                  } catch (e) {
-                    setMsg(explain(e))
-                  }
-                }}
-              >
-                Capture screen region
-              </button>
+              {!helper && captureScreen}
             </div>
           )}
-          <label>
-            Application text
-            <textarea
-              value={raw}
-              onChange={(e) => setRaw(e.target.value)}
-              placeholder="Paste the questions and your answers"
-              rows={3}
-            />
-          </label>
-          <button disabled={!raw.trim()} onClick={() => parse(raw, '')}>
-            Review pasted text
-          </button>
-          <Discovery
-            choose={(item) => {
-              setRaw(item.text)
-              patch({
-                organization: entry.organization,
-                opportunity: entry.opportunity || item.title,
-                source: item.source,
-                step: item.confirmation ? 'Submission confirmation' : parseApplicationPaste(item.text).length ? 'Imported document' : 'Supporting document',
-                submitted: item.confirmation,
-                answers: item.confirmation ? [] : parseApplicationPaste(item.text),
-                evidence: safeApplicationText(item.text),
-                sourceDate: item.date
-              })
-              setMsg(item.confirmation?'Confirmation found. Review before saving.':parseApplicationPaste(item.text).length?'Review the questions and your answers.':'Supporting document · No questions or answers detected.')
-            }}
-          />
-          <details>
-            <summary>Import from files or folder</summary>
-            {[false, true].map((folder) => (
-              <label key={String(folder)}>
-                {folder ? 'Choose folder' : 'Choose files'}
-                <input
-                  type="file"
-                  multiple
-                  {...(folder ? { webkitdirectory: '' } : {})}
-                  accept=".txt,.md,.html,.htm,.eml,.pdf,.docx"
-                  onChange={(e) =>
-                    setFiles(
-                      Array.from(e.target.files ?? []).filter((f) =>
-                        /\.(txt|md|html?|eml|docx|pdf)$/i.test(f.name)
-                      )
-                    )
-                  }
-                />
-              </label>
-            ))}
-            {files.map((f, i) => (
-              <button
-                key={i}
-                onClick={async () => {
-                  try {
-                    const { readApplicationFile } = await import('./importFile.ts')
-                    const text = await readApplicationFile(f)
-                    setRaw(text)
-                    parse(text, f.name)
-                  } catch (e) {
-                    setMsg(explain(e))
-                  }
-                }}
-              >
-                {f.name}
-              </button>
-            ))}
-          </details>
+          {helper && source === 'browser' && native?.openBrowser && <form className="enki-address enki-form-address" onSubmit={async event => {
+            event.preventDefault()
+            const address = formUrl.trim()
+            if (!address || openingForm || !native.openBrowser) return
+            setOpeningForm(true)
+            setMsg('Opening form…')
+            try {
+              await native.openBrowser(address)
+              setMsg('Form opened. Choose Read this form when ready.')
+            } catch (e) { setMsg(explain(e)) }
+            finally { setOpeningForm(false) }
+          }}>
+            <label className="enki-field">Form URL
+              <input type="url" name="formUrl" value={formUrl} required autoComplete="off" spellCheck={false}
+                placeholder="Paste a form URL…" onChange={event => setFormUrl(event.target.value)} />
+            </label>
+            <button disabled={openingForm || reading || saving}>{openingForm ? 'Opening…' : 'Open form'}</button>
+          </form>}
+          {!helper && imports}
           <div className="study-fields">
-            {(['organization', 'opportunity', 'step', 'source'] as const).map((k) => (
-              <label key={k}>
-                {k}
-                <input value={entry[k]} onChange={(e) => patch({ [k]: e.target.value })} />
-              </label>
-            ))}
+            {(helper ? ['opportunity', 'organization'] as const : ['organization', 'opportunity', 'step', 'source'] as const).map(field)}
           </div>
+          {helper && <details className="enki-step-details"><summary>Step and source</summary>{appendTo}<div className="study-fields">{(['step','source'] as const).map(field)}</div></details>}
           {entry.answers.map((v, i) => (
             <div className="study-pair" key={i}>
               <label>
@@ -696,9 +747,14 @@ export function Applications({
             />
             Submitted
           </label>
+          {helper && <details className="enki-import-tools"><summary>Paste or import material</summary>
+            <div>{captureScreen}{imports}</div>
+          </details>}
+          <div className="study-edit-actions">
           <button
+            className="enki-save-application"
             disabled={
-              saving ||
+              saving || reading ||
               !entry.opportunity.trim() ||
               !entry.step.trim() ||
               entry.answers.some((a) => !a.question.trim())
@@ -717,13 +773,15 @@ export function Applications({
               }
             }}
           >
-            Save application
+            {saving ? 'Saving…' : 'Save application'}
           </button>
-          <button onClick={() => setEdit(false)}>Close editor</button>
+          <button disabled={saving || reading} onClick={() => setEdit(false)}>{helper ? 'Cancel' : 'Close editor'}</button>
+          {helper && <span role="status" className="enki-application-status">{msg}</span>}
+          </div>
         </section>
       )}
-      <p role="status">{msg}</p>
-      {!q &&
+      {!(helper && edit) && <p role="status">{msg}</p>}
+      {!(helper && edit) && !q &&
         state.applications
           .filter((a) => !focused || a.id === focused)
           .map((a) => (
@@ -747,19 +805,7 @@ export function Applications({
               ))}
             </details>
           ))}
-      {answers
-        .map((v) => ({
-          ...v,
-          score: answerRelevance(
-            q,
-            v.question,
-            v.answer,
-            v.application.organization + ' ' + v.application.opportunity
-          )
-        }))
-        .filter((v) => v.score > 0)
-        .sort((a, b) => b.score - a.score || b.revision.at - a.revision.at)
-        .map((v) => (
+      {!(helper && edit) && matches.map((v) => (
           <article className="study-answer" key={v.key}>
             <small>
               {v.application.opportunity} · {v.application.organization} ·{' '}
@@ -799,14 +845,18 @@ export function Applications({
 }
 export interface StudyNative {
   form: (mode: string) => Promise<Pick<ApplicationInput, 'organization' | 'opportunity' | 'source' | 'answers'>>
-  ocr: () => Promise<string>
+  ocr?: () => Promise<string>
+  activeTab?: boolean
+  openBrowser?: (url: string) => Promise<void>
 }
 export function StudyDesk({
   mode,
   native,
   adapt,
-  initialQuery
+  initialQuery,
+  helper = false,
 }: {
+  helper?: boolean
   initialQuery?: string
   mode: 'word' | 'application'
   native?: StudyNative
@@ -845,7 +895,7 @@ export function StudyDesk({
       {mode === 'word' ? (
         <Vocabulary state={state} refresh={refresh} />
       ) : (
-        <Applications initialQuery={initialQuery} state={state} refresh={refresh} native={native} adapt={adapt} />
+        <Applications initialQuery={initialQuery} state={state} refresh={refresh} native={native} adapt={adapt} helper={helper} />
       )}
     </section>
   )

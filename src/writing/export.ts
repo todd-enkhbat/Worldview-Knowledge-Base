@@ -1,3 +1,4 @@
+import { sketchHTML, sketchMarkdown } from './sketch.ts'
 import { strToU8, zipSync } from 'fflate'
 import { getStore, getWorldGeneration, isRepoReady } from '../data/repo.ts'
 import { decodeReading } from '../reading/model.ts'
@@ -30,6 +31,7 @@ function styles(mark: WritingMark): string {
 function htmlMark(text: string, mark: WritingMark): string {
   const tags: Record<string, string> = { bold: 'strong', italic: 'em', underline: 'u', strike: 's', code: 'code', highlight: 'mark' }
   if (mark.type === 'link') return `<a href="${html(new URL(String(mark.attrs!.href)).href)}" rel="noreferrer noopener">${text}</a>`
+  if (mark.type === 'writingSourceLink') return `<a href="#/library?source=${encodeURIComponent(String(mark.attrs!.sourceId))}" data-vault-target="${html(mark.attrs!.target)}">${text}</a>`
   if (mark.type === conceptMark) return `<span class="writing-topic-link" data-topic-id="${html(mark.attrs!.topicId)}" data-relation="${html(mark.attrs!.relation)}">${text}</span>`
   const tag = tags[mark.type] ?? 'span', style = styles(mark)
   return `<${tag}${style ? ` style="${html(style)}"` : ''}>${text}</${tag}>`
@@ -53,6 +55,7 @@ function htmlNode(node: WritingNode, assets: Map<string, ExportAsset>): string {
     case 'tableRow': return `<tr>${children()}</tr>`
     case 'tableCell': case 'tableHeader': { const tag = node.type === 'tableHeader' ? 'th' : 'td'; return `<${tag} colspan="${Number(node.attrs?.colspan ?? 1)}" rowspan="${Number(node.attrs?.rowspan ?? 1)}"${Array.isArray(node.attrs?.colwidth) && node.attrs.colwidth.some((width) => Number(width) > 0) ? ` style="min-width:${node.attrs.colwidth.reduce((total: number, width: unknown) => total + Number(width), 0)}px"` : ''}>${children()}</${tag}>` }
     case 'writingCitation': { const a = node.attrs!, provenance = `${a.sourceId} · version ${a.versionId}${a.page ? ` · page ${a.page}` : ` · characters ${Number(a.start) + 1}–${a.end}`}`; return `<blockquote class="writing-citation" data-source-id="${html(a.sourceId)}" data-source-version="${html(a.versionId)}"><p>${html(a.quote)}</p><cite>${a.url ? `<a href="${html(a.url)}" rel="noreferrer noopener">${html(a.sourceTitle)}</a>` : html(a.sourceTitle)}<small>${html(provenance)}</small></cite></blockquote>` }
+    case 'writingSketch': return sketchHTML(node.attrs)
     case 'writingTopicLink': return `<span class="writing-topic-link" data-topic-id="${html(node.attrs!.topicId)}">[[${html(node.attrs!.label)}]]</span>`
     case 'writingFootnote': return `<sup class="writing-footnote-ref"><a href="#fn-${encodeURIComponent(String(node.attrs!.id))}" title="${html(node.attrs!.text)}" aria-label="Footnote: ${html(node.attrs!.text)}">※</a></sup>`
     case 'writingEmbed': { const embed = parseWritingEmbed(String(node.attrs!.url)); if (!embed) throw new Error('An external video URL is unsafe. Export was not created.'); return `<p class="external-video"><a href="${html(embed.url)}" rel="noreferrer noopener">Open ${embed.provider === 'youtube' ? 'YouTube' : 'Vimeo'} video</a> <small>External video loads only when opened.</small></p>` }
@@ -71,6 +74,10 @@ function mdMark(text: string, mark: WritingMark): string {
   if (mark.type === 'strike') return `~~${text}~~`
   if (mark.type === 'underline') return `<u>${text}</u>`
   if (mark.type === 'highlight') return `<mark>${text}</mark>`
+  if (mark.type === 'writingSourceLink') {
+    const target = String(mark.attrs!.target)
+    return `${mark.attrs!.embed ? '!' : ''}[[${target}${text === markdown(target) ? '' : '|' + text}]]`
+  }
   if (mark.type === 'link') return `[${text}](${link(String(mark.attrs!.href))})`
   return text
 }
@@ -114,6 +121,7 @@ function mdNode(node: WritingNode, assets: Map<string, ExportAsset>, concepts: E
     case 'tableRow': return children(' | ')
     case 'tableCell': case 'tableHeader': return children('<br>')
     case 'writingCitation': { const a = node.attrs!, title = a.url ? `[${markdown(a.sourceTitle)}](${link(String(a.url))})` : markdown(a.sourceTitle), locator = a.page ? `page ${a.page}` : `characters ${Number(a.start) + 1}–${a.end}`; return `${String(a.quote).split('\n').map((line) => `> ${markdown(line)}`).join('\n')}\n>\n> — ${title} (${locator}; source ${markdown(a.sourceId)}, version ${markdown(a.versionId)})` }
+    case 'writingSketch': return sketchMarkdown(node.attrs)
     case 'writingTopicLink': return `[[${String(node.attrs!.label).replace(/[[\]\n]/g, '')}]]`
     case 'writingFootnote': return `[^fn-${encodeURIComponent(String(node.attrs!.id))}]`
     case 'writingEmbed': { const embed = parseWritingEmbed(String(node.attrs!.url)); if (!embed) throw new Error('An external video URL is unsafe.'); return `[${embed.provider === 'youtube' ? 'YouTube' : 'Vimeo'} video](${embed.url})` }

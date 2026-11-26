@@ -111,7 +111,7 @@ describe('with a world', () => {
   })
 
   it.each([
-    ['sqlite', 'on this local service'],
+    ['sqlite', 'in the Worldview service’s workspace folder'],
     ['idb', 'in browser storage'],
     ['memory', 'in this session’s memory'],
   ] as const)('describes the actual %s working-copy location without claiming it is the only copy', async (kind, location) => {
@@ -119,8 +119,8 @@ describe('with a world', () => {
     const past = Date.now() - 40 * 86_400_000
     act(() => useWorld.setState((state) => ({ settings: { ...state.settings!, createdAt: past, lastBackupAt: null } })))
     render(<Banners />)
-    expect(text()).toContain(`Its working copy is stored ${location}.`)
-    expect(text()).toContain('has never been exported')
+    expect(text()).toContain(`Your working copy is saved ${location}.`)
+    expect(text()).toContain('Export a separate backup')
     expect(text()).not.toMatch(/only copy|only in this browser/)
     expect(button(/^Export now$/)).toBeTruthy()
     act(() => useWorld.setState((state) => ({ settings: { ...state.settings!, lastBackupAt: past } })))

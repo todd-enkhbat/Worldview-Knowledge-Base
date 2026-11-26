@@ -1,7 +1,13 @@
 export const READING_KV = 'reading.v1'
 export type ReadingStatus = 'unread' | 'reading' | 'read'
 export type HighlightColor = 'yellow' | 'blue' | 'rose'
-export interface ReadingFolder { id: string; name: string; parentId: string | null; createdAt: number; deletedAt?: number | null }
+export interface ReadingFolder {
+  id: string; name: string; parentId: string | null; createdAt: number; deletedAt?: number | null
+  kind?: 'folder' | 'section' | 'concept' | 'note'; typeLabel?: string; description?: string
+  icon?: string; iconAssetId?: string | null; coverAssetId?: string | null
+  coverPreset?: 'earth' | 'library' | 'forest' | 'architecture' | 'sky' | 'none'; coverPosition?: number
+  linkedTopicId?: string
+}
 export interface ReadingItem {
   sourceId: string
   folderId: string | null

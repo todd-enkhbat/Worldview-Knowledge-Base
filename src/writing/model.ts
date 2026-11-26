@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { validWritingSketch } from './sketch.ts'
 import type { WritingAppearance, WritingDocument, WritingNode, WritingSnapshot } from './types.ts'
 
 export const MAX_WRITING_BYTES = 4 * 1024 * 1024
@@ -32,8 +33,8 @@ function attrs(value: unknown, validators: Record<string, (value: unknown) => bo
 }
 const textAlign = (value: unknown) => ['left', 'center', 'right', 'justify'].includes(String(value))
 const bounded = (max: number) => (value: unknown) => typeof value === 'string' && value.length <= max && !value.includes('\0')
-const nodes = new Set(['doc', 'paragraph', 'text', 'heading', 'blockquote', 'bulletList', 'orderedList', 'listItem', 'codeBlock', 'hardBreak', 'horizontalRule', 'writingMedia', 'writingEmbed', 'writingCitation', 'writingTopicLink', 'writingFootnote', 'table', 'tableRow', 'tableCell', 'tableHeader'])
-const leaf = new Set(['text', 'hardBreak', 'horizontalRule', 'writingMedia', 'writingEmbed', 'writingCitation', 'writingTopicLink', 'writingFootnote'])
+const nodes = new Set(['doc', 'paragraph', 'text', 'heading', 'blockquote', 'bulletList', 'orderedList', 'listItem', 'codeBlock', 'hardBreak', 'horizontalRule', 'writingMedia', 'writingEmbed', 'writingCitation', 'writingSketch', 'writingTopicLink', 'writingFootnote', 'table', 'tableRow', 'tableCell', 'tableHeader'])
+const leaf = new Set(['text', 'hardBreak', 'horizontalRule', 'writingMedia', 'writingEmbed', 'writingCitation', 'writingSketch', 'writingTopicLink', 'writingFootnote'])
 const inline = new Set(['text', 'hardBreak', 'writingTopicLink', 'writingFootnote'])
 const identifier = (value: unknown) => typeof value === 'string' && value.length > 0 && value.length <= 1000 && !value.includes('\0')
 const offset = (value: unknown) => Number.isSafeInteger(value) && Number(value) >= 0
@@ -63,6 +64,8 @@ export function validateWritingContent(value: unknown): WritingNode {
       attrs(raw.attrs, { sourceId: identifier, versionId: identifier, sourceTitle: bounded(1000), quote: bounded(200000), start: offset, end: offset, url: safeWritingLink, page: (value) => Number.isSafeInteger(value) && Number(value) > 0 && Number(value) <= 100000 })
       const citation = raw.attrs as Record<string, unknown> | undefined
       if (!citation || !identifier(citation.sourceId) || !identifier(citation.versionId) || typeof citation.sourceTitle !== 'string' || typeof citation.quote !== 'string' || !citation.quote.trim() || !offset(citation.start) || !offset(citation.end) || Number(citation.end) - Number(citation.start) !== citation.quote.length) throw invalid()
+    } else if (type === 'writingSketch') {
+      if (!object(raw.attrs) || !validWritingSketch(raw.attrs)) throw invalid()
     } else if (type === 'writingTopicLink') {
       attrs(raw.attrs, { topicId: identifier, label: bounded(300) })
       if (!object(raw.attrs) || !identifier(raw.attrs.topicId) || typeof raw.attrs.label !== 'string' || !raw.attrs.label.trim()) throw invalid()
@@ -82,6 +85,10 @@ export function validateWritingContent(value: unknown): WritingNode {
         if (['bold', 'italic', 'strike', 'code', 'underline','writingAi'].includes(mark.type)) attrs(mark.attrs, {})
         else if (mark.type === 'textStyle') attrs(mark.attrs, { color: safeColor, backgroundColor: safeColor, fontFamily: safeFont, fontSize: safeSize })
         else if (mark.type === 'highlight') attrs(mark.attrs, { color: safeColor })
+        else if (mark.type === 'writingSourceLink') {
+          const a = mark.attrs
+          if (!object(a) || !identifier(a.sourceId) || !identifier(a.target) || /[[\]\r\n|]/u.test(String(a.target)) || typeof a.embed !== 'boolean' || Object.keys(a).some(k => !['sourceId','target','embed'].includes(k))) throw invalid()
+        }
         else if (mark.type === 'writingQuote') {
           if (!object(mark.attrs) || !identifier(mark.attrs.quoteId) || Object.keys(mark.attrs).length !== 1) throw invalid()
         }
@@ -118,6 +125,7 @@ export function plainTextFromWriting(node: WritingNode): string {
   if (node.type === 'hardBreak') return '\n'
   if (node.type === 'horizontalRule') return '---'
   if (node.type === 'writingCitation') return `${String(node.attrs?.quote ?? '')}\n— ${String(node.attrs?.sourceTitle ?? 'Source')}`
+  if (node.type === 'writingSketch') return `[Sketch: ${String(node.attrs?.title || 'Drawing')}]`
   if (node.type === 'writingTopicLink') return `[[${String(node.attrs?.label ?? '')}]]`
   if (node.type === 'writingFootnote') return `[Note: ${String(node.attrs?.text ?? '')}]`
   if (node.type === 'writingEmbed') return String(node.attrs?.url ?? '')

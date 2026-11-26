@@ -360,3 +360,17 @@ body[data-workspace-theme] .hud-dialog-frame .text-concrete { color: var(--kb-mu
 
 .knowledge-workbench .knowledge-banners { max-height:30dvh; overflow-y:auto; }
 .knowledge-reader { overflow-y:auto; }
+
+/* Shared title typography, matching Your atlas; sizes remain contextual. */
+.knowledge-workbench.knowledge-workbench.knowledge-workbench :is(h1,h2,h3,h4,h5,h6,.source-editor-title,.writing-document-title,.hierarchy-page-title) {
+  font-family:'Alte Haas',var(--font-sans,Inter,sans-serif);
+  font-weight:400;
+  letter-spacing:-.062em;
+  text-transform:none;
+}
+.knowledge-workbench .reading-library .source-editor-title,
+.knowledge-workbench .writing-document-title {
+  font-family:'Alte Haas',var(--font-sans,Inter,sans-serif);
+  font-weight:400;
+  letter-spacing:-.062em;
+}

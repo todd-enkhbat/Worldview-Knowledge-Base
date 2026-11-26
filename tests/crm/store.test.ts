@@ -278,3 +278,13 @@ it('filters the full reminder collection by local day and completion before sort
   expect(show('Upcoming').rows.map(t=>t.id)).toEqual(['future'])
   expect(show('Completed').total).toBe(24)
 })
+it('adds a contact to multiple groups atomically, preserving previous groups and rejecting incompatible batches', () => {
+  const contact = person('multi-group-person')
+  const first = create('groups', { id: 'multi-first', name: 'Founders', entityType: 'person' }), second = create('groups', { id: 'multi-second', name: 'Columbia', entityType: 'person' }), third = create('groups', { id: 'multi-third', name: 'Friends', entityType: 'person' })
+  cmd('membership', { groupId: first.id, entity: { type: 'person', id: contact.id } })
+  cmd('memberships_add', { groupIds: [second.id, third.id, second.id], entity: { type: 'person', id: contact.id } })
+  expect(store.rows('memberships', false).filter(row => row.entityId === contact.id).map(row => row.groupId).sort()).toEqual([first.id, second.id, third.id].sort())
+  const another = person('multi-bad-person')
+  expect(() => cmd('memberships_add', { groupIds: [first.id, 'missing-group'], entity: { type: 'person', id: another.id } })).toThrow('compatible available')
+  expect(store.rows('memberships', false).filter(row => row.entityId === another.id)).toEqual([])
+})

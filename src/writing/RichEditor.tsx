@@ -4,7 +4,7 @@ import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useSta
 import { EditorContent, useEditor, useEditorState, type Editor } from '@tiptap/react'
 import type { ChainedCommands } from '@tiptap/core'
 import { Selection } from '@tiptap/pm/state'
-import { ArrowClockwise, ArrowCounterClockwise, Code, Image, Link as LinkIcon, LinkBreak, ListBullets, ListNumbers, Minus, MusicNote, TextAlignCenter, TextAlignJustify, TextAlignLeft, TextAlignRight, TextB, TextItalic, TextStrikethrough, TextUnderline, VideoCamera, X, ArrowUp, ArrowDown, DotsSixVertical } from '@phosphor-icons/react'
+import { ArrowClockwise, ArrowCounterClockwise, Code, Image, Link as LinkIcon, LinkBreak, ListBullets, ListNumbers, Minus, MusicNote, TextAlignCenter, TextAlignJustify, TextAlignLeft, TextAlignRight, TextB, TextItalic, TextStrikethrough, TextUnderline, VideoCamera, X, ArrowUp, ArrowDown, DotsSixVertical, Highlighter, Scribble, ListDashes, TextAa, CaretDown } from '@phosphor-icons/react'
 import { emptyWritingContent, safeWritingLink, validateWritingContent } from './model.ts'
 import { parseWritingEmbed } from './media.ts'
 import type { WritingNode } from './types.ts'
@@ -13,9 +13,10 @@ import './richEditor.css'
 
 export interface RichEditorProps {
   documentId: string
+  ariaLabel?: string
   content: WritingNode
   onChange: (content: WritingNode) => void
-  variant?: 'document' | 'notebook'
+  variant?: 'document' | 'source' | 'notebook'
   editable?: boolean
   preview?: boolean
   header?: ReactNode
@@ -43,8 +44,9 @@ function signature(content: WritingNode): string {
 export function RichEditor(props: RichEditorProps) { return <EditorSession key={props.documentId} {...props} /> }
 export default RichEditor
 
-function EditorSession({ content, onChange, variant = 'document', editable = true, preview = false, header, footer, onReady, onUpload, onInsertEmbed, topics = [], conceptActions }: RichEditorProps) {
+function EditorSession({ content, onChange, ariaLabel, variant = 'document', editable = true, preview = false, header, footer, onReady, onUpload, onInsertEmbed, topics = [], conceptActions }: RichEditorProps) {
   const notebook = variant === 'notebook'
+  const source = variant === 'source'
   const hasConcepts = !!conceptActions
   const initial = useRef<WritingNode | null>(null)
   if (!initial.current) { try { initial.current = validateWritingContent(normalizedWritingJSON(content)) } catch { initial.current = emptyWritingContent() } }
@@ -96,7 +98,9 @@ function EditorSession({ content, onChange, variant = 'document', editable = tru
       // fixed positioning origin when an ancestor establishes its own coordinate space.
       const modal = menu.closest('dialog[open]')?.getBoundingClientRect()
       const left = Math.max(0, modal?.left ?? 0) + 8, right = Math.min(window.innerWidth, modal?.right ?? window.innerWidth) - 8
-      const top = Math.max(0, modal?.top ?? 0) + 8, bottom = Math.min(window.innerHeight, modal?.bottom ?? window.innerHeight) - 8
+      const tools = menu.parentElement?.querySelector('.writing-tools')?.getBoundingClientRect()
+      const top = Math.max(0, modal?.top ?? 0, tools?.bottom ?? 0) + 8
+      const bottom = Math.min(window.innerHeight, modal?.bottom ?? window.innerHeight) - 8
       menu.style.maxWidth = Math.max(0, right - left) + 'px'
       menu.style.maxHeight = Math.max(0, bottom - top) + 'px'
       menu.style.left = '0px'; menu.style.top = '0px'
@@ -132,7 +136,7 @@ function EditorSession({ content, onChange, variant = 'document', editable = tru
     extensions, content: saved.current, editable: editable && !preview,
     immediatelyRender: false, shouldRerenderOnTransaction: false,
     editorProps: {
-      attributes: { class: 'writing-rich-body', role: 'textbox', 'aria-label': notebook ? 'Reading note' : 'Document body', 'aria-multiline': 'true', 'aria-readonly': String(!editable || preview), spellcheck: 'true' },
+      attributes: { class: 'writing-rich-body', role: 'textbox', 'aria-label': ariaLabel ?? (notebook ? 'Reading note' : 'Document body'), 'aria-multiline': 'true', 'aria-readonly': String(!editable || preview), spellcheck: 'true' },
       transformPastedHTML(html) {
         if (/<(?:img|iframe|video|audio|object|embed|svg)\b/i.test(html)) setNotice('Pasted remote media was omitted. Upload a local file or use a video link.')
         return sanitizeWritingPasteHTML(html)
@@ -146,9 +150,11 @@ function EditorSession({ content, onChange, variant = 'document', editable = tru
           if ((event.metaKey || event.ctrlKey) && event.shiftKey && !event.altKey && event.key.toLowerCase() === 'k') {
             event.preventDefault(); conceptButton.current.click(); return true
           }
-          if ((event.altKey || event.shiftKey) && event.key === 'F10' || event.key === 'ContextMenu') {
-            event.preventDefault(); conceptButton.current.focus(); return true
-          }
+
+        }
+        if ((event.altKey || event.shiftKey) && event.key === 'F10' || event.key === 'ContextMenu') {
+          const command = conceptButton.current ?? selectionMenu.current?.querySelector<HTMLElement>('button')
+          if (command) { event.preventDefault(); command.focus(); return true }
         }
         if (event.key === 'Escape' && !slashState.current) setBubble(null)
         return slashHandler.current?.(event) ?? false
@@ -260,6 +266,15 @@ function EditorSession({ content, onChange, variant = 'document', editable = tru
     remember(editor); fileInput.current.accept = `${kind}/*`; fileInput.current.click()
   }
   function footnote() { if (!editor) return; remember(editor); setUrl(String(editor.getAttributes('writingFootnote').text ?? '')); setDialog('footnote'); setError('') }
+  function insertSketch() {
+    if (!editor) return
+    restore(editor)
+    // Drawings occupy their own block. Keep the sentence and its formatting intact.
+    const { $to, to } = editor.state.selection
+    const position = $to.parent.isTextblock && $to.parent.content.size ? $to.after() : to
+    editor.chain().focus().insertContentAt(position, { type: 'writingSketch', attrs: { title: '', strokes: [] } }).run()
+    remember(editor)
+  }
   const commands: MenuCommand[] = [
     { id: 'text', label: 'Normal text', hint: 'A paragraph', run: (current) => current.chain().focus().setParagraph().run() },
     { id: 'h1', label: 'Heading 1', hint: 'A major section', run: (current) => current.chain().focus().setHeading({ level: 1 }).run() },
@@ -268,6 +283,7 @@ function EditorSession({ content, onChange, variant = 'document', editable = tru
     { id: 'ordered', label: 'Numbered list', hint: 'One step at a time', run: (current) => current.chain().focus().toggleOrderedList().run() },
     { id: 'quote', label: 'Blockquote', hint: 'Indent a passage', run: (current) => current.chain().focus().setBlockquote().run() },
     { id: 'table', label: 'Table', hint: 'Compare and organize', run: (current) => current.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run() },
+    { id: 'sketch', label: 'Sketch', hint: 'Draw freehand', run: insertSketch },
     { id: 'divider', label: 'Divider', hint: 'A quiet pause', run: (current) => current.chain().focus().setHorizontalRule().run() },
     { id: 'footnote', label: 'Footnote', hint: 'Keep an aside', run: footnote },
     { id: 'image', label: 'Image', hint: 'Upload an original', run: () => pickMedia('image') },
@@ -294,8 +310,8 @@ function EditorSession({ content, onChange, variant = 'document', editable = tru
   useEffect(() => { if (!editor) return; const reposition = () => { if (!editor.isDestroyed && (editor.isFocused || conceptButton.current?.closest('.writing-selection-menu')?.contains(document.activeElement))) updateOverlays(editor); else setBubble(null) }; document.addEventListener('scroll', reposition, true); window.addEventListener('resize', reposition); return () => { document.removeEventListener('scroll', reposition, true); window.removeEventListener('resize', reposition) } }, [editor, updateOverlays])
   const sections = showSections && editor && !editor.isDestroyed ? writingSections(editor) : []
   void sectionVersion
-  return <div className={`writing-rich-editor ${notebook ? 'is-notebook' : ''} ${preview ? 'is-preview' : ''}`}>
-    {!preview && <WritingToolbar notebook={notebook} hasConcepts={hasConcepts} editor={editor} disabled={!editable} uploading={uploading} canUpload={!!onUpload} remember={() => { if (editor) remember(editor) }} apply={apply} onLink={openLink} onFootnote={footnote} showSections={showSections} onSections={() => setShowSections((value) => !value)} onPickMedia={pickMedia} onEmbed={() => {
+  return <div className={`writing-rich-editor ${notebook ? 'is-notebook' : source ? 'is-source' : ''} ${preview ? 'is-preview' : ''}`}>
+    {!preview && <WritingToolbar notebook={notebook} hasConcepts={hasConcepts} editor={editor} disabled={!editable} uploading={uploading} canUpload={!!onUpload} remember={() => { if (editor) remember(editor) }} apply={apply} onLink={openLink} onFootnote={footnote} onSketch={insertSketch} showSections={showSections} onSections={() => setShowSections((value) => !value)} onPickMedia={pickMedia} onEmbed={() => {
       if (!editor) return
       remember(editor)
       if (callbacks.current.onInsertEmbed) { restore(editor); callbacks.current.onInsertEmbed(editor) }
@@ -305,10 +321,14 @@ function EditorSession({ content, onChange, variant = 'document', editable = tru
       if (event.key === 'Escape' && !event.defaultPrevented) { event.preventDefault(); editor?.commands.focus(undefined, { scrollIntoView: false }); setBubble(null) }
     }}>
       {editor && conceptActions && <SelectionConcepts editor={editor} actions={conceptActions} primaryRef={conceptButton} onMessage={setNotice} />}
-      {(!notebook || !hasConcepts) && <div className="writing-selection-format">{[['Bold', TextB, () => apply((chain) => chain.toggleBold())], ['Italic', TextItalic, () => apply((chain) => chain.toggleItalic())], ['Highlight', TextUnderline, () => apply((chain) => chain.toggleHighlight({ color: '#fff2a8' }))], ['Link', LinkIcon, openLink]].map(([label, Icon, action]) => {
+      {(!notebook || !hasConcepts) && <div className="writing-selection-format">{[['Bold', TextB, () => apply((chain) => chain.toggleBold())], ['Italic', TextItalic, () => apply((chain) => chain.toggleItalic())], ['Highlight', Highlighter, () => apply((chain) => chain.toggleHighlight({ color: '#fff2a8' }))]].map(([label, Icon, action]) => {
         const Symbol = Icon as typeof TextB
         return <button key={String(label)} type="button" aria-label={`Selection ${label}`} aria-pressed={label === 'Bold' ? editor?.isActive('bold') : label === 'Italic' ? editor?.isActive('italic') : label === 'Highlight' ? editor?.isActive('highlight') : undefined} title={String(label)} onMouseDown={event => event.preventDefault()} onClick={action as () => void}><Symbol size={17} aria-hidden="true" /></button>
-      })}</div>}
+      })}<label className="writing-selection-color" title="Choose highlight color"><CaretDown size={12} /><select aria-label="Selection highlight color" value={editor?.getAttributes('highlight').color ?? ''} onChange={e => { const color = e.target.value; apply(chain => color ? chain.unsetBackgroundColor().setHighlight({ color }) : chain.unsetHighlight().unsetBackgroundColor()) }}>
+        <option value="">No highlight</option>{highlights.map(([name, color]) => <option key={color} value={color}>{name}</option>)}</select></label>
+        <button type="button" aria-label="Selection Link" title="Link" onMouseDown={e => e.preventDefault()} onClick={openLink}><LinkIcon size={17} aria-hidden="true" /></button>
+        <label className="writing-text-color" title="Selection text color"><span>A</span><input type="color" aria-label="Selection text color" value={/^#[a-f0-9]{6}$/i.test(editor?.getAttributes('textStyle').color ?? '') ? editor?.getAttributes('textStyle').color : '#292624'} onChange={e => { const color = e.target.value; apply(chain => chain.setColor(color)) }} /></label>
+      </div>}
     </div>}
     {slash && slashPosition && editable && !preview && <div className="writing-slash-menu" id={`${dialogId}-slash`} role="listbox" aria-label="Insert a block" style={slashPosition}><span className="writing-slash-label">Insert a block</span>{matchingCommands.length ? matchingCommands.map((command, index) => <button key={command.id} id={`${dialogId}-slash-${command.id}`} type="button" role="option" aria-selected={Math.min(slash.active, matchingCommands.length - 1) === index} onMouseDown={(event) => event.preventDefault()} onClick={() => executeSlash(command)}><strong>{command.label}</strong><small>{command.hint}</small></button>) : <p>No matching blocks.</p>}<span className="writing-slash-help">↑ ↓ to choose · Enter to insert · Esc to close</span></div>}
     {showSections && !preview && <section className="writing-section-order" aria-label="Reorder document sections"><header><strong>Sections</strong><span>Drag a handle or use the arrows.</span><button type="button" aria-label="Close section ordering" onClick={() => setShowSections(false)}><X size={15} aria-hidden="true" /></button></header>{sections.map((section, index) => <div key={`${section.from}:${section.title}`} onDragOver={(event) => { if (draggedSection.current !== null) event.preventDefault() }} onDrop={(event) => { event.preventDefault(); if (editor && draggedSection.current !== null) moveWritingSection(editor, draggedSection.current, index); draggedSection.current = null }}><button type="button" draggable={editable} disabled={!editable} aria-label={`Drag section ${section.title}`} title="Drag this section" onDragStart={(event) => { draggedSection.current = index; event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', section.title) }} onDragEnd={() => { draggedSection.current = null }}><DotsSixVertical size={18} aria-hidden="true" /></button><span>{section.title}</span><button type="button" disabled={!editable || index === 0} aria-label={`Move ${section.title} up`} onClick={() => { if (editor) moveWritingSection(editor, index, index - 1) }}><ArrowUp size={16} aria-hidden="true" /></button><button type="button" disabled={!editable || index === sections.length - 1} aria-label={`Move ${section.title} down`} onClick={() => { if (editor) moveWritingSection(editor, index, index + 1) }}><ArrowDown size={16} aria-hidden="true" /></button></div>)}</section>}
@@ -321,8 +341,17 @@ function EditorSession({ content, onChange, variant = 'document', editable = tru
   </div>
 }
 
-function WritingToolbar({ notebook, hasConcepts, editor, disabled, uploading, canUpload, remember, apply, onLink, onFootnote, showSections, onSections, onPickMedia, onEmbed }: { notebook: boolean; hasConcepts: boolean; editor: Editor | null; disabled: boolean; uploading: boolean; canUpload: boolean; remember: () => void; apply: (action: (chain: ChainedCommands) => ChainedCommands) => void; onLink: () => void; onFootnote: () => void; showSections: boolean; onSections: () => void; onPickMedia: (kind: 'image' | 'video' | 'audio') => void; onEmbed: () => void }) {
+const highlights = [['Yellow', '#fff2a8'], ['Blue', '#bfdbfe'], ['Rose', '#fecdd3'], ['Green', '#bbf7d0']]
+function WritingToolbar({ notebook, hasConcepts, editor, disabled, uploading, canUpload, remember, apply, onLink, onFootnote, onSketch, showSections, onSections, onPickMedia, onEmbed }: { notebook: boolean; hasConcepts: boolean; editor: Editor | null; disabled: boolean; uploading: boolean; canUpload: boolean; remember: () => void; apply: (action: (chain: ChainedCommands) => ChainedCommands) => void; onLink: () => void; onFootnote: () => void; onSketch: () => void; showSections: boolean; onSections: () => void; onPickMedia: (kind: 'image' | 'video' | 'audio') => void; onEmbed: () => void }) {
   const [expanded, setExpanded] = useState(false)
+  const tools = useRef<HTMLDivElement>(null), toggle = useRef<HTMLButtonElement>(null), trayId = useId()
+  useEffect(() => {
+    if (!expanded) return
+    const outside = (event: PointerEvent) => { if (!tools.current?.contains(event.target as globalThis.Node)) setExpanded(false) }
+    const escape = (event: globalThis.KeyboardEvent) => { if (event.key === 'Escape') { setExpanded(false); toggle.current?.focus(); event.preventDefault() } }
+    document.addEventListener('pointerdown', outside, true); document.addEventListener('keydown', escape)
+    return () => { document.removeEventListener('pointerdown', outside, true); document.removeEventListener('keydown', escape) }
+  }, [expanded])
   const state = useEditorState({ editor, selector: ({ editor: current }) => current ? {
     bold: current.isActive('bold'), italic: current.isActive('italic'), underline: current.isActive('underline'), strike: current.isActive('strike'), code: current.isActive('code'), bullet: current.isActive('bulletList'), ordered: current.isActive('orderedList'), link: current.isActive('link'),
     block: current.isActive('codeBlock') ? 'code' : current.isActive('blockquote') ? 'quote' : current.isActive('heading') ? `h${current.getAttributes('heading').level}` : 'paragraph',
@@ -341,23 +370,31 @@ function WritingToolbar({ notebook, hasConcepts, editor, disabled, uploading, ca
     {icon('Bullet list', ListBullets, () => apply(chain => chain.toggleBulletList()), state?.bullet)}
     {hasConcepts && !disabled && <small>Select words to make a concept.</small>}
   </div>
-  const fonts = [{ value: '', label: 'Document font' }, { value: 'Georgia, serif', label: 'Georgia' }, { value: 'Times New Roman, serif', label: 'Times New Roman' }, { value: 'Inter, sans-serif', label: 'Inter' }, { value: 'Arial, sans-serif', label: 'Arial' }, { value: 'JetBrains Mono, monospace', label: 'JetBrains Mono' }]
+  const fonts = [{ value: '', label: 'Document font' }, { value: 'Georgia, serif', label: 'Georgia' }, { value: 'Palatino, serif', label: 'Palatino' }, { value: 'Alte Haas, Helvetica, sans-serif', label: 'Alte Haas' }, { value: 'Helvetica Neue, sans-serif', label: 'Helvetica Neue' }, { value: 'Menlo, monospace', label: 'Menlo' }]
   const sizes = ['', '8px', '10px', '11px', '12px', '14px', '16px', '18px', '20px', '24px', '28px', '32px', '40px', '48px', '64px', '72px', '96px']
-  return <div className={`writing-rich-toolbar ${expanded ? 'is-expanded' : ''}`} role="group" aria-label="Document formatting" onPointerDownCapture={remember} onFocusCapture={remember}>
-    <div className="writing-toolbar-group">{icon('Undo', ArrowCounterClockwise, () => apply((chain) => chain.undo()), undefined, !state?.undo)}{icon('Redo', ArrowClockwise, () => apply((chain) => chain.redo()), undefined, !state?.redo)}</div>
-    <div className="writing-toolbar-group"><select aria-label="Text style" disabled={off} value={state?.block ?? 'paragraph'} onChange={(event) => {
+  return <div ref={tools} className={`writing-rich-toolbar writing-tools ${expanded ? 'is-expanded' : ''}`} role="group" aria-label="Document formatting" onPointerDownCapture={remember} onFocusCapture={remember}
+    onBlur={e => { if (e.relatedTarget instanceof Element && !e.currentTarget.contains(e.relatedTarget) && !editor?.view.dom.contains(e.relatedTarget)) setExpanded(false) }}>
+    <div className="writing-tools-line">
+      <select aria-label="Text style" disabled={off} value={state?.block ?? 'paragraph'} onChange={(event) => {
       const block = event.target.value
       apply((chain) => {
         if (block !== 'quote' && editor?.isActive('blockquote')) chain = chain.lift('blockquote')
         return block === 'quote' ? chain.setParagraph().setBlockquote() : block === 'code' ? chain.setCodeBlock() : block.startsWith('h') ? chain.setHeading({ level: Number(block.slice(1)) as 1 | 2 | 3 }) : chain.setParagraph()
       })
-    }}><option value="paragraph">Normal text</option><option value="h1">Heading 1</option><option value="h2">Heading 2</option><option value="h3">Heading 3</option>{state?.block && /^h[4-6]$/.test(state.block) && <option value={state.block}>Heading {state.block.slice(1)}</option>}<option value="quote">Blockquote</option><option value="code">Code block</option></select><select aria-label="Font family" disabled={off} value={state?.family ?? ''} onChange={(event) => { const value = event.target.value; apply((chain) => value ? chain.setFontFamily(value) : chain.unsetFontFamily()) }}>{state?.family && !fonts.some((font) => font.value === state.family) && <option value={state.family}>{state.family}</option>}{fonts.map((font) => <option key={font.value} value={font.value}>{font.label}</option>)}</select><select aria-label="Font size" className="writing-font-size" disabled={off} value={state?.size ?? ''} onChange={(event) => { const value = event.target.value; apply((chain) => value ? chain.setFontSize(value) : chain.unsetFontSize()) }}>{state?.size && !sizes.includes(state.size) && <option value={state.size}>{state.size.replace('px', '')}</option>}{sizes.map((size) => <option key={size} value={size}>{size ? size.replace('px', '') : 'Size'}</option>)}</select></div>
-    <div className="writing-toolbar-group">{icon('Bold', TextB, () => apply((chain) => chain.toggleBold()), state?.bold)}{icon('Italic', TextItalic, () => apply((chain) => chain.toggleItalic()), state?.italic)}{icon('Underline', TextUnderline, () => apply((chain) => chain.toggleUnderline()), state?.underline)}{icon('Strikethrough', TextStrikethrough, () => apply((chain) => chain.toggleStrike()), state?.strike)}{icon('Inline code', Code, () => apply((chain) => chain.toggleCode()), state?.code)}<label className="writing-text-color" title="Text color"><span>A</span><input type="color" aria-label="Text color" disabled={off} value={/^#[a-f\d]{6}$/i.test(state?.color ?? '') ? state!.color : '#292624'} onChange={(event) => { const value = event.target.value; apply((chain) => chain.setColor(value)) }} /></label><select className="writing-highlight-color" aria-label="Highlight color" disabled={off} value={state?.highlight ?? ''} onChange={(event) => { const value = event.target.value; apply((chain) => value ? chain.unsetBackgroundColor().setHighlight({ color: value }) : chain.unsetHighlight().unsetBackgroundColor()) }}>{state?.highlight && !['#fff2a8', '#bfdbfe', '#fecdd3', '#bbf7d0'].includes(state.highlight) && <option value={state.highlight}>Custom highlight</option>}<option value="">Highlight</option><option value="#fff2a8">Yellow</option><option value="#bfdbfe">Blue</option><option value="#fecdd3">Rose</option><option value="#bbf7d0">Green</option></select></div>
+    }}><option value="paragraph">Normal text</option><option value="h1">Heading 1</option><option value="h2">Heading 2</option><option value="h3">Heading 3</option>{state?.block && /^h[4-6]$/.test(state.block) && <option value={state.block}>Heading {state.block.slice(1)}</option>}<option value="quote">Blockquote</option><option value="code">Code block</option></select>
+      <button ref={toggle} type="button" className="writing-tool-label" aria-label="More formatting" aria-expanded={expanded} aria-controls={trayId} disabled={off} onClick={() => setExpanded(!expanded)}><TextAa size={17} />Format<CaretDown size={11} /></button>
+      <button className="writing-tool-label" type="button" disabled={off} onMouseDown={e => e.preventDefault()} onClick={onSketch}><Scribble size={17} />Sketch</button>
+      <button className="writing-tool-label" type="button" aria-label="Reorder sections" aria-expanded={showSections} disabled={off} onMouseDown={e => e.preventDefault()} onClick={onSections}><ListDashes size={16} />Sections</button>
+    </div>
+    <div className="writing-tools-tray" id={trayId} hidden={!expanded}>
+    <div className="writing-toolbar-group"><select aria-label="Font family" disabled={off} value={state?.family ?? ''} onChange={(event) => { const value = event.target.value; apply((chain) => value ? chain.setFontFamily(value) : chain.unsetFontFamily()) }}>{state?.family && !fonts.some((font) => font.value === state.family) && <option value={state.family}>{state.family}</option>}{fonts.map((font) => <option key={font.value} value={font.value}>{font.label}</option>)}</select><select aria-label="Font size" className="writing-font-size" disabled={off} value={state?.size ?? ''} onChange={(event) => { const value = event.target.value; apply((chain) => value ? chain.setFontSize(value) : chain.unsetFontSize()) }}>{state?.size && !sizes.includes(state.size) && <option value={state.size}>{state.size.replace('px', '')}</option>}{sizes.map((size) => <option key={size} value={size}>{size ? size.replace('px', '') : 'Size'}</option>)}</select></div>
+    <div className="writing-toolbar-group">{icon('Bold', TextB, () => apply((chain) => chain.toggleBold()), state?.bold)}{icon('Italic', TextItalic, () => apply((chain) => chain.toggleItalic()), state?.italic)}{icon('Underline', TextUnderline, () => apply((chain) => chain.toggleUnderline()), state?.underline)}{icon('Strikethrough', TextStrikethrough, () => apply((chain) => chain.toggleStrike()), state?.strike)}{icon('Inline code', Code, () => apply((chain) => chain.toggleCode()), state?.code)}<label className="writing-text-color" title="Text color"><span>A</span><input type="color" aria-label="Text color" disabled={off} value={/^#[a-f\d]{6}$/i.test(state?.color ?? '') ? state!.color : '#292624'} onChange={(event) => { const value = event.target.value; apply((chain) => chain.setColor(value)) }} /></label><select className="writing-highlight-color" aria-label="Highlight color" disabled={off} value={state?.highlight ?? ''} onChange={(event) => { const value = event.target.value; apply((chain) => value ? chain.unsetBackgroundColor().setHighlight({ color: value }) : chain.unsetHighlight().unsetBackgroundColor()) }}>{state?.highlight && !['#fff2a8', '#bfdbfe', '#fecdd3', '#bbf7d0'].includes(state.highlight) && <option value={state.highlight}>Custom highlight</option>}<option value="">Highlight</option><option value="#fff2a8">Yellow</option><option value="#bfdbfe">Blue</option><option value="#fecdd3">Rose</option><option value="#bbf7d0">Green</option></select><label className="writing-text-color" title="Custom highlight"><Highlighter size={17}/><input type="color" aria-label="Custom highlight color" disabled={off} value={/^#[a-f0-9]{6}$/i.test(state?.highlight ?? '') ? state!.highlight : '#fff2a8'} onChange={e => { const color = e.target.value; apply(chain => chain.unsetBackgroundColor().setHighlight({ color })) }} /></label></div>
     <div className="writing-toolbar-group writing-toolbar-secondary">{icon('Bullet list', ListBullets, () => apply((chain) => chain.toggleBulletList()), state?.bullet)}{icon('Numbered list', ListNumbers, () => apply((chain) => chain.toggleOrderedList()), state?.ordered)}{icon('Align left', TextAlignLeft, () => apply((chain) => chain.setTextAlign('left')), state?.alignment === 'left')}{icon('Align center', TextAlignCenter, () => apply((chain) => chain.setTextAlign('center')), state?.alignment === 'center')}{icon('Align right', TextAlignRight, () => apply((chain) => chain.setTextAlign('right')), state?.alignment === 'right')}{icon('Justify text', TextAlignJustify, () => apply((chain) => chain.setTextAlign('justify')), state?.alignment === 'justify')}</div>
     <div className="writing-toolbar-group">{icon('Edit link', LinkIcon, onLink, state?.link)}{icon('Unlink', LinkBreak, () => apply((chain) => chain.extendMarkRange('link').unsetLink()), undefined, !state?.link)}{icon('Insert divider', Minus, () => apply((chain) => chain.setHorizontalRule()))}</div>
     <div className="writing-toolbar-group writing-toolbar-secondary">{icon('Insert image', Image, () => onPickMedia('image'), undefined, !canUpload || uploading)}{icon('Insert video file', VideoCamera, () => onPickMedia('video'), undefined, !canUpload || uploading)}{icon('Insert audio file', MusicNote, () => onPickMedia('audio'), undefined, !canUpload || uploading)}<button className="writing-embed-button" type="button" disabled={off} onMouseDown={(event) => event.preventDefault()} onClick={onEmbed}>Embed video</button></div>
-    <div className="writing-toolbar-group writing-toolbar-secondary"><button type="button" disabled={off} onMouseDown={(event) => event.preventDefault()} onClick={() => apply((chain) => chain.insertTable({ rows: 3, cols: 3, withHeaderRow: true }))}>Table</button><button type="button" aria-label="Insert footnote" disabled={off} onMouseDown={(event) => event.preventDefault()} onClick={onFootnote}>Footnote</button><button type="button" aria-label="Reorder sections" aria-expanded={showSections} disabled={off} onMouseDown={(event) => event.preventDefault()} onClick={onSections}>Sections</button></div>
+    <div className="writing-toolbar-group writing-toolbar-secondary"><button type="button" disabled={off} onMouseDown={(event) => event.preventDefault()} onClick={() => apply((chain) => chain.insertTable({ rows: 3, cols: 3, withHeaderRow: true }))}>Table</button><button type="button" aria-label="Insert footnote" disabled={off} onMouseDown={(event) => event.preventDefault()} onClick={onFootnote}>Footnote</button></div>
+    <div className="writing-toolbar-group">{icon('Undo', ArrowCounterClockwise, () => apply(chain => chain.undo()), undefined, !state?.undo)}{icon('Redo', ArrowClockwise, () => apply(chain => chain.redo()), undefined, !state?.redo)}</div>
     {state?.table && <div className="writing-toolbar-group writing-table-actions"><button type="button" disabled={off} onMouseDown={(event) => event.preventDefault()} onClick={() => apply((chain) => chain.addRowAfter())}>Add row</button><button type="button" disabled={off} onMouseDown={(event) => event.preventDefault()} onClick={() => apply((chain) => chain.addColumnAfter())}>Add column</button><button type="button" disabled={off} onMouseDown={(event) => event.preventDefault()} onClick={() => apply((chain) => chain.mergeOrSplit())}>Merge / split</button><button type="button" disabled={off} onMouseDown={(event) => event.preventDefault()} onClick={() => apply((chain) => chain.deleteRow())}>Remove row</button><button type="button" disabled={off} onMouseDown={(event) => event.preventDefault()} onClick={() => apply((chain) => chain.deleteColumn())}>Remove column</button><button type="button" disabled={off} onMouseDown={(event) => event.preventDefault()} onClick={() => apply((chain) => chain.deleteTable())}>Remove table</button></div>}
-    <button type="button" className="writing-toolbar-more" aria-label="More formatting" aria-expanded={expanded} onClick={() => setExpanded((value) => !value)}>{expanded ? 'Less' : 'More'}</button>
+    </div>
   </div>
 }

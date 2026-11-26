@@ -12,6 +12,9 @@ export type MdInline =
   | { type: 'em'; children: MdInline[] }
   | { type: 'link'; href: string; title?: string; children: MdInline[] }
   | { type: 'br' }
+  | { type: 'wiki'; raw: string }
+  | { type: 'relative'; raw: string; url: string; children: MdInline[] }
+  | { type: 'highlight' | 'strike'; children: MdInline[] }
 
 export type MdBlock =
   | { type: 'heading'; level: 1 | 2 | 3 | 4 | 5 | 6; children: MdInline[] }
@@ -20,6 +23,7 @@ export type MdBlock =
   | { type: 'list'; ordered: boolean; start: number; items: MdBlock[][] }
   | { type: 'blockquote'; children: MdBlock[] }
   | { type: 'hr' }
+  | { type: 'table'; rows: MdInline[][][] }
 
 /** Nesting cap for quotes/lists and for emphasis, so hostile input cannot blow the stack. */
 const MAX_DEPTH = 12
@@ -63,12 +67,13 @@ function interrupts(line: string): boolean {
   return !!it && it.text.trim() !== '' && (!it.ordered || parseInt(it.marker, 10) === 1)
 }
 
-export function parseMarkdown(src: string): MdBlock[] {
+export function parseMarkdown(src: string, options: { obsidian?: boolean } = {}): MdBlock[] {
   const lines = src.replace(/\r\n?/g, '\n').replace(/\t/g, '    ').split('\n')
-  return parseBlocks(lines, 0)
+  return parseBlocks(lines, 0, !!options.obsidian)
 }
 
-function parseBlocks(lines: string[], depth: number): MdBlock[] {
+function parseBlocks(lines: string[], depth: number, obsidian: boolean): MdBlock[] {
+  const inline = (text: string) => parseInline(text, { depth: 0, inLink: false, obsidian })
   const out: MdBlock[] = []
   let i = 0
   while (i < lines.length) {
@@ -94,10 +99,18 @@ function parseBlocks(lines: string[], depth: number): MdBlock[] {
       continue
     }
 
+    if (obsidian && line.includes('|') && /^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)*\|?\s*$/.test(lines[i+1] ?? '')) {
+      const cells = (row: string) => row.trim().replace(/^\||\|$/g, '').split(/(?<!\\)\|/).map(cell => inline(cell.trim()))
+      const rows = [cells(line)]
+      i += 2
+      while (i < lines.length && !isBlank(lines[i]) && lines[i].includes('|')) rows.push(cells(lines[i++]))
+      out.push({ type: 'table', rows })
+      continue
+    }
     const heading = HEADING_RE.exec(line)
     if (heading) {
       const level = heading[1].length as 1 | 2 | 3 | 4 | 5 | 6
-      out.push({ type: 'heading', level, children: parseInline(heading[2] ?? '') })
+      out.push({ type: 'heading', level, children: inline(heading[2] ?? '') })
       i++
       continue
     }
@@ -116,8 +129,8 @@ function parseBlocks(lines: string[], depth: number): MdBlock[] {
       }
       out.push(
         depth < MAX_DEPTH
-          ? { type: 'blockquote', children: parseBlocks(inner, depth + 1) }
-          : { type: 'paragraph', children: parseInline(inner.join('\n')) },
+          ? { type: 'blockquote', children: parseBlocks(inner, depth + 1, obsidian) }
+          : { type: 'paragraph', children: inline(inner.join('\n')) },
       )
       continue
     }
@@ -162,7 +175,7 @@ function parseBlocks(lines: string[], depth: number): MdBlock[] {
           break
         }
         list.items.push(
-          depth < MAX_DEPTH ? parseBlocks(itemLines, depth + 1) : [{ type: 'paragraph', children: parseInline(itemLines.join('\n')) }],
+          depth < MAX_DEPTH ? parseBlocks(itemLines, depth + 1, obsidian) : [{ type: 'paragraph', children: inline(itemLines.join('\n')) }],
         )
         // Blank lines between items keep the list going (a "loose" list).
         let j = i
@@ -181,7 +194,7 @@ function parseBlocks(lines: string[], depth: number): MdBlock[] {
       para.push(lines[i])
       i++
     }
-    out.push({ type: 'paragraph', children: parseInline(para.map((l) => l.trimStart()).join('\n').trimEnd()) })
+    out.push({ type: 'paragraph', children: inline(para.map((l) => l.trimStart()).join('\n').trimEnd()) })
   }
   return out
 }
@@ -201,6 +214,7 @@ const BARE_URL_RE = /https?:\/\/[^\s<>]+/iy
 interface InlineCtx {
   depth: number
   inLink: boolean
+  obsidian?: boolean
 }
 
 export function parseInline(src: string, ctx: InlineCtx = { depth: 0, inLink: false }): MdInline[] {
@@ -212,7 +226,7 @@ export function parseInline(src: string, ctx: InlineCtx = { depth: 0, inLink: fa
     buf = ''
   }
   const pushLink = (url: string, children: MdInline[], title?: string) => {
-    const href = safeHref(url)
+    const href = safeHref(url) ?? (ctx.obsidian && /^mailto:/i.test(url) ? url : null)
     flush()
     if (!href) {
       out.push(...children) // unsafe target: keep the words, drop the link
@@ -243,7 +257,7 @@ export function parseInline(src: string, ctx: InlineCtx = { depth: 0, inLink: fa
     }
 
     if (c === '\n') {
-      if (/ {2,}$/.test(buf)) {
+      if (ctx.obsidian || / {2,}$/.test(buf)) {
         buf = buf.replace(/ +$/, '')
         flush()
         out.push({ type: 'br' })
@@ -281,10 +295,32 @@ export function parseInline(src: string, ctx: InlineCtx = { depth: 0, inLink: fa
       }
     }
 
+    if (ctx.obsidian && !ctx.inLink && (src.startsWith('[[', i) || src.startsWith('![[', i))) {
+      const end = src.indexOf(']]', i + 2)
+      if (end !== -1 && !/[\n\r]/.test(src.slice(i, end))) {
+        flush()
+        out.push({ type: 'wiki', raw: src.slice(i,end+2) })
+        i = end + 2
+        continue
+      }
+    }
+    if (ctx.obsidian && ctx.depth < MAX_DEPTH && (src.startsWith('==',i) || src.startsWith('~~',i))) {
+      const end = src.indexOf(src.slice(i,i+2),i+2)
+      if (end > i+2) {
+        flush()
+        out.push({ type: c === '=' ? 'highlight' : 'strike', children: parseInline(src.slice(i+2,end), { ...ctx, depth:ctx.depth+1 }) })
+        i = end+2
+        continue
+      }
+    }
     if (c === '[' && !ctx.inLink && ctx.depth < MAX_DEPTH) {
       const l = matchLink(src, i)
       if (l) {
-        pushLink(l.url, parseInline(l.text, { depth: ctx.depth + 1, inLink: true }), l.title)
+        const children = parseInline(l.text, { ...ctx, depth: ctx.depth + 1, inLink:true })
+        if (ctx.obsidian && l.url && !/^(?:[a-z][a-z\d+.-]*:|[/\\]{2})/i.test(l.url)) {
+          flush()
+          out.push({ type:'relative', raw:src.slice(i,l.end), url:l.url, children })
+        } else pushLink(l.url, children, l.title)
         i = l.end
         continue
       }
@@ -305,7 +341,7 @@ export function parseInline(src: string, ctx: InlineCtx = { depth: 0, inLink: fa
       const em = matchEmphasis(src, i)
       if (em) {
         flush()
-        const children = parseInline(src.slice(em.start, em.end), { depth: ctx.depth + 1, inLink: ctx.inLink })
+        const children = parseInline(src.slice(em.start, em.end), { ...ctx, depth: ctx.depth + 1, inLink: ctx.inLink })
         out.push(em.strong ? { type: 'strong', children } : { type: 'em', children })
         i = em.close
         continue
@@ -498,6 +534,9 @@ function renderInlines(nodes: MdInline[], cls: MdClasses, key: string): ReactNod
     switch (n.type) {
       case 'text':
         return n.text
+      case 'wiki': case 'relative': return n.raw
+      case 'highlight': return h('mark', {key:k},renderInlines(n.children,cls,k))
+      case 'strike': return h('s', {key:k},renderInlines(n.children,cls,k))
       case 'br':
         return h('br', { key: k })
       case 'code':
@@ -520,6 +559,7 @@ function renderBlocks(blocks: MdBlock[], cls: MdClasses, key: string, inItem = f
   return blocks.map((b, i) => {
     const k = `${key}.${i}`
     switch (b.type) {
+      case 'table': return h('table',{key:k},h('tbody',{},b.rows.map((row,i) => h('tr',{key:i},row.map((cell,j) => h(i === 0 ? 'th' : 'td',{key:j},renderInlines(cell,cls,k+'.'+i+'.'+j)))))))
       case 'heading': {
         const tag = `h${b.level}` as const
         return h(tag, { key: k, className: cls[tag] }, renderInlines(b.children, cls, k))

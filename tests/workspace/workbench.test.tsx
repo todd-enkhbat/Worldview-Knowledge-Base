@@ -73,7 +73,7 @@ describe('readable knowledge workspace', () => {
     expect(useWorld.getState().nodes.size).toBe(1)
     act(() => button('Read it').click())
     await render('library', location.hash)
-    expect(host.querySelector('.knowledge-prose')?.textContent).toContain('original evidence should survive provider outages')
+    await until(() => host.querySelector('[aria-label="Document content"]')?.textContent?.includes('original evidence should survive provider outages') === true)
     expect(host.querySelector('.knowledge-reader-actions')?.textContent).toContain('Explore this record')
     expect(host.querySelector('canvas')).toBeNull()
   })
@@ -141,5 +141,5 @@ it('opens the current version only when explicitly requested after a pinned quot
   const link = reader.querySelector<HTMLAnchorElement>('a')!
   expect(link.textContent).toBe('Read current version')
   await render('library', link.hash)
-  expect(host.querySelector('.knowledge-prose')?.textContent).toContain(words)
+  await until(() => host.querySelector('[aria-label="Document content"]')?.textContent?.includes(words) === true)
 })

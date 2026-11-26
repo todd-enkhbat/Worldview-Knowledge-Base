@@ -52,6 +52,7 @@ function useActionState() {
 }
 
 export interface BannersProps {
+  hideBackupReminder?: boolean
   /** Positioning is the host's job (e.g. "absolute inset-x-0 top-0 z-40"). */
   className?: string
 }
@@ -60,7 +61,7 @@ export interface BannersProps {
  * Durability banners, most urgent first: memory-only fallback, interrupted import, repo
  * errors (reload), read-only tab, auto-backup failure / lost folder permission, backup nag.
  */
-export function Banners({ className = '' }: BannersProps) {
+export function Banners({ className = '', hideBackupReminder = false }: BannersProps) {
   const status = useRepoStatus()
   const settings = useWorld((s) => s.settings)
   const now = useNow(60 * 60_000)
@@ -95,7 +96,7 @@ export function Banners({ className = '' }: BannersProps) {
     nag: settings !== null && shouldNag(settings, now),
     nagDismissed,
     firstRunDone: settings?.firstRunComplete === true,
-  })
+  }).filter(kind => !hideBackupReminder || kind !== 'backup-nag')
   if (kinds.length === 0 && !error) return null
 
   const exportNow = () => run('export', () => saveWorldArchive())
@@ -219,7 +220,7 @@ export function Banners({ className = '' }: BannersProps) {
       case 'backup-nag': {
         const never = settings?.lastBackupAt === null
         const storeKind = isRepoReady() ? getStore().info.kind : null
-        const location = storeKind === 'sqlite' ? 'on this local service' : storeKind === 'idb' ? 'in browser storage' : 'in this session’s memory'
+        const location = storeKind === 'sqlite' ? 'in the Worldview service’s workspace folder' : storeKind === 'idb' ? 'in browser storage' : 'in this session’s memory'
         return (
           <Banner
             key={k}
@@ -245,7 +246,7 @@ export function Banners({ className = '' }: BannersProps) {
             }
           >
             {never
-              ? `This world has never been exported. Its working copy is stored ${location}.`
+              ? `Your working copy is saved ${location}. Export a separate backup to protect it.`
               : `Last backup ${backupAgeLabel(settings?.lastBackupAt ?? null, now)}. Its working copy is stored ${location}.`}
           </Banner>
         )

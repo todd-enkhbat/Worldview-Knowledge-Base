@@ -28,7 +28,7 @@ export function useWritingDraft(document: WritingDocument, createOnEdit = false)
     }
     if (mounted.current) { setStatus('saving'); setError('') }
     const fields = writingPublicationValue(submitted)
-    const write = needsCreation.current ? createWritingDocument(fields, submitted.id) : updateWritingDocument(submitted.id, fields, { expectedUpdatedAt })
+    const write = needsCreation.current ? createWritingDocument({ ...fields, ...(submitted.basedOnSourceId ? { basedOnSourceId: submitted.basedOnSourceId } : {}) }, submitted.id) : updateWritingDocument(submitted.id, fields, { expectedUpdatedAt })
     const action = write.then((saved) => {
       if (!current()) return
       needsCreation.current = false

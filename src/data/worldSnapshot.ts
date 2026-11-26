@@ -1,4 +1,6 @@
+import { decodeReading } from '../reading/model.ts'
 import { decodeStudy, STUDY_KEY } from '../study/model.ts'
+import { decodeTodos, TODO_KEY } from './todos.ts'
 import { getBookshelfOriginalReferences, validateShelfBook } from '../bookshelf/model.ts'
 import { decodePlaces } from '../places/types.ts'
 import { CALENDAR_PLACES_KEY, decodeCalendarPlaces } from '../places/calendarModel.ts'
@@ -6,7 +8,7 @@ import { crmAssetReferences } from '../crm/model.ts'
 import type { WorldSnapshot, WorldStore } from './WorldStore.ts'
 
 /** Device handles, credentials and recovery markers never enter a portable snapshot. */
-export const PORTABLE_WORLD_KEYS: readonly string[] = ['chat.v1', 'overlay.landauerPaid', 'ai.usage', 'knowledge.v1', 'knowledge.receipts.v1', 'workspace.v1', 'collections.v1', 'artifacts.v1', 'voiceInbox.v1', 'reading.v1', 'quotes.v1', 'writing.v1', 'writingHistory.v1', 'bookshelves.v1', 'assistantEdits.v1', 'crm.v1', 'places.v1', 'places.calendar.v1', STUDY_KEY]
+export const PORTABLE_WORLD_KEYS: readonly string[] = ['chat.v1', 'overlay.landauerPaid', 'ai.usage', 'knowledge.v1', 'knowledge.receipts.v1', 'workspace.v1', 'collections.v1', 'artifacts.v1', 'voiceInbox.v1', 'reading.v1', 'quotes.v1', 'writing.v1', 'writing.substack.v1', 'writingHistory.v1', 'bookshelves.v1', 'assistantEdits.v1', 'crm.v1', 'places.v1', 'places.calendar.v1', STUDY_KEY, TODO_KEY]
 
 export async function readWorldSnapshot(store: WorldStore, keys: readonly string[] = PORTABLE_WORLD_KEYS): Promise<WorldSnapshot> {
   if (keys.some((key) => !PORTABLE_WORLD_KEYS.includes(key))) throw new Error('Only portable world state can be included in a backup snapshot.')
@@ -19,6 +21,7 @@ export async function readWorldSnapshot(store: WorldStore, keys: readonly string
 }
 
 export function referencedWorldAssets(snapshot: WorldSnapshot): Set<string> {
+  if (snapshot.kv[TODO_KEY] !== undefined) decodeTodos(snapshot.kv[TODO_KEY])
   if (snapshot.kv[STUDY_KEY] !== undefined) decodeStudy(snapshot.kv[STUDY_KEY])
   if (snapshot.kv[CALENDAR_PLACES_KEY] !== undefined) decodeCalendarPlaces(snapshot.kv[CALENDAR_PLACES_KEY])
   if (snapshot.kv['places.v1'] !== undefined) decodePlaces(snapshot.kv['places.v1'])
@@ -45,6 +48,10 @@ export function referencedWorldAssets(snapshot: WorldSnapshot): Set<string> {
 export function writingOriginalReferences(kv: Record<string, unknown>): Set<string> {
   const result = new Set<string>(), assetId = /^writing-[a-f0-9]{64}$/
   const add = (value: unknown) => { if (typeof value !== 'string' || !assetId.test(value)) throw new Error('Writing contains an invalid original media reference. The backup was not completed.'); result.add(value) }
+  if (kv['reading.v1'] !== undefined) for (const folder of decodeReading(kv['reading.v1']).folders) {
+    if (folder.iconAssetId) add(folder.iconAssetId)
+    if (folder.coverAssetId) add(folder.coverAssetId)
+  }
   const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value)
   function content(value: unknown) {
     if (!object(value)) throw new Error('Writing contains incomplete rich text. The backup was not completed.')

@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'">
+  <title>Enki</title>
+  <link rel="stylesheet" href="enki-pet.css">
+</head>
+<body>
+  <main>
+    <button type="button" id="pet" aria-label="Enki, open or close TO-DO" aria-describedby="controls" title="Enki · Click for TO-DO. Drag to move. Option-drag to turn.">
+      <canvas id="enki-model" aria-hidden="true"></canvas>
+    </button>
+    <button type="button" id="options" aria-label="Enki tools and options" title="Enki tools and options" aria-haspopup="menu">•••</button>
+    <span id="controls">Drag to move. Option-drag or use the left and right arrow keys to turn. Escape hides Enki.</span>
+  </main>
+  <script src="enki-model-data.js"></script>
+  <script src="enki-model.js"></script>
+  <script src="enki-pet.js"></script>
+</body>
+</html>

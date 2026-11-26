@@ -120,7 +120,7 @@ it('falls back from a deleted group and a blocked photo URL, and preserves the l
 it('keeps sparse companies readable, handles image errors and opens the confirmed company record', async () => {
   const f = await popup(true, false, true, { 'lastProfileGroup:person': 'founders' }, { entityType: 'company', name: 'Acme', headline: '', role: '', current: [], schools: [], location: '', photoUrl: 'https://images.example.com/acme.png' })
   expect(f.doc.getElementById('profile-summary')!.hidden).toBe(true)
-  expect(f.doc.getElementById('profile-kind')!.textContent).toBe('Save company')
+  expect(f.doc.getElementById('quick-add')!.textContent).toBe('Save company')
   const avatar = f.doc.getElementById('profile-avatar') as HTMLImageElement
   expect(avatar.src).toBe('https://images.example.com/acme.png')
   expect(avatar.referrerPolicy).toBe('no-referrer')
@@ -145,13 +145,32 @@ it('keeps a confirmed save visible with an incomplete Experience notice', async 
 
 it('reopens a known contact in its real group without submitting a capture', async () => {
   const f = await popup(true, false, true, {}, {}, '', {recordId: 'ada', groupIds: ['founders']})
-  expect(f.doc.getElementById('profile-kind')?.textContent).toBe('Already in your CRM')
-  expect(f.doc.getElementById('group-selected-name')?.textContent).toContain('Founders')
-  const button = f.doc.getElementById('quick-add') as HTMLButtonElement
-  expect(button.textContent).toBe('Open saved record')
+  expect(f.doc.getElementById('profile-kind')?.textContent).toBe('Saved')
+  expect(f.doc.getElementById('membership-summary')?.textContent).toContain('Founders')
+  expect(f.doc.getElementById('profile-group')?.hidden).toBe(true)
+  expect(f.doc.getElementById('quick-add')?.hidden).toBe(true)
+  const button = f.doc.getElementById('open-record') as HTMLAnchorElement
+  expect(button.textContent).toBe('Open contact')
   button.click(); await settle()
   expect(f.tabs.update).toHaveBeenCalledWith(8, {url:'http://127.0.0.1:5173/#/people?person=ada',active:true})
   expect(f.send.mock.calls.some(([m]) => m.type === 'reader-profile-add')).toBe(false)
   expect(f.doc.getElementById('log-interaction')?.getAttribute('href')).toContain('person=ada&action=log-interaction')
   f.page.window.close()
+})
+it('adds another group after a confirmed save without discarding the first membership', async () => {
+  const f = await popup(true, false, true, { 'lastProfileGroup:person': 'founders' })
+  try {
+    ;(f.doc.getElementById('quick-add') as HTMLButtonElement).click(); await settle()
+    expect((f.doc.getElementById('quick-add') as HTMLButtonElement).disabled).toBe(true)
+    const another = f.doc.getElementById('add-another-group') as HTMLButtonElement
+    expect(another.hidden).toBe(false); another.click()
+    const school = [...f.doc.querySelectorAll<HTMLButtonElement>('.group-option')].find(button => button.textContent?.includes('Columbia'))!
+    school.click(); await settle()
+    expect(f.doc.getElementById('quick-add')!.hidden).toBe(true)
+    expect(f.doc.getElementById('add-another-group')!.hidden).toBe(true)
+    expect(f.send.mock.calls.filter(([m]) => m.type === 'reader-profile-add')).toHaveLength(2)
+    expect(f.send).toHaveBeenCalledWith(expect.objectContaining({ type: 'reader-profile-add', groupId: 'school' }))
+    expect(f.doc.getElementById('membership-summary')!.textContent).toContain('Founders')
+    expect(f.doc.getElementById('membership-summary')!.textContent).toContain('Columbia')
+  } finally { f.page.window.close() }
 })
