@@ -3,6 +3,7 @@ const run = promisify(require('node:child_process').execFile)
 const fs = require('node:fs/promises')
 const { join } = require('node:path')
 const { tmpdir } = require('node:os')
+const { existsSync } = require('node:fs')
 
 async function selectedWord() {
   if(process.platform!=='darwin')return {}
@@ -48,4 +49,14 @@ async function recognizeRegion() {
     await fs.rm(dir, { recursive: true, force: true })
   }
 }
-module.exports = { selectedWord, recognizeRegion, restoreFocus }
+async function recognizeScreenText(png, signal) {
+  const bundled = join(__dirname, 'helper-ocr'), compiled = existsSync(bundled)
+  const operation = run(compiled ? bundled : '/usr/bin/swift', compiled ? ['--screen-lines'] : [join(__dirname, 'helper-ocr.swift'), '--screen-lines'], {
+    timeout: 12000, maxBuffer: 250000, signal,
+  })
+  operation.child.stdin.on('error', () => {})
+  operation.child.stdin.end(png)
+  const { stdout } = await operation
+  return JSON.parse(stdout)
+}
+module.exports = { selectedWord, recognizeRegion, recognizeScreenText, restoreFocus }

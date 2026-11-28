@@ -25,6 +25,41 @@ afterEach(async () => { await act(async () => root.unmount()); host.remove(); vi
 const find = (s: string) => host.querySelector<HTMLButtonElement>(s)!
 async function click(s: string) { await act(async () => find(s).click()) }
 
+it('refreshes a visible task panel without a focus change', async () => {
+  vi.useFakeTimers()
+  try {
+    const changed = { ...saved, revision: 3, tasks: [{ ...saved.tasks[0], text: 'Updated from Reader' }] }
+    const api = vi.fn().mockResolvedValueOnce(saved).mockResolvedValueOnce(changed)
+    await act(async () => root.render(<EnkiTodos requestTodos={api} />))
+    expect(host.textContent).toContain('Finish the chapter')
+    await act(async () => vi.advanceTimersByTimeAsync(5000))
+    expect(host.textContent).toContain('Updated from Reader')
+    expect(api).toHaveBeenCalledTimes(2)
+  } finally { vi.useRealTimers() }
+})
+
+it('shows the newer text alongside a preserved draft after an edit in another window', async()=>{
+  const concurrent={...saved,revision:3,tasks:[{...saved.tasks[0],text:'Text changed in Reader'}]}
+  const api=vi.fn().mockResolvedValueOnce(saved)
+    .mockRejectedValueOnce(Object.assign(new Error('Lists changed'),{status:409}))
+    .mockResolvedValueOnce(concurrent)
+    .mockResolvedValueOnce({...concurrent,revision:4,tasks:[{...concurrent.tasks[0],text:'My local edit'}]})
+  await act(async()=>root.render(<EnkiTodos requestTodos={api}/>))
+  await click('button[aria-label="Edit Finish the chapter"]')
+  const edit=host.querySelector('textarea[name=editedTask]') as HTMLTextAreaElement
+  await act(async()=>{
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value')!.set!.call(edit,'My local edit')
+    edit.dispatchEvent(new Event('input',{bubbles:true}))
+  })
+  await click('.enki-edit [type=submit]')
+  expect(edit.value).toBe('My local edit')
+  expect(host.querySelector('.enki-edit-conflict')?.textContent).toContain('Text changed in Reader')
+  expect(find('.enki-edit [type=submit]').textContent).toBe('Save my edit')
+  await click('.enki-edit [type=submit]')
+  expect(api.mock.calls[3][0]).toMatchObject({action:'edit-task',id:taskId,text:'My local edit',expectedRevision:3})
+  expect(host.querySelector('.enki-task')?.textContent).toBe('My local edit')
+})
+
 it('focuses Cancel and requires a fresh confirmation after another window adds a task', async () => {
   const changed = { ...saved, revision: 3, tasks: [...saved.tasks, { id: crypto.randomUUID(), listId, text: 'Another task', done: true }] }
   const deleted = { ...saved, revision: 4, lists: [saved.lists[0]], tasks: [] }

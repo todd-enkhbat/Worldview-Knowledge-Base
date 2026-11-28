@@ -1,11 +1,13 @@
 /* global chrome */
+import { readApplicationForm, readEmbeddedApplicationForms } from './application-form.js'
+import { createEnkiBridge } from './enki-bridge.js'
 import { extractArticle, extractFolkPhotos, extractProfile, extractVisiblePeople, captureLinkedInExperience } from './extract.js'
 
 const DEFAULT_PORT = 5173
 const RETRY_ALARM = 'worldview-pending-captures'
 function localPort(value = DEFAULT_PORT) {
   const port = Number(value)
-  if (!Number.isInteger(port) || port < 5173 || port > 5185) throw new Error('Use the local port shown in Worldview for Mac under Sources → Desktop.')
+  if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error('Use the local port shown in Worldview for Mac under Sources → Desktop.')
   return port
 }
 const localOrigin = port => 'http://127.0.0.1:' + localPort(port)
@@ -21,6 +23,53 @@ let operations = Promise.resolve()
 // Register listeners synchronously; service-worker restarts must not miss the waking event.
 const serial = (operation) => { const run = operations.catch(() => {}).then(() => storageReady).then(operation); operations = run; return run }
 const errorText = (error) => error instanceof Error ? error.message : 'The local reader connection failed.'
+const readerWindowPath = 'popup.html?view=window'
+const workspaceActions = new Set(['todos-state', 'todos-mutate', 'reader-status', 'reader-enki-connect', 'reader-connect', 'reader-pair', 'reader-disconnect', 'reader-discard', 'reader-discard-one', 'reader-retry'])
+const readerWindowKey = tabId => 'readerWindow:' + tabId
+let enkiBridge
+async function startEnkiBridge() {
+  if (!chrome.permissions?.contains || typeof navigator === 'undefined') return null
+  enkiBridge ||= createEnkiBridge({ pairing, endpoint, extractProfile, extractVisiblePeople, extractArticle, readApplicationForm, readEmbeddedApplicationForms, readExperience, enqueue, serial })
+  return enkiBridge
+}
+void startEnkiBridge().catch(() => {})
+
+async function openReaderWindow(source) {
+  // Bind a blank, extension-created tab before loading the Reader UI.
+  const window = await chrome.windows.create({ url: 'about:blank', type: 'popup', width: 520, height: 740 })
+  const tabId = window.tabs?.[0]?.id ?? (await chrome.tabs.query({ windowId: window.id }))[0]?.id
+  if (!Number.isSafeInteger(tabId)) throw new Error('The Reader window could not open.')
+  const key = readerWindowKey(tabId)
+  const sourceTab = Number.isSafeInteger(source?.id) && /^https?:\/\//.test(source.url ?? '')
+    ? { id: source.id, url: source.url, windowId: source.windowId } : null
+  try {
+    await chrome.storage.session.set({ [key]: { sourceTab } })
+    await chrome.tabs.update(tabId, { url: chrome.runtime.getURL(readerWindowPath) })
+  } catch (error) {
+    await chrome.storage.session.remove(key)
+    await chrome.windows.remove(window.id).catch(() => {})
+    throw error
+  }
+  return { ok: true }
+}
+
+async function readerWindowAction(message, sender) {
+  const key = readerWindowKey(sender.tab.id)
+  const binding = (await chrome.storage.session.get(key))[key]
+  if (!binding) throw new Error('Open a Reader window from the toolbar or its shortcut.')
+  const { sourceTab } = binding
+  const current = sourceTab ? await chrome.tabs.get(sourceTab.id).catch(() => null) : null
+  const available = !!current?.active && (current.pendingUrl || current.url) === sourceTab?.url
+  if (message.type === 'reader-window-context') return { ok: true, sourceTab, available }
+  if (workspaceActions.has(message.type)) return popupAction({ ...message, tabId: available ? sourceTab.id : undefined })
+  if (!available || message.tabId !== sourceTab.id) throw new Error('Return to the original page or open Reader again from the page you want to capture.')
+  return popupAction(message)
+}
+
+chrome.commands?.onCommand.addListener((command, tab) => {
+  if (command !== 'open-reader-window') return
+  void serial(() => openReaderWindow(tab)).catch(error => console.warn(errorText(error)))
+})
 const folkPage = url => { try { return new URL(url).hostname === 'app.folk.app' } catch { return false } }
 const folkSearch = url => /^https:\/\/app\.folk\.app\/apps\/contacts\/network\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/search(?:[?#]|$)/i.test(url || '')
 const folkPersonSearch = url => { if (!folkSearch(url)) return false; const types = [...new URL(url).searchParams].filter(([key]) => key.toLowerCase() === 'type'); return !types.length || types.length === 1 && types[0][0] === 'type' && types[0][1] === 'person' }
@@ -66,6 +115,7 @@ async function enqueue(body) {
   if (!config?.token) throw new Error('Pair Worldview Reader with your local workspace first.')
   const state = await chrome.storage.local.get(['sequence', 'outbox'])
   const sequence = Math.max((state.sequence ?? 0) + 1, Date.now()), outbox = state.outbox ?? []
+  if (body.submissionId && outbox.some(item=>item.submissionId===body.submissionId)) return {queued:true}
   if (new TextEncoder().encode(JSON.stringify({ ...body, sequence })).byteLength > 1024 * 1024) throw new Error('This source snapshot exceeds the 1 MiB request limit. Open a smaller profile section before capturing.')
   if (outbox.length >= 20) throw new Error('The local capture queue is full. Open Worldview and retry pending captures.')
   outbox.push({ ...body, sequence })
@@ -78,13 +128,16 @@ async function drain() {
   if (!config?.token) throw new Error('Pair the reader first.')
   let result = null
   try { while (outbox.length) {
-    const response = await fetch(endpoint(config.port, 'capture'), { method: 'POST', mode: 'cors', credentials: 'omit', redirect: 'error', headers: { 'content-type': 'application/json', authorization: `Bearer ${config.token}` }, body: JSON.stringify(outbox[0]), signal: AbortSignal.timeout(outbox[0].quickAdd ? 35_000 : 10_000) })
+    const pending = outbox[0]
+    const response = await fetch(endpoint(config.port, pending.submissionId ? 'application-submitted' : 'capture'), { method: 'POST', mode: 'cors', credentials: 'omit', redirect: 'error', headers: { 'content-type': 'application/json', authorization: `Bearer ${config.token}` }, body: JSON.stringify(pending), signal: AbortSignal.timeout(pending.quickAdd ? 35_000 : 10_000) })
     const value = await response.json().catch(() => ({}))
     if (!response.ok) {
       if (response.status >= 400 && response.status < 500 && ![408, 425, 429].includes(response.status)) await chrome.storage.local.set({ retryStopped: true })
       throw new Error(value?.error ?? `Local capture failed (${response.status}).`)
     }
-    if (outbox[0].saveProfileData === true) {
+    if (pending.submissionId) {
+      if (!value?.ok || value.id !== pending.applicationId || value.submissionId !== pending.submissionId || value.sequence !== pending.sequence || !Number.isFinite(value.appliedAt)) throw new Error('The application confirmation stays queued until Worldview returns its receipt.')
+    } else if (outbox[0].saveProfileData === true) {
       const draft = value?.profileDraft
       if (value?.sequence !== outbox[0].sequence || typeof draft?.id !== 'string' || !draft.id || typeof draft?.source?.originalAssetId !== 'string' || !draft.source.originalAssetId) throw new Error('The profile draft was not confirmed. Your source stays queued; update Worldview and retry.')
       if (outbox[0].quickAdd && !(value.quickAdd?.status === 'saved' && typeof value.quickAdd?.recordId === 'string' || value.quickAdd?.status === 'review')) throw new Error('CRM save was not confirmed. Update Worldview and retry the pending capture.')
@@ -214,7 +267,52 @@ async function captureFolk(tabId, entry = null, diagnosticSearch = false, saveSe
   const result = await enqueue({ url: batch.url, title: batch.title, saveFolkPhotos: true, ...(saveSearchPhotos ? { saveFolkSearchPhotos: true } : {}), folkPhotos: photos, folkPhotoRows: rows })
   return { result, seen: [...new Set([...previous, ...keys])].slice(-5000), url: batch.url, title: batch.title }
 }
+async function applicationTracking() { return (await chrome.storage.session.get('applicationTracking')).applicationTracking ?? {} }
+async function stopApplication(tabId, closed = false) {
+  const all = await applicationTracking(), entry = all[tabId]
+  if (!entry) return
+  delete all[tabId]
+  await chrome.storage.session.set({applicationTracking:all})
+  if (!closed && entry.frames?.length) await Promise.allSettled(entry.frames.map(frame => chrome.scripting.executeScript({
+    target:{tabId,documentIds:[frame.documentId]},func:readApplicationForm,args:[{stop:entry.nonce}],
+  })))
+}
+const applicationUrl = url => url?.split('#',1)[0]
+async function watchApplication(message) {
+  if(!Number.isSafeInteger(message.tabId))throw Error('Choose the application tab to track.')
+  const config=await pairing(), tab=await chrome.tabs.get(message.tabId)
+  if(!config?.token || !tab.active || typeof message.applicationId!=='string' || message.applicationId.length>1000 || typeof message.workspaceToken!=='string' || !message.workspaceToken)throw Error('Open the saved application in the selected tab.')
+  const tabId = message.tabId, url=new URL(tab.url), source=url.origin+url.pathname, pageUrl=applicationUrl(tab.url)
+  if(source!==message.source || pageUrl!==message.pageUrl || !message.documentId)throw Error('The application page changed. Read and save this page again.')
+  const [{result:outer, documentId}] = await chrome.scripting.executeScript({target:{tabId},func:readApplicationForm,args:[{expectedUrl:pageUrl}]})
+  if (!outer || !documentId || message.documentId !== documentId) throw Error('The application page changed. Read and save this page again.')
+  await stopApplication(tabId)
+  const watch={nonce:crypto.randomUUID(),applicationId:message.applicationId,source}
+  const frames=await readEmbeddedApplicationForms(tabId,{...outer,documentId},watch)
+  const eligible=frames.filter(row=>row.result.armed && row.result.answers.length)
+  if (outer.answers.length) {
+    const [row] = await chrome.scripting.executeScript({target:{tabId,documentIds:[documentId]},func:readApplicationForm,args:[{expectedUrl:pageUrl,watch}]}).catch(()=>[])
+    if (row?.result?.armed && row.frameId===0 && row.documentId===documentId) eligible.push({...row,url:pageUrl})
+  }
+  const all=await applicationTracking()
+  all[tabId]={...watch,pageUrl,workspaceToken:message.workspaceToken,frames:eligible.map(({frameId,documentId,url})=>({frameId,documentId,url})),startedAt:Date.now()}
+  await chrome.storage.session.set({applicationTracking:all})
+  const latest=await chrome.tabs.get(tabId).catch(()=>null)
+  if (!eligible.length || applicationUrl(latest?.pendingUrl || latest?.url)!==pageUrl) {
+    await stopApplication(tabId,!latest)
+    throw Error(!eligible.length && outer.embeddedForms.length ? 'Enable embedded-form access in Reader, then read and save the form again to track submission.' : 'Open the application form again to track a successful submission.')
+  }
+  return {ok:true}
+}
 async function popupAction(message) {
+  if (message.type === 'reader-enki-prepare') { await chrome.storage.local.set({ enkiPendingAt: Date.now() }); return { ok: true } }
+  if (message.type === 'reader-status') void startEnkiBridge().then(bridge => bridge?.wake()).catch(() => {})
+  if (message.type === 'reader-enki-connect') {
+    const bridge = await startEnkiBridge()
+    if (!bridge) throw Error('Reload Worldview Reader to connect Enki.')
+    return bridge.configure(message.enabled === true)
+  }
+  if(message.type==='reader-watch-application')return watchApplication(message)
   if (message.type === 'todos-state' || message.type === 'todos-mutate') {
     const config = await pairing()
     if (!config?.token) throw Error('Connect this extension to your Worldview workspace to use TO-DO.')
@@ -227,7 +325,7 @@ async function popupAction(message) {
     if (!response.ok) return {ok:false,status:response.status,error:value.error || 'Could not access your Worldview lists.'}
     return {ok:true,state:value}
   }
-  if (message.type === 'reader-status') { let connectionError = ''; try { await finishConnection() } catch (error) { connectionError = errorText(error) } if (Number.isSafeInteger(message.tabId)) await reconcileFolk(message.tabId); const state = await chrome.storage.local.get(['pairing', 'outbox', 'pendingConnection', 'lastDeliveryAt', 'lastFailure']), session = await chrome.storage.session.get('folkStopReason'); return { port: localPort(state.pendingConnection?.port ?? state.pairing?.port), paired: !!state.pairing?.token, pendingConnection: !!state.pendingConnection, connectionError, extensionId: chrome.runtime.id, queued: state.outbox?.length ?? 0, pending: (state.outbox ?? []).map((entry) => ({ sequence: entry.sequence, title: entry.title ?? 'Reading progress', url: entry.url })), lastDeliveryAt: state.lastDeliveryAt ?? null, lastFailure: state.lastFailure ?? '', tracked: await tracked(), folkTracked: await folkTracked(), folkStopReason: session.folkStopReason || '' } }
+  if (message.type === 'reader-status') { let connectionError = ''; try { await finishConnection() } catch (error) { connectionError = errorText(error) } if (Number.isSafeInteger(message.tabId)) await reconcileFolk(message.tabId); const state = await chrome.storage.local.get(['pairing', 'outbox', 'pendingConnection', 'lastDeliveryAt', 'lastFailure', 'enkiEnabled']), session = await chrome.storage.session.get('folkStopReason'); return { enkiEnabled: state.enkiEnabled === true, port: localPort(state.pendingConnection?.port ?? state.pairing?.port), paired: !!state.pairing?.token, pendingConnection: !!state.pendingConnection, connectionError, extensionId: chrome.runtime.id, queued: state.outbox?.length ?? 0, pending: (state.outbox ?? []).map((entry) => ({ sequence: entry.sequence, title: entry.title ?? 'Reading progress', url: entry.url })), lastDeliveryAt: state.lastDeliveryAt ?? null, lastFailure: state.lastFailure ?? '', tracked: await tracked(), folkTracked: await folkTracked(), folkStopReason: session.folkStopReason || '' } }
   if (message.type === 'reader-connect') {
     if (((await chrome.storage.local.get('outbox')).outbox ?? []).length) throw new Error('Retry or explicitly discard pending captures before connecting a different browser pairing.')
     const port = localPort(message.port)
@@ -247,7 +345,7 @@ async function popupAction(message) {
     await chrome.storage.local.remove('pendingConnection')
     return { ok: true }
   }
-  if (message.type === 'reader-disconnect') { await chrome.storage.local.remove(['pairing', 'pendingConnection', 'outbox', 'sequence', 'lastFailure', 'lastDeliveryAt', 'retryStopped']); const all = await tracked(); for (const key of Object.keys(all)) { const tabId = Number(key); await chrome.tabs.sendMessage(tabId, { type: 'reading-stop' }).catch(() => {}); await badge(tabId, '') } for (const key of Object.keys(await folkTracked())) await stopFolk(Number(key)); await chrome.storage.session.remove(['tracked', 'folkTracked']); return { ok: true } }
+  if (message.type === 'reader-disconnect') { await (await startEnkiBridge())?.configure(false); await chrome.storage.local.remove(['pairing', 'pendingConnection', 'outbox', 'sequence', 'lastFailure', 'lastDeliveryAt', 'retryStopped']); const all = await tracked(); for (const key of Object.keys(all)) { const tabId = Number(key); await chrome.tabs.sendMessage(tabId, { type: 'reading-stop' }).catch(() => {}); await badge(tabId, '') } for (const key of Object.keys(await folkTracked())) await stopFolk(Number(key)); for (const key of Object.keys(await applicationTracking())) await stopApplication(Number(key)); await chrome.storage.session.remove(['tracked', 'folkTracked', 'applicationTracking']); return { ok: true } }
   if (message.type === 'reader-discard') { await chrome.storage.local.set({ outbox: [] }); return { ok: true } }
   if (message.type === 'reader-discard-one') { if (!Number.isSafeInteger(message.sequence)) throw new Error('Choose a pending capture.'); const outbox = ((await chrome.storage.local.get('outbox')).outbox ?? []).filter((entry) => entry.sequence !== message.sequence); await chrome.storage.local.set({ outbox, ...(!outbox.length ? { lastFailure: '' } : {}) }); return { ok: true } }
   if (message.type === 'reader-retry') {
@@ -297,11 +395,11 @@ async function popupAction(message) {
     if (typeof profile?.extractorError === 'string') throw new Error(profile.extractorError)
     if (!profile?.profile?.name) throw new Error(extracted[0]?.error?.message || 'Reader could not identify this page’s named profile. Open the main profile, keep its name visible and load the sections you want to save.')
     const latest = await chrome.tabs.get(tabId)
-    const pageKey = value => { try { const parsed = new URL(value); return /(^|\.)linkedin\.com$/i.test(parsed.hostname) && /^\/(?:in|company|school)\/[^/]+(?:\/(?:about|people|posts|jobs|life))?\/?$/.test(parsed.pathname) ? `${parsed.origin}${parsed.pathname.replace(/\/$/, '')}${parsed.search}${parsed.hash}` : value } catch { return value } }
+    const pageKey = value => { try { const parsed = new URL(value); return /(^|\.)linkedin\.com$/i.test(parsed.hostname) && /^\/(?:in|company|school)\/[^/]+(?:\/(?:overview|about|people|posts|jobs|life))?\/?$/.test(parsed.pathname) ? `${parsed.origin}${parsed.pathname.replace(/\/$/, '')}${parsed.search}${parsed.hash}` : value } catch { return value } }
     if (pageKey(chosen ? profile.sourcePageUrl : profile.url) !== pageKey(tab.url) || pageKey(latest.url) !== pageKey(tab.url)) throw new Error('The tab navigated to a different profile during capture. Choose that person or company again before saving.')
     if (!latest.active) throw new Error('The chosen profile tab is no longer active. Return to it and save again.')
     const { headerEmployer, ...snapshot } = profile
-    const { name, entityType, headline = '', location = '', affiliations = [], images = [] } = profile.profile
+    const { name, entityType, headline = '', location = '', industry = '', description = '', urls = [], affiliations = [], images = [] } = profile.profile
     if (message.type === 'reader-profile-preview') {
       const config = await pairing()
       if (!config?.token) throw new Error('Connect the reader to Worldview first.')
@@ -319,7 +417,7 @@ async function popupAction(message) {
           return target.protocol === 'https:' && !target.username && !target.password && !target.port && /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(target.hostname) && !/(^|\.)(?:localhost|local|internal|invalid)$/i.test(target.hostname)
         } catch { return false }
       })
-      return { ok: true, preview: { url: profile.url, name, entityType, headline, location, current, schools, photoUrl: portrait?.url || '', role: jobs.find(row => row.role)?.role || '' }, groups: value.groups, existing: value.existing, workspaceFingerprint: value.workspaceFingerprint }
+      return { ok: true, preview: { url: profile.url, name, entityType, headline, location, ...(entityType === 'company' ? { industry, description, urls } : {}), current, schools, photoUrl: portrait?.url || '', role: jobs.find(row => row.role)?.role || '' }, groups: value.groups, existing: value.existing, workspaceFingerprint: value.workspaceFingerprint }
     }
     const quickAdd = message.type === 'reader-profile-add'
     if ((quickAdd || chosen) && (message.url !== profile.url || name !== message.name || entityType !== message.entityType)) throw new Error('The profile changed. Reopen the extension to see the current contact.')
@@ -358,7 +456,39 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
   if (sender.id !== chrome.runtime.id) return
   const popup = !sender.tab && sender.url === chrome.runtime.getURL('popup.html')
   const task = serial(async () => {
-    if (popup) return popupAction(message)
+    if (message.type === 'reader-enki-summon' && Number.isSafeInteger(sender.tab?.id) && Number.isSafeInteger(sender.frameId)) {
+      const bridge = await startEnkiBridge()
+      if (!bridge) throw Error('Reload Worldview Reader to connect Enki.')
+      return bridge.summon(sender)
+    }
+    if (popup) {
+      if (message.type === 'reader-open-window') {
+        const source = Number.isSafeInteger(message.tabId) ? await chrome.tabs.get(message.tabId).catch(() => null) : null
+        return openReaderWindow(source?.active ? source : null)
+      }
+      return popupAction(message)
+    }
+    if (Number.isSafeInteger(sender.tab?.id) && sender.frameId === 0 && sender.url === chrome.runtime.getURL(readerWindowPath)) return readerWindowAction(message, sender)
+    if(message.type==='application-submitted' && Number.isSafeInteger(sender.tab?.id)) {
+      const tabId=sender.tab.id, entry=(await applicationTracking())[tabId]
+      const validSender=entry?.frames?.some(frame=>frame.frameId===sender.frameId && frame.documentId===sender.documentId && frame.url===applicationUrl(sender.url))
+      if(!validSender || entry.nonce!==message.nonce || entry.applicationId!==message.applicationId || entry.source!==message.source) return {ok:false,stopped:true,error:'Application tracking is no longer active for this form.'}
+      const current=await chrome.tabs.get(tabId).catch(()=>null)
+      if (applicationUrl(current?.pendingUrl || current?.url)!==entry.pageUrl) {
+        await stopApplication(tabId,!current)
+        return {ok:false,stopped:true,error:'The application tab changed.'}
+      }
+      const {applicationId,source,workspaceToken,nonce:submissionId}=entry
+      const {answers,submitted,appliedAt,submissionEvidence}=message.form || {}
+      if (!submitted || !Array.isArray(answers) || !Number.isFinite(appliedAt) || typeof submissionEvidence!=='string') return {ok:false,stopped:true,error:'The form did not confirm this submission.'}
+      const confirmation={submitted,appliedAt,submissionEvidence}, form={...confirmation,answers}
+      const envelope={applicationId,source,workspaceToken,submissionId}
+      // Keep the observation even if very long answers exceed the request cap.
+      const compact=new TextEncoder().encode(JSON.stringify({...envelope,form,sequence:Date.now()})).byteLength>1024*1024
+      const result=await enqueue({...envelope,form:compact ? confirmation : form})
+      await stopApplication(tabId)
+      return {ok:true,queued:result?.queued === true}
+    }
     if (['folk-photos-changed', 'folk-photos-navigation', 'folk-photos-stopped'].includes(message.type) && Number.isSafeInteger(sender.tab?.id) && sender.frameId === 0) {
       const all = await folkTracked(), entry = all[sender.tab.id]
       if (!entry || entry.nonce !== message.nonce || entry.url !== message.url) throw new Error('Folk photo following stopped or this group changed.')
@@ -383,8 +513,8 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
   task.then(respond, (error) => respond({ ok: false, error: errorText(error) }))
   return true
 })
-chrome.tabs.onRemoved.addListener((tabId) => { void serial(async () => { const all = await tracked(), photos = await folkTracked(), wasFollowing = !!photos[tabId]; delete all[tabId]; delete photos[tabId]; await chrome.storage.session.set({ tracked: all, folkTracked: photos, ...(wasFollowing ? { folkStopReason: 'Photo following stopped because the chosen tab was closed or replaced.' } : {}) }) }) })
-chrome.tabs.onUpdated.addListener((tabId, change) => { const observedAt = Date.now(); if (change.status === 'loading' || change.url) void serial(async () => { const all = await tracked(), photos = await folkTracked(); if (all[tabId] && (change.status === 'loading' || all[tabId].url !== change.url)) { delete all[tabId]; await chrome.storage.session.set({ tracked: all }); await badge(tabId, '') } if (photos[tabId] && observedAt >= (photos[tabId].startedAt ?? 0)) { if (change.url && change.url !== photos[tabId].url) await stopFolk(tabId, 'Photo following stopped because the group URL changed.'); else if (change.status === 'loading') await reconcileFolk(tabId) } }) })
+chrome.tabs.onRemoved.addListener((tabId) => { void serial(async () => { await chrome.storage.session.remove(readerWindowKey(tabId)); await stopApplication(tabId,true); const all = await tracked(), photos = await folkTracked(), wasFollowing = !!photos[tabId]; delete all[tabId]; delete photos[tabId]; await chrome.storage.session.set({ tracked: all, folkTracked: photos, ...(wasFollowing ? { folkStopReason: 'Photo following stopped because the chosen tab was closed or replaced.' } : {}) }) }) })
+chrome.tabs.onUpdated.addListener((tabId, change) => { const observedAt = Date.now(); if (change.status === 'loading' || change.url) void serial(async () => { const application=(await applicationTracking())[tabId]; if (application && observedAt>=application.startedAt && (change.status==='loading' && !change.url || change.url && applicationUrl(change.url)!==application.pageUrl)) await stopApplication(tabId); const all = await tracked(), photos = await folkTracked(); if (all[tabId] && (change.status === 'loading' || all[tabId].url !== change.url)) { delete all[tabId]; await chrome.storage.session.set({ tracked: all }); await badge(tabId, '') } if (photos[tabId] && observedAt >= (photos[tabId].startedAt ?? 0)) { if (change.url && change.url !== photos[tabId].url) await stopFolk(tabId, 'Photo following stopped because the group URL changed.'); else if (change.status === 'loading') await reconcileFolk(tabId) } }) })
 
 if (chrome.alarms) {
   chrome.alarms.onAlarm.addListener(alarm => {

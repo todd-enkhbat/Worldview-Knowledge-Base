@@ -174,3 +174,15 @@ it('adds another group after a confirmed save without discarding the first membe
     expect(f.doc.getElementById('membership-summary')!.textContent).toContain('Columbia')
   } finally { f.page.window.close() }
 })
+
+it('updates an existing contact from the visible profile without selecting a new group', async () => {
+  const f=await popup(true,false,true,{}, {},'',{recordId:'ada',groupIds:['school']})
+  const update=f.doc.getElementById('update-profile') as HTMLButtonElement
+  expect(update.hidden).toBe(false); expect(update.disabled).toBe(false)
+  update.click(); await settle()
+  expect(f.send).toHaveBeenCalledWith(expect.objectContaining({type:'reader-profile-add',groupId:'',name:'Ada Example'}))
+  expect(f.doc.getElementById('quick-status')!.textContent).toContain('updated from this profile')
+  expect(f.doc.getElementById('membership-summary')!.textContent).toContain('Columbia')
+  expect(f.tabs.update).not.toHaveBeenCalled()
+  f.page.window.close()
+})

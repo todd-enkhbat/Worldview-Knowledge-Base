@@ -1,12 +1,19 @@
 // Serialized into the selected profile tab. Read school evidence only inside the
 // person's Education section or its exact, explicitly linked continuation.
+// The shared profile extractor also reads the primary identity card's school.
 async function captureEducation(sourceUrl, load, doc = document) {
   const source = new URL(sourceUrl), mainPath = source.pathname.replace(/\/$/, ''), here = new URL(doc.location.href)
   const detailsPath = mainPath + '/details/education', path = here.pathname.replace(/\/$/, '')
   if (!/(^|\.)linkedin\.com$/i.test(source.hostname) || !/^\/in\/[^/]+$/.test(mainPath) || here.origin !== source.origin || ![mainPath, detailsPath].includes(path)) return { roles: [] }
   const main = doc.querySelector('main,[role="main"],[aria-label="Primary content" i]')
   if (!main) return { roles: [] }
-  const text = node => String(node?.innerText || node?.textContent || '').replace(/\s+/g, ' ').trim()
+  const text = node => {
+    if (!node) return ''
+    const walker = doc.createTreeWalker(node, 4), parts = []
+    let next
+    while ((next = walker.nextNode())) if (visible(next.parentElement)) parts.push(next.nodeValue)
+    return parts.join(' ').replace(/\s+/g, ' ').trim()
+  }
   const visible = node => {
     for (let p = node; p; p = p.parentElement) {
       if (p.matches('aside,nav,footer,form,[hidden],[role="complementary"],[aria-label="Aside" i],.visually-hidden,.sr-only')) return false
@@ -44,12 +51,14 @@ async function captureEducation(sourceUrl, load, doc = document) {
     const links = [...section.querySelectorAll('a[href]')].filter(a => a.origin === source.origin && visible(a))
     const roles = []
     for (const link of links.filter(a => /^\/school\/[^/]+\/?$/.test(a.pathname))) {
-      const lines = [...link.querySelectorAll('p,h3,h4')].filter(visible).map(text).filter(Boolean)
-      const organization = lines[0] || text(link)
+      const selectors = 'p,h3,h4,.t-bold,[data-field="title"],span[aria-hidden="true"]'
+      const nodes = [...link.querySelectorAll(selectors)].filter(node => visible(node) && !node.querySelector(selectors))
+      const lines = [...new Set(nodes.map(text).filter(Boolean))]
+      const organization = text(link.querySelector('.t-bold,[data-field="title"],h3,h4')) || lines[0] || text(link)
       if (!organization || organization.length > 300) continue
       const row = link.closest('li,[role="listitem"]')
-      if (lines.length < 2 && row && new Set([...row.querySelectorAll('a[href*="/school/"]')].map(a => a.pathname)).size === 1) {
-        for (const element of row.querySelectorAll('p,h3,h4')) if (!link.contains(element) && visible(element) && text(element)) lines.push(text(element))
+      if (row && new Set([...row.querySelectorAll('a[href*="/school/"]')].map(a => a.pathname)).size === 1) {
+        for (const element of row.querySelectorAll(selectors)) if (!link.contains(element) && !element.querySelector(selectors) && visible(element) && text(element) && !lines.includes(text(element))) lines.push(text(element))
       }
       if (!lines.includes(organization)) lines.unshift(organization)
       const date = lines.map(s => s.match(/\b((?:[A-Z][a-z]{2,8}\s+)?(?:19|20)\d{2})\s*[–—-]\s*(Present|Current|(?:[A-Z][a-z]{2,8}\s+)?(?:19|20)\d{2})\b/i)).find(Boolean)

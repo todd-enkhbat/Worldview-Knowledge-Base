@@ -180,7 +180,31 @@ export function extractFolkPhotos(doc = document) {
 export function extractProfile(doc = document, reportError = false) {
   try {
   doc = doc || document
-  const page = new URL(doc.location.href), main = doc.querySelector('main,[role="main"],[aria-label="Primary content" i]') || doc.querySelector('article') || doc.body
+  const page = new URL(doc.location.href)
+  const mainSelector = 'main,[role="main"],[aria-label="Primary content" i]'
+  const organizationPage = /(^|\.)linkedin\.com$/i.test(page.hostname) && /^\/(?:company|school)\/[^/]+(?:\/(?:overview|about|people|posts|jobs|life))?\/?$/.test(page.pathname)
+  const nameFromTitle = title => String(title).replace(/^\(\d+\+?\)\s*/, '').replace(/\s*\|\s*LinkedIn\s*$/i, '').replace(/:\s*(?:about|overview|home|people|jobs|posts|life)\s*$/i, '').trim()
+  const organizationLandmark = (source, subject) => [...source.querySelectorAll('[aria-label^="Organization page for " i]')].find(node =>
+    node.getAttribute('aria-label').trim().toLowerCase() === ('Organization page for ' + subject).toLowerCase())
+  const expectedOrganization = organizationPage ? nameFromTitle(doc.title) : ''
+  let landmark = expectedOrganization ? organizationLandmark(doc, expectedOrganization) : null
+  if (expectedOrganization && !landmark) {
+    const candidateFrames = [...doc.querySelectorAll('iframe')].flatMap(frame => {
+      try {
+        const inner = frame.contentDocument, address = inner?.location
+        if (!address || address.origin !== page.origin || !/^\/preload\/?$/.test(address.pathname) || frame.closest('[hidden],[aria-hidden="true"]')) return []
+        const style = doc.defaultView?.getComputedStyle(frame)
+        if (style?.display === 'none' || style?.visibility === 'hidden' || style?.opacity === '0') return []
+        const root = organizationLandmark(inner, expectedOrganization)
+        return root && nameFromTitle(inner.title).toLowerCase() === expectedOrganization.toLowerCase() ? [{ inner, root }] : []
+      } catch { return [] }
+    })
+    if (candidateFrames.length === 1) {
+      doc = candidateFrames[0].inner
+      landmark = candidateFrames[0].root
+    }
+  }
+  const main = landmark || doc.querySelector(mainSelector) || doc.querySelector('article') || doc.body
   if (!main || !['http:', 'https:'].includes(page.protocol) || page.username || page.password || page.hostname === 'app.folk.app') throw new Error('Open the person’s profile or company website. Folk imports use their separate private capture action.')
   const clean = value => String(value || '').replace(/\s+/g, ' ').trim(), nameKey = value => clean(value).normalize('NFKC').toLocaleLowerCase('en').replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
   const url = value => { try { const parsed = new URL(String(value || ''), page.href); if (!value || !['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password || parsed.href.length > 2048) return ''; parsed.hash = ''; return parsed.href } catch { return '' } }
@@ -212,7 +236,7 @@ export function extractProfile(doc = document, reportError = false) {
     }
     return text.split(/\n+/).map(clean).filter((line, index, all) => line && line !== all[index - 1]).join('\n')
   }
-  const linkedIn = /(^|\.)linkedin\.com$/i.test(page.hostname), personPage = linkedIn && /^\/in\/[^/]+\/?$/.test(page.pathname), companyPage = linkedIn && /^\/(?:company|school)\/[^/]+(?:\/(?:about|people|posts|jobs|life))?\/?$/.test(page.pathname)
+  const linkedIn = /(^|\.)linkedin\.com$/i.test(page.hostname), personPage = linkedIn && /^\/in\/[^/]+\/?$/.test(page.pathname), companyPage = linkedIn && /^\/(?:company|school)\/[^/]+(?:\/(?:overview|about|people|posts|jobs|life))?\/?$/.test(page.pathname)
   if (linkedIn && !personPage && !companyPage) throw new Error('Open a person’s main LinkedIn profile or a company page before saving profile data.')
   if (linkedIn && main === doc.body) throw new Error('Reader could not find LinkedIn’s primary profile content. Wait for the main profile to load, then try again. Messaging and unrelated page areas are not captured.')
   const titleSubject = personPage && /\|\s*LinkedIn\s*$/i.test(doc.title) ? clean(doc.title.replace(/^\(\d+\)\s*/, '').replace(/\s*\|\s*LinkedIn\s*$/i, '')).slice(0, 200) : ''
@@ -255,16 +279,47 @@ export function extractProfile(doc = document, reportError = false) {
     }
     if (candidates.length === 1) { heading = candidates[0].node; headingName = titleSubject; subjectHeader = candidates[0].scope }
   }
-  if (companyPage && (!headingName || /^(?:about|overview|home)$/i.test(headingName))) {
-    const title = /\|\s*LinkedIn\s*$/i.test(doc.title) ? clean(doc.title.replace(/^\(\d+\)\s*/, '').replace(/\s*\|\s*LinkedIn\s*$/i, '').replace(/:\s*(?:about|overview|home|people|jobs|posts|life)\s*$/i, '')) : ''
+  const companyHero = '.org-top-card,.org-top-card-primary-content,[data-view-name="organization-top-card"],[data-view-name="organization-header"],header,[role="banner"]'
+  const organizationRecommendations = /^(?:more pages to follow|recommended (?:pages|companies)|similar (?:companies|pages|organizations)|people also (?:viewed|follow)|affiliated pages|pages people also viewed|people you may know)$/i
+  const organizationStats = /\b\d[\d,.]*\s*[KMB]?\s+followers?\b|\b\d[\d,.]*(?:\s*[-–—]\s*\d[\d,.]*|\+)?\s+employees?\b/i
+  let companyFacts = []
+  if (companyPage) {
+    const title = clean(nameFromTitle(doc.title))
+    const subject = nameKey(title)
     const identity = page.pathname.split('/').slice(0, 3).join('/').toLowerCase()
-    const named = [...main.querySelectorAll('a[href],p,[role="heading"]')].filter(node => title && nameKey(textOf(node)) === nameKey(title))
-    const matched = named.find(node => {
+    const generic = /^(?:linkedin|about|overview|home|people|posts|jobs|life|sign in|join linkedin)$/i
+    const hasTitle = !!subject && !generic.test(title) && /(?:\|\s*LinkedIn\s*$|:\s*(?:about|overview|home|people|jobs|posts|life)\s*$)/i.test(doc.title)
+    const matches = [...main.querySelectorAll('h1,h2,h3,[role="heading"],a[href],p,div,span')].filter(node =>
+      shown(node) && (hasTitle ? nameKey(node.textContent) === subject && nameKey(textOf(node)) === subject :
+        node.matches('h1,[role="heading"][aria-level="1"]') && !generic.test(clean(textOf(node))) && !!clean(textOf(node))))
+    if (main.matches(companyHero) && hasTitle && nameKey(textOf(main)) === subject) matches.unshift(main)
+    heading = null; headingName = ''
+    for (const node of matches) {
+      if (node.closest('article,[role="article"],li,[role="listitem"]')) continue
       const anchor = node.closest('a[href]'), target = url(anchor?.getAttribute('href'))
-      return target && new URL(target).origin === page.origin && new URL(target).pathname.replace(/\/$/, '').toLowerCase() === identity ||
-        node.closest('.org-top-card,[data-view-name="organization-top-card"],header,[role="banner"]')
-    })
-    if (matched) { heading = matched; headingName = title }
+      const ownLink = target && new URL(target).origin === page.origin && new URL(target).pathname.replace(/\/$/, '').toLowerCase() === identity
+      const primaryHeading = node.matches('h1,[role="heading"][aria-level="1"]')
+      let verified = null, facts = []
+      for (let scope = node.parentElement, depth = 0; scope && scope !== main && depth < 8; scope = scope.parentElement, depth++) {
+        if (scope.matches('article,[role="article"],li,[role="listitem"]') ||
+            [...scope.querySelectorAll('h1,h2,h3,[role="heading"]')].some(label => shown(label) && (label.compareDocumentPosition(node) & 4) && organizationRecommendations.test(clean(textOf(label))))) { verified = null; break }
+        if (scope.matches(companyHero)) { verified = scope; break }
+        const lines = textOf(scope).split('\n')
+        const namedLogo = [...scope.querySelectorAll('img[alt]')].some(image => shown(image) &&
+          [subject, subject + ' logo', 'logo of ' + subject, 'logo for ' + subject].includes(nameKey(image.alt)))
+        if ((!verified || namedLogo && scope.matches('section')) && lines.length <= 18 && lines.some(line => organizationStats.test(line))) {
+          verified = scope
+          facts = lines
+        }
+      }
+      if (verified || ownLink || primaryHeading && (hasTitle || matches.length === 1)) {
+        heading = node; headingName = clean(textOf(node)).slice(0, 200)
+        subjectHeader = verified || node.closest(companyHero)
+        companyFacts = facts
+        break
+      }
+    }
+    if (!headingName) throw new Error('Reader couldn’t confirm the organization. Open its LinkedIn Overview or About page and keep the organization name visible.')
   }
   // Keep these rules in sync with the URL collector. The browser runs this function in isolation.
   function facultyDegree(raw) {
@@ -359,6 +414,7 @@ export function extractProfile(doc = document, reportError = false) {
   const top = social?.header || subjectHeader || heading?.closest('section,header,[role="banner"],[itemscope],.pv-top-card,.org-top-card') || (companyPage ? main.querySelector('.org-top-card') : null) || heading?.parentElement || main
   const profile = { entityType, name, headline: '', description: '', location: '', emails: [], phones: [], urls: [], industry: '', affiliations: [], images: [] }
   let headerEmployer = null
+  const headerSchoolEvidence = []
   const addUrl = value => { const next = url(value); if (next && profile.urls.length < 32 && !profile.urls.includes(next)) profile.urls.push(next) }
   addUrl(personPage || companyPage ? `${page.origin}/${personPage ? 'in' : page.pathname.split('/')[1]}/${page.pathname.split('/')[2]}/` : page.href)
   const addImage = (value, label, isProfile = false) => { const next = url(value); if (next && profile.images.length < 8 && !profile.images.some(image => image.url === next)) profile.images.push({ url: next, label: clean(label).slice(0, 200), isProfile, subjectName: name }) }
@@ -505,7 +561,7 @@ export function extractProfile(doc = document, reportError = false) {
       // A headline alone can mention former employers. Require a matching organization
       // control in the same person's card before creating a current affiliation.
       const clause = profile.headline.split(/[;|]/)[0].trim()
-      const job = clause.match(/^(.+?)(?:\s+(?:at|@)\s+|,\s+)(.+)$/i)
+      const job = clause.match(/^(.+?)(?:\s+at\s+|\s*@\s*|,\s+)(.+)$/i)
       if (job && !/\b(?:former(?:ly)?|previous(?:ly)?|past|retired)\b|\bex[-\s]/i.test(clause)) {
         const matches = []
         for (const control of photoScope.querySelectorAll('button,[role="button"],a[href*="/company/"],a[href*="/school/"]')) {
@@ -526,6 +582,67 @@ export function extractProfile(doc = document, reportError = false) {
           if (!profile.affiliations.some(row => row.kind === 'employment' && nameKey(row.organization) === nameKey(headerEmployer.organization))) {
             addAffiliation({ kind: 'employment', organization: headerEmployer.organization, role: job[1], current: true, excerpt: profile.headline })
           }
+        }
+      }
+      // Some profiles use only the employer name as their headline. Confirm its
+      // separate top-card control before interpreting the adjacent school button.
+      if (!headerEmployer && profile.headline && !/\b(?:former(?:ly)?|previous(?:ly)?|retired)\b|\bex[-\s]/i.test(profile.headline)) {
+        const employerControls = [...photoScope.querySelectorAll('button,[role="button"],a[href*="/company/"]')]
+          .filter(control => inHeader(control) && shown(control.parentElement) && rendered(control))
+          .filter(control => {
+            const label = clean(control.innerText || control.textContent)
+            return nameKey(label) === nameKey(profile.headline) &&
+              !/\b(?:university|college|school|institute|academy)\b/i.test(label)
+          })
+        if (employerControls.length === 1) headerEmployer = { organization: profile.headline, additional: 0 }
+      }
+      // LinkedIn may mount the school summary before its lazy Education section.
+      // Read only controls in this person's identity card, never recommendations.
+      for (const control of photoScope.querySelectorAll('button,[role="button"],a[href]')) {
+        if (!inHeader(control) || !shown(control.parentElement) || !rendered(control)) continue
+        const visibleLabel = clean(control.innerText || control.textContent), accessibleLabel = clean(control.getAttribute('aria-label'))
+        const educationLabel = [accessibleLabel, visibleLabel].find(label => /^(?:(?:current|past)\s+)?(?:education|school|university)\s*[:：]|[·|]\s*education$/i.test(label))
+        let target
+        try { target = new URL(control.getAttribute('href'), page.href) } catch { /* A button may have no link. */ }
+        const schoolLink = target?.origin === page.origin && /^\/school\/[^/]+\/?$/.test(target.pathname)
+        const educationLink = target?.origin === page.origin && target.pathname.replace(/\/$/, '') === page.pathname.replace(/\/$/, '') && /^#education$/i.test(target.hash)
+        const schoolControl = control.matches('[data-field="school"],[data-field="education"],[data-generated-suggestion-target="school-name"]')
+        // Unlabelled institution buttons are usable only beside a separately
+        // confirmed employer. A university employer alone is not education.
+        const besideEmployer = !!headerEmployer && /\b(?:university|college|school|institute|polytechnic|academy)\b/i.test(visibleLabel)
+        if (!educationLabel && !schoolLink && !educationLink && !schoolControl && !besideEmployer) continue
+        const raw = educationLabel || visibleLabel || accessibleLabel
+        const organization = raw.replace(/^(?:(?:current|past)\s+)?(?:education|school|university)\s*[:：]\s*/i, '')
+          .replace(/(?:[·|]\s*education|[.,]\s*(?:click|see|view|show)\b.*|\s*\+\s*\d+\s+more)$/i, '').trim()
+        if (!organization || organization.length > 300 || /^(?:education|school|university)$/i.test(organization) || /^(?:see|view|show|click)\b/i.test(organization)) continue
+        const employer = profile.affiliations.some(row => row.kind === 'employment' && row.current === true && nameKey(row.organization) === nameKey(organization))
+        if (employer && !educationLabel && !educationLink && !schoolControl) continue
+        // Prefer detailed Education rows when they are already present.
+        if (profile.affiliations.some(row => row.kind === 'education' && (nameKey(row.organization) === nameKey(organization) || schoolLink && canonical(row.organizationUrl) === canonical(target.href)))) continue
+        const logo = control.querySelector('img'), image = logo && rendered(logo) ? logo.currentSrc || logo.getAttribute('src') : ''
+        const excerpt = educationLabel || visibleLabel || accessibleLabel
+        addAffiliation({ kind: 'education', organization, ...(schoolLink ? { organizationUrl: target.origin + target.pathname } : {}), organizationLogoUrl: image, excerpt })
+        // Buttons are normally omitted from the readable source; retain the exact
+        // observed label alongside the field so it can be reviewed later.
+        const evidence = doc.createElement('p'); evidence.textContent = excerpt
+        headerSchoolEvidence.push(evidence)
+      }
+    }
+    if (personPage && !profile.affiliations.some(row => row.kind === 'education')) {
+      const highlights = findSection('highlights', ['highlights'])
+      if (highlights && shown(highlights) && !highlights.closest('aside,[aria-label="Aside"],[role="complementary"]')) {
+        const school = new Map()
+        for (const label of highlights.querySelectorAll('h3,h4,p,strong,span,[role="heading"]')) {
+          if (!shown(label)) continue
+          const excerpt = clean(textOf(label))
+          const name = excerpt.match(/^You both studied at (.{2,300})$/i)?.[1]?.trim()
+          if (name) school.set(nameKey(name), {organization:name,excerpt})
+        }
+        if (school.size === 1) {
+          const row = school.values().next().value
+          addAffiliation({kind:'education',...row})
+          const evidence = doc.createElement('p'); evidence.textContent = row.excerpt
+          headerSchoolEvidence.push(evidence)
         }
       }
     }
@@ -551,7 +668,7 @@ export function extractProfile(doc = document, reportError = false) {
       }
       return true
     }
-    const explicitHero = heading?.closest('.org-top-card,.org-top-card-primary-content,[data-view-name="organization-top-card"],header,[role="banner"]')
+    const explicitHero = subjectHeader || heading?.closest(companyHero)
     let hero = explicitHero || (top !== main ? top : heading.parentElement)
     if (!explicitHero) for (let part = hero.parentElement; part && part !== main; part = part.parentElement) {
       if ([...part.querySelectorAll(headings)].some(node => node !== heading && shown(node))) break
@@ -571,6 +688,21 @@ export function extractProfile(doc = document, reportError = false) {
     }
     const tagline = hero.querySelector('.org-top-card-summary__tagline,[data-test-id="org-top-card-tagline"]')
     if (owned(tagline, hero)) profile.headline = clean(textOf(tagline)).slice(0, 500)
+    const heroFacts = companyFacts.length ? companyFacts : textOf(hero).split('\n')
+    const stats = heroFacts.find(line => organizationStats.test(line) && /[·•]/.test(line))
+    const statsIndex = heroFacts.findIndex(line => organizationStats.test(line))
+    const precedingFacts = statsIndex >= 0 ? heroFacts.slice(Math.max(0, statsIndex - 2), statsIndex + 1) : []
+    const splitStats = precedingFacts.length === 3 && precedingFacts.every(line => /^[·•]/.test(line)) ? precedingFacts.join(' ') : ''
+    if (stats || splitStats) {
+      const fields = (splitStats || stats).split(/\s*[·•]\s*/).map(clean).filter(Boolean)
+      const details = fields.slice(0, fields.findIndex(field => organizationStats.test(field)))
+      if (!profile.industry && details.length === 2) profile.industry = details[0].slice(0, 300)
+      if (!profile.location && details.length === 2) profile.location = details[1].replace(/\s+,/g, ',').slice(0, 500)
+      if (!profile.headline) {
+        const line = heroFacts[splitStats ? statsIndex - 3 : heroFacts.indexOf(stats) - 1]
+        if (line && line.length >= 24 && nameKey(line) !== nameKey(name) && !organizationStats.test(line)) profile.headline = line.slice(0, 500)
+      }
+    }
     const aboutNames = ['overview', 'about', 'about us']
     const aboutHeading = [...main.querySelectorAll(headings)].find(node => aboutNames.includes(nameKey(textOf(node))) && owned(node, main))
     let about = findSection('about', aboutNames) || main.querySelector('.org-page-details-module__card-spacing')
@@ -653,14 +785,16 @@ export function extractProfile(doc = document, reportError = false) {
       const site = officialWebsite(anchor.getAttribute('href'))
       if (site) heroSites.add(site)
     }
+    if (!profile.description) profile.description = profile.headline
     const sites = aboutSites.size ? aboutSites : heroSites
     if (sites.size === 1) addUrl([...sites][0])
     const images = [...hero.querySelectorAll('img')].filter(inHero)
+    const namedOrganizationLogo = landmark && [...landmark.querySelectorAll('img[alt]')].find(image => shown(image) && nameKey(image.alt) === nameKey(name + ' logo'))
     const logo = images.find(image => {
       const alt = nameKey(image.alt), subject = nameKey(name)
       return [subject, subject + ' logo', 'logo of ' + subject, 'logo for ' + subject].includes(alt)
     }) || images.find(image => image.matches('.org-top-card-primary-content__logo,.org-top-card-summary__logo') ||
-      explicitHero && ['company logo','organization logo','school logo'].includes(nameKey(image.alt)))
+      explicitHero && ['company logo','organization logo','school logo'].includes(nameKey(image.alt))) || namedOrganizationLogo
     if (logo) {
       const src = [logo.currentSrc, logo.getAttribute('src'), logo.getAttribute('data-delayed-url'), logo.getAttribute('data-src')].find(value => url(value))
       if (src) addImage(src, logo.alt || name + ' logo', true)
@@ -695,7 +829,8 @@ export function extractProfile(doc = document, reportError = false) {
     for (const child of source.childNodes) { if (htmlSize > 384 * 1024) throw new Error('This profile snapshot is too large. Open a smaller profile section.'); copy(child, target) }
   }
   for (const child of main.childNodes) copy(child, snapshot)
-  let text = textOf(main)
+  for (const evidence of headerSchoolEvidence) snapshot.append(evidence)
+  let text = [textOf(main), ...headerSchoolEvidence.map(node => node.textContent)].filter(Boolean).join('\n')
   if (!text && genericCompany && ownCompanyUrl) {
     // Some sites hide the page wrapper until a startup animation finishes. Archive
     // the independently identified public metadata rather than hidden page text.

@@ -17,11 +17,12 @@
 .enki-todo-heading, .enki-new-list, .enki-create-list, .enki-list-picker,
 .enki-compose, .enki-task, .enki-save-status { display: flex; align-items: center; gap: 8px; }
 .enki-todo-heading { justify-content: space-between; margin-bottom: 14px; }
+.enki-todo-actions { justify-content: flex-end; }
 .enki-todo-heading h1 {
   margin: 0;
   white-space: nowrap;
   font: 400 34px/1 'Alte Haas', Helvetica, sans-serif;
-  letter-spacing: -.062em;
+  letter-spacing: -.035em;
 }
 .enki-new-list, .enki-icon-button {
   min-height: 32px; border: 0; color: var(--todo-quiet); background: transparent;
@@ -48,7 +49,7 @@
 .enki-compose:has(textarea:focus-visible) { outline: 2px solid var(--todo-accent); outline-offset: 2px; }
 .enki-compose textarea:focus-visible { outline: none; }
 .enki-submit, .enki-icon-button { display: inline-grid; place-content: center; flex: none; width: 32px; height: 32px; padding: 0; }
-.enki-submit { border: 0; background: var(--todo-accent); color: white; }
+.enki-submit { width: auto; padding: 0 10px; border: 0; background: var(--todo-accent); color: white; }
 .enki-note, .enki-save-status { color: var(--todo-quiet); font-size: 13px; margin: 12px 0 0; }
 .enki-save-status:empty { margin: 0; }
 .enki-task-list { padding: 0; margin: 10px 0 0; list-style: none; }
@@ -60,6 +61,7 @@
 .enki-edit { flex: 1; min-width: 0; padding: 2px 0; }
 .enki-edit textarea { width: 100%; resize: vertical; }
 .enki-edit button { margin: 3px 0; padding: 3px 9px; }
+.enki-edit-conflict { color: var(--todo-quiet); margin: 0 0 6px; overflow-wrap: anywhere; }
 .enki-completed summary { display: list-item; color: var(--todo-quiet); cursor: pointer; font-size: 13px; }
 .enki-error { margin-top: 10px; color: #90391f; overflow-wrap: anywhere; }
 @media (hover: hover) {

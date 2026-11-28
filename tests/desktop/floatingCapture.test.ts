@@ -147,3 +147,10 @@ it('prefers freshly observed affiliations per field and labels only the fields f
   const p = preview({ url, profile:{ entityType:'person',name:'Ada Example',affiliations:[{kind:'education',organization:'Primary School',evidence:[]}] } }, educationStatus, saved)
   expect(p).toMatchObject({companies:['Example Institute'],savedCompanies:true,schools:['Primary School · Attended'],savedSchools:false})
 })
+
+it('reads classic education spans, skips screen-reader duplicates, and retains degree and date details', async () => {
+  const {captureEducation}=require('../../electron/profile-education.cjs')
+  const dom=new JSDOM(`<main><section><h2>Education</h2><ul><li><a href="/school/2/"><div class="t-bold"><span aria-hidden="true">Sample College</span><span class="visually-hidden">Sample College</span></div></a><span aria-hidden="true">Bachelor of Science, Mathematics</span><span aria-hidden="true">2012 – 2016</span></li></ul></section></main>`,{url})
+  try {expect((await captureEducation(url,false,dom.window.document)).roles).toEqual([expect.objectContaining({organization:'Sample College',degree:'Bachelor of Science',field:'Mathematics',startDate:'2012',endDate:'2016'})])}
+  finally {dom.window.close()}
+})

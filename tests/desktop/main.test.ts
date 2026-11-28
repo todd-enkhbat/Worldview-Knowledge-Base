@@ -11,7 +11,8 @@ class Child extends EventEmitter {
   stdout = new EventEmitter(); stderr = new EventEmitter(); exitCode: number | null = null; signalCode: string | null = null
   kill = vi.fn((signal: string) => { this.signalCode = signal; queueMicrotask(() => this.emit('exit', null, signal)); return true })
 }
-function launcher(success: boolean, platform = 'darwin') {
+const pagesFile = '/fixture/profile/workspace-pages.json'
+function launcher(success: boolean, platform = 'darwin', files = new Map<string, string>()) {
   const old = new Child(), spawned: Child[] = [], events: string[] = [], permission: { handler?: (...args: unknown[]) => Promise<void>; check?: (...args: unknown[]) => boolean } = {}
   const ask = vi.fn(async () => true), capture = { show: vi.fn(), close: vi.fn(), dismissIfVisible: vi.fn() }
   const enki = { show: vi.fn(), hide: vi.fn(), summon: vi.fn() }
@@ -20,8 +21,9 @@ function launcher(success: boolean, platform = 'darwin') {
   class Window extends EventEmitter {
     url = ''; minimized = false
     show = vi.fn(); isMinimized() { return this.minimized }; restore = vi.fn(() => { this.minimized = false }); focus = vi.fn()
-    webContents = Object.assign(new EventEmitter(), { getURL: () => this.url, isDestroyed: () => false, setWindowOpenHandler: () => {} })
-    async loadURL(value: string) { this.url = value }
+    zoomLevel = 0
+    webContents = Object.assign(new EventEmitter(), { getURL: () => this.url, isDestroyed: () => false, setWindowOpenHandler: () => {}, getZoomLevel: () => this.zoomLevel, setZoomLevel: (level: number) => { this.zoomLevel = level }, getZoomFactor: () => 1.2 ** this.zoomLevel })
+    async loadURL(value: string) { this.url = value; this.webContents.emit('did-navigate', {}, value) }
   }
   const electron = { app: Object.assign(new EventEmitter(), { dock: { setMenu: dockMenu }, isHidden: vi.fn(() => false), show: vi.fn(), isPackaged: false, requestSingleInstanceLock: () => true, whenReady: () => new Promise(() => {}), quit: vi.fn(), getPath: () => '/fixture/profile', getVersion: () => '0.1.0' }), BrowserWindow: Window, dialog: { showMessageBox: vi.fn(async () => ({ response: 0 })) }, ipcMain: { handle: () => {} }, Menu: { setApplicationMenu: () => {}, buildFromTemplate: (value: unknown) => value }, shell: { openExternal: () => {}, openPath: async () => '' }, session: { defaultSession: { setPermissionRequestHandler: (handler: (...args: unknown[]) => Promise<void>) => { permission.handler = handler }, setPermissionCheckHandler: (check: (...args: unknown[]) => boolean) => { permission.check = check } } }, systemPreferences: { askForMediaAccess: ask, getMediaAccessStatus: () => 'granted' } }
   const context = createContext({ console, URL, AbortSignal, setTimeout, clearTimeout, queueMicrotask, Buffer, __dirname: resolve('electron'), process: { argv: ['electron', 'main.cjs', '--workspace', '/vault/old'], platform, arch: 'arm64', env: {}, execPath: '/fixture/node' }, fixtureOldChild: old,
@@ -30,9 +32,16 @@ function launcher(success: boolean, platform = 'darwin') {
       if (name === 'electron') return electron
       if (name === './floating-capture.cjs') return { createFloatingCapture }
       if (name === './enki-window.cjs') return { createEnki: () => enki }
+      if (name === './reader-summons.cjs') return { createReaderSummons: () => ({ start: vi.fn(), stop: vi.fn() }) }
       if (name === './photo-places.cjs') return require('../../electron/photo-places.cjs')
+      if (name === './screen-contacts.cjs') return require('../../electron/screen-contacts.cjs')
       if (name === './policy.cjs') return require('../../electron/policy.cjs')
-      if (name === 'node:fs') return { existsSync: () => true, mkdirSync: () => {}, readFileSync: () => '{}', realpathSync: (value: string) => value, renameSync: () => {}, writeFileSync: () => {} }
+      if (name === 'node:fs') return {
+        existsSync: () => true, mkdirSync: () => {}, realpathSync: (value: string) => value,
+        readFileSync: (file: string) => files.get(file) ?? '{}',
+        writeFileSync: (file: string, value: string) => files.set(file, value),
+        renameSync: (from: string, to: string) => { files.set(to, files.get(from)!); files.delete(from) },
+      }
       if (name === 'node:child_process') return { spawn: (_node: string, args: string[]) => { const child = new Child(); spawned.push(child); const port = args[args.indexOf('--port') + 1]; queueMicrotask(() => { if (success) { events.push('replacement ready'); child.stdout.emit('data', Buffer.from(JSON.stringify({ worldviewDesktopReady: true, url: `http://127.0.0.1:${port}` }) + '\n')) } else { child.stderr.emit('data', Buffer.from('Could not open the new workspace')); child.exitCode = 1; child.emit('exit', 1) } }); return child } }
       return require(name)
     },
@@ -135,6 +144,16 @@ it('can restore a hidden pet and open its to-do list directly from the Dock', as
   expect(app.run('window.url')).toBe('http://127.0.0.1:5173/#/today')
 })
 
+it('opens the current Dia page from the global bracket shortcut and preserves to-do elsewhere', async () => {
+  const app = launcher(true)
+  await app.run('start()')
+  app.run("summonEnki({bundleId:'company.thebrowser.dia'})")
+  await vi.waitFor(() => expect(app.capture.show).toHaveBeenCalledWith('', 'page', undefined, undefined))
+  expect(app.enki.summon).not.toHaveBeenCalled()
+  app.run("summonEnki({bundleId:'com.apple.Notes'})")
+  expect(app.enki.summon).toHaveBeenCalledOnce()
+})
+
 it('reopens a closed Mac workspace through the Dock or a second launch and keeps the local service', async () => {
   const app = launcher(true)
   await app.run('start()')
@@ -153,6 +172,40 @@ it('reopens a closed Mac workspace through the Dock or a second launch and keeps
   expect(app.spawned).toHaveLength(0)
 })
 
+it('remembers the last main-window page across window close and a fresh launch', async () => {
+  const files = new Map<string, string>()
+  const app = launcher(true, 'darwin', files)
+  await app.run('start()')
+  const view = app.run('window')
+  view.url = 'http://127.0.0.1:5173/#/bookshelf?new=1'
+  view.webContents.emit('did-navigate-in-page', {}, view.url, true)
+  view.webContents.emit('did-navigate-in-page', {}, 'http://127.0.0.1:5173/#/people', false)
+  view.webContents.emit('did-navigate', {}, 'https://elsewhere.example/#/library')
+  expect(JSON.parse(files.get(pagesFile)!)).toEqual({ '/vault/old': '#/bookshelf' })
+  view.emit('closed')
+  await app.run('showWorkspace()')
+  expect(app.run('window.url')).toBe('http://127.0.0.1:5173/#/bookshelf')
+
+  const relaunched = launcher(true, 'darwin', files)
+  await relaunched.run('start()')
+  expect(relaunched.run('window.url')).toBe('http://127.0.0.1:5173/#/bookshelf')
+})
+
+it('restores each workspace separately and keeps Today as the fallback for invalid preferences', async () => {
+  const files = new Map([[pagesFile, JSON.stringify({ '/vault/old': '#/bookshelf', '/vault/new': '#/write' })]])
+  const app = launcher(true, 'darwin', files)
+  await app.run('start()')
+  await app.run("changing = true; openWorkspace('/vault/new', true)")
+  expect(app.run('window.url')).toBe('http://127.0.0.1:5174/#/write')
+  await app.run("openWorkspace('/vault/old', true)")
+  expect(app.run('window.url')).toBe('http://127.0.0.1:5173/#/bookshelf')
+
+  files.set(pagesFile, JSON.stringify({ '/vault/old': '#/lab' }))
+  const invalid = launcher(true, 'darwin', files)
+  await invalid.run('start()')
+  expect(invalid.run('window.url')).toBe('http://127.0.0.1:5173/#/today')
+})
+
 it('only accepts the fixed workspace link, preserving the open route and ignoring early startup events', async () => {
   const app = launcher(true), event = { preventDefault: vi.fn() }
   app.electron.app.emit('open-url', event, 'worldview-local://open')
@@ -169,7 +222,8 @@ it('only accepts the fixed workspace link, preserving the open route and ignorin
 })
 
 it('opens an encoded saved record after cold launch only in the workspace that supplied the receipt', async () => {
-  const app = launcher(true), event = { preventDefault: vi.fn() }
+  const files = new Map([[pagesFile, JSON.stringify({ '/vault/old': '#/bookshelf' })]])
+  const app = launcher(true, 'darwin', files), event = { preventDefault: vi.fn() }
   const fingerprint = createHash('sha256').update('/vault/old').digest('hex')
   const link = 'worldview-local://record/company/acme%26co?workspace='
   app.electron.app.emit('open-url', event, link + fingerprint)
@@ -186,4 +240,23 @@ it('keeps Dock actions exclusive to macOS and still quits after the last window 
   expect(app.dockMenu).not.toHaveBeenCalled()
   app.electron.app.emit('window-all-closed')
   expect(app.electron.app.quit).toHaveBeenCalledOnce()
+})
+
+it('handles Command plus, minus, and actual size in the main window', () => {
+  const app = launcher(true), view = app.run('createWorkspaceWindow()')
+  const press = (key: string, extra = {}) => {
+    const event = { preventDefault: vi.fn() }
+    view.webContents.emit('before-input-event', event, { type: 'keyDown', key, meta: true, ...extra })
+    return event.preventDefault
+  }
+  expect(press('=', { alt: true })).not.toHaveBeenCalled()
+  expect(press('=', { meta: false })).not.toHaveBeenCalled()
+  expect(press('=')).toHaveBeenCalledOnce()
+  expect(view.zoomLevel).toBe(1)
+  press('+')
+  expect(view.zoomLevel).toBe(2)
+  press('-')
+  expect(view.zoomLevel).toBe(1)
+  press('0')
+  expect(view.zoomLevel).toBe(0)
 })

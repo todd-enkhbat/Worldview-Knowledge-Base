@@ -112,7 +112,15 @@ export function crmFieldValue(record: CrmRow, field: string, values: readonly { 
   return Object.hasOwn(record, field) ? record[field] : undefined
 }
 const comparable = (value: unknown) => typeof value === 'string' ? value.normalize('NFKC').toLocaleLowerCase('en') : value
+function almaMaterName(value: unknown) {
+  if (typeof value !== 'string') return value
+  const name = String(comparable(value)).trim().replace(/\s+/g,' ')
+  if (name === 'columbia university in the city of new york') return 'columbia university'
+  if (name === 'mit' || name === 'massachusetts institute of technology (mit)') return 'massachusetts institute of technology'
+  return name
+}
 function filterEqual(actual: unknown, expected: unknown, field: string): boolean {
+  if (field === 'almaMater' && Array.isArray(actual) && typeof expected === 'string') return actual.some(value=>almaMaterName(value)===almaMaterName(expected))
   if (['almaMater', 'education', 'employers', 'currentEmployers', 'memberships', 'advisory', 'affiliations', 'companyNames'].includes(field) && Array.isArray(actual) && !Array.isArray(expected)) return actual.some(value => JSON.stringify(comparable(value)) === JSON.stringify(comparable(expected)))
   return JSON.stringify(comparable(actual)) === JSON.stringify(comparable(expected))
 }

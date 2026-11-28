@@ -80,11 +80,12 @@ function area() { const values: Record<string, unknown> = {}; return { values, s
 function worker(extracted: Omit<typeof profile, 'profile'> & { profile: Record<string, unknown>; headerEmployer?: { organization: string; additional: number } } = profile) {
   const local = area(), session = area(), listeners: Record<string, (...args: unknown[]) => unknown> = {}
   const tab = { active: true, url: extracted.url, status: 'complete' }, fetcher = vi.fn<typeof fetch>(async (_url, init) => { const payload = JSON.parse(String(init?.body)); return Response.json({ sequence: payload.sequence, profileDraft: { id: 'capture-ada', status: 'pending', profile: payload.profile, source: { originalAssetId: 'crm-file-original' } } }) })
-  const chrome = { storage: { local, session }, runtime: { id: extensionId, getURL: (path: string) => `chrome-extension://${extensionId}/${path}`, onMessage: { addListener: (callback: (...args: unknown[]) => unknown) => { listeners.message = callback } } }, tabs: { get: async () => ({ ...tab }), update: vi.fn(async (_id: number, change: { url: string }) => { tab.url = change.url }), goBack: vi.fn(async () => { tab.url = extracted.url }), onRemoved: { addListener: () => {} }, onUpdated: { addListener: () => {} } }, scripting: { executeScript: vi.fn(async () => [{ result: extracted }]) } }
-  const script = readFileSync('extensions/worldview-reader/background.js', 'utf8').replace(/^import .*$/m, 'const extractArticle = () => {}; const extractFolkPhotos = () => {}; const extractProfile = () => {}; const captureLinkedInExperience = () => {}')
+  const chrome = { storage: { local, session }, runtime: { id: extensionId, getURL: (path: string) => `chrome-extension://${extensionId}/${path}`, onMessage: { addListener: (callback: (...args: unknown[]) => unknown) => { listeners.message = callback } } }, tabs: { get: async () => ({ ...tab }), update: vi.fn(async (_id: number, change: { url: string }) => { tab.url = change.url }), goBack: vi.fn(async () => { tab.url = extracted.url }), onRemoved: { addListener: (callback: (...args: unknown[]) => unknown) => { listeners.removed = callback } }, onUpdated: { addListener: (callback: (...args: unknown[]) => unknown) => { listeners.updated = callback } } }, scripting: { executeScript: vi.fn(async () => [{ result: extracted }]) } }
+  const formScript=readFileSync('extensions/worldview-reader/application-form.js','utf8').replace(/^export /gm,'')
+  const script = readFileSync('extensions/worldview-reader/background.js', 'utf8').replace(/^import .*enki-bridge\.js.*$/m, '').replace(/^import .*application-form\.js.*$/m, () => formScript).replace(/^import .*$/m, 'const extractArticle = () => {}; const extractFolkPhotos = () => {}; const extractProfile = () => {}; const captureLinkedInExperience = () => {}')
   new Script(script).runInContext(createContext({ chrome, fetch: fetcher, AbortSignal, crypto, URL, TextEncoder, structuredClone }))
   const send = (message: Record<string, unknown>, sender: Record<string, unknown> = { id: extensionId, url: `chrome-extension://${extensionId}/popup.html` }) => new Promise<Record<string, unknown>>(resolve => listeners.message(message, sender, resolve))
-  return { local, session, fetcher, tab, chrome, send }
+  return { local, session, fetcher, tab, chrome, send, listeners }
 }
 
 it('queues only the explicit CRM profile intent, without reading progress or the unfinished popup comment', async () => {
@@ -263,4 +264,52 @@ it('binds university directory education to the named faculty member in Reader a
   const unbound = body.replace('<h2>Ren Park</h2>', '<h2>Someone Else</h2>')
   expect(() => capture(unbound, url)).toThrow('No single named')
   expect(() => profileFromHtml(unbound, url)).toThrow('No single verified')
+})
+function applicationWorker(){
+  const f=worker(), documentId='top-doc'
+  f.local.values.pairing={token,port:5173}
+  const source=profile.url, applicationId='application-one'
+  f.chrome.scripting.executeScript.mockResolvedValue([{documentId,frameId:0,result:{embeddedForms:[],answers:[{question:'Why apply?',answer:''}],armed:true}}] as never)
+  const watch=()=>f.send({type:'reader-watch-application',tabId:7,applicationId,source,pageUrl:source,documentId,workspaceToken:'workspace'})
+  const tracking=()=>(f.session.values.applicationTracking as Record<number,{nonce:string}>)[7]
+  const sender={id:extensionId,tab:{id:7},frameId:0,documentId,url:source}
+  const submit=()=>({type:'application-submitted',nonce:tracking().nonce,applicationId,source,form:{submitted:true,appliedAt:Date.now(),submissionEvidence:'Thank you for your application',answers:[]}})
+  return {...f,watch,tracking,sender,submit}
+}
+it('binds submissions to the watched document and retries the queued confirmation after a failed delivery',async()=>{
+  const f=applicationWorker(), tracked=await f.watch()
+  expect(tracked).toMatchObject({ok:true})
+  const confirmation=f.submit()
+  expect(await f.send({...confirmation,nonce:'not-the-observer'},f.sender)).toMatchObject({ok:false,stopped:true})
+  expect(await f.send(confirmation,{...f.sender,frameId:1,url:'https://tally.so/embed/form'})).toMatchObject({ok:false,stopped:true})
+  expect(await f.send(confirmation,{...f.sender,documentId:'other-doc'})).toMatchObject({ok:false,stopped:true})
+  expect(f.fetcher).not.toHaveBeenCalled()
+  f.fetcher.mockRejectedValueOnce(new Error('The local server is offline'))
+  expect(await f.send(confirmation,f.sender)).toMatchObject({ok:true,queued:true})
+  expect(f.tracking()).toBeUndefined()
+  const [endpoint,pending]=f.fetcher.mock.calls[0]
+  expect(String(endpoint)).toContain('/application-submitted')
+  const envelope=JSON.parse(String(pending?.body))
+  expect(envelope.submissionId).toBe(confirmation.nonce)
+  f.fetcher.mockResolvedValueOnce(Response.json({ok:true,id:envelope.applicationId,submissionId:envelope.submissionId,sequence:envelope.sequence,appliedAt:confirmation.form.appliedAt}))
+  expect(await f.send({type:'reader-retry'})).toMatchObject({ok:true,result:{id:envelope.applicationId}})
+  expect(f.fetcher.mock.calls[1][1]?.body).toBe(pending?.body)
+  expect(f.local.values.outbox).toEqual([])
+})
+
+it('stops the selected application observer on a same-path query change or tab close',async()=>{
+  const f=applicationWorker()
+  expect(await f.watch()).toMatchObject({ok:true})
+  const confirmation=f.submit()
+  f.tab.url+='?step=unrelated'
+  f.listeners.updated(7,{url:f.tab.url})
+  expect(await f.send(confirmation,f.sender)).toMatchObject({ok:false,stopped:true})
+  expect(f.chrome.scripting.executeScript).toHaveBeenLastCalledWith(expect.objectContaining({target:{tabId:7,documentIds:['top-doc']},args:[{stop:confirmation.nonce}]}))
+  f.tab.url=profile.url
+  expect(await f.watch()).toMatchObject({ok:true})
+  const another=f.submit()
+  f.listeners.removed(7)
+  expect(await f.send(another,f.sender)).toMatchObject({ok:false,stopped:true})
+  expect(f.tracking()).toBeUndefined()
+  expect(f.fetcher).not.toHaveBeenCalled()
 })

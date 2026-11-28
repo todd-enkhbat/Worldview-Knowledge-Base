@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
+import { fileURLToPath } from 'node:url'
 
 const execute = promisify(execFile)
 export const MAX_EXTRACT_BYTES = 64 * 1024 * 1024
@@ -33,6 +34,20 @@ export function locatePdfPages(text: string): ExtractedText {
   return { text, pages }
 }
 
+async function recognizePdf(input: string): Promise<ExtractedText> {
+  if (process.platform !== 'darwin') throw new ExtractionError('This PDF needs local OCR. Use the macOS app or provide a searchable copy. The original is retained.')
+  const helper = process.env.WORLDVIEW_PDF_OCR_HELPER
+  try {
+    const args = ['--pdf', input]
+    const { stdout } = await execute(helper ?? '/usr/bin/swift', helper ? args : [fileURLToPath(new URL('../electron/helper-ocr.swift', import.meta.url)), ...args], { timeout: 120_000, maxBuffer: 32 * 1024 * 1024 })
+    if (!stdout.replaceAll('\f', '').trim()) throw new ExtractionError('Local OCR did not find readable text. The original is retained.')
+    return locatePdfPages(stdout)
+  } catch (error) {
+    if (error instanceof ExtractionError) throw error
+    throw new ExtractionError('Local OCR could not read this PDF. Check that it is unlocked, has at most 100 pages and 50 scanned pages, and try again. The original is retained.')
+  }
+}
+
 /** Local Poppler extraction; no document bytes or text go to an inference provider. */
 export async function extractPdfText(bytes: Uint8Array): Promise<ExtractedText> {
   if (bytes.length > MAX_EXTRACT_BYTES) throw new ExtractionError('This PDF exceeds the 64 MiB local extraction limit. Its original can still be kept.', 413)
@@ -42,10 +57,15 @@ export async function extractPdfText(bytes: Uint8Array): Promise<ExtractedText> 
   const output = join(folder, 'source.txt')
   try {
     await writeFile(input, bytes)
-    await execute('pdftotext', ['-layout', '-enc', 'UTF-8', input, output], { timeout: 30_000, maxBuffer: 1024 * 1024 })
+    try {
+      await execute('pdftotext', ['-layout', '-enc', 'UTF-8', input, output], { timeout: 30_000, maxBuffer: 1024 * 1024 })
+    } catch (error) {
+      if ((error as { code?: string })?.code === 'ENOENT' && process.platform === 'darwin') return await recognizePdf(input)
+      throw error
+    }
     if ((await stat(output)).size > 32 * 1024 * 1024) throw new ExtractionError('Extracted PDF text exceeds the 32 MiB local indexing limit. The original is retained.', 413)
     const text = await readFile(output, 'utf8')
-    if (!text.trim()) throw new ExtractionError('This PDF contains no extractable text. The original is retained; a scanned PDF needs OCR or a text export.')
+    if (!text.trim()) return await recognizePdf(input)
     return locatePdfPages(text)
   } catch (e) {
     if (e instanceof ExtractionError) throw e

@@ -55,3 +55,12 @@ document.addEventListener('visibilitychange', () => model.setActive(!document.hi
 desktop?.onOrient(command => command === 'reset' ? model.reset() : model.turn(command === 'left' ? -35 : 35))
 desktop?.onCelebrate(() => model.celebrate())
 window.addEventListener('pagehide', () => model.dispose(), { once: true })
+
+const screenContact = document.querySelector('#screen-contact')
+desktop?.onScreenContact?.(({ watching, hasSuggestion, needsAccess, unreadable }) => {
+  screenContact.hidden = !watching && !hasSuggestion && !needsAccess
+  screenContact.toggleAttribute('data-suggestion', hasSuggestion)
+  screenContact.textContent = hasSuggestion ? 'Review contact' : needsAccess ? 'Screen access' : unreadable ? 'Check display' : 'Screen scan on'
+  screenContact.title = hasSuggestion ? 'Review the contact Enki found' : 'Manage screen contact suggestions'
+})
+screenContact.addEventListener('click', () => desktop?.openScreenContact?.())

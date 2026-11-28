@@ -51,3 +51,5 @@
 .crm-email-cell .copy-email-button { font-size:inherit; width:fit-content; }
 .crm-email-edit { border:0; border-radius:4px; background:transparent; color:var(--kb-muted); padding:4px; flex:none; }
 @media (hover:hover) { .crm-email-edit { opacity:0; } .crm-email-cell:hover .crm-email-edit,.crm-email-cell:focus-within .crm-email-edit { opacity:1; } }
+
+.crm-more-addresses { display:none; }

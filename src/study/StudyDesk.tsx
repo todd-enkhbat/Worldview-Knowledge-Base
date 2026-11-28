@@ -1,8 +1,9 @@
 import { Discovery } from './Discovery.tsx'
+import { applicationDeadline } from './applicationMetadata.ts'
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react'
 import {
   safeApplicationText, parseApplicationPaste,
-  answerRelevance,
+  answerRelevance, applicationAppliedAt,
   normalizeTerm,
   type StudyState,
   type Sense,
@@ -474,7 +475,48 @@ export function Applications({
   useEffect(() => {
     if (initialQuery) setQ(initialQuery)
   }, [initialQuery])
+  const liveApplications = useRef(state.applications)
+  liveApplications.current = state.applications
   const patch = (value: Partial<ApplicationInput>) => setEntry((old) => ({ ...old, ...value }))
+  async function readForm() {
+    if (!native || reading || saving) return
+    setReading(true); setEdit(true); setMsg('Reading this application and its published details…')
+    try {
+      const { pageText, ...form } = await native.form(source)
+      const visibleDeadline = applicationDeadline(pageText || '')
+      let context: Partial<ApplicationInput> & {notice?:string} = {}
+      try { context = await study('application-context', {source:form.source,organization:form.organization,opportunity:form.opportunity,hasAnswers:form.answers.length>0}) }
+      catch { if (!visibleDeadline.deadline) context.notice='Form read. Published opportunity details could not be checked; you can retry.' }
+      const matching = liveApplications.current.find(a => a.revisions.some(r => r.source === form.source))
+      const answers = form.answers.length ? form.answers : form.submitted && matching?.revisions.at(-1)?.answers.length ? matching.revisions.at(-1)!.answers : context.answers || []
+      const same = matching?.revisions.findLast(row=>row.source===form.source && row.answers.map(answer=>answer.question).join('\n')===answers.map(answer=>answer.question).join('\n'))
+      setEntry(old => ({ ...blankApplication(), ...context, ...form, answers, id:matching?.id,
+        captureId: !matching && old.source===form.source && !old.id ? old.captureId : crypto.randomUUID(),
+        organization:matching?.organization || context.organization || form.organization,
+        opportunity:matching?.opportunity || context.opportunity || form.opportunity,
+        step:form.submitted ? 'Submission confirmation' : same?.step || (matching ? 'Step '+(new Set(matching.revisions.map(row=>row.step)).size+1) : 'Application'),
+        submitted:form.submitted || !!matching?.revisions.some(row=>row.submitted),
+        appliedAt:(matching ? applicationAppliedAt(matching) : null) || form.appliedAt,
+        deadline:visibleDeadline.deadline || context.deadline || matching?.deadline || '',
+        deadlineSource:visibleDeadline.deadline ? form.source : context.deadline ? context.deadlineSource : matching?.deadlineSource,
+        deadlineEvidence:visibleDeadline.deadline ? visibleDeadline.deadlineEvidence : context.deadline ? context.deadlineEvidence : matching?.deadlineEvidence,
+      }))
+      setMsg(context.notice || (form.submitted ? 'Submission confirmation detected.' : answers.length + ' questions read. Details filled from the application page.'))
+    } catch(error) {setMsg(explain(error))}
+    finally {setReading(false)}
+  }
+  const requestRead = useEffectEvent(()=>void readForm())
+  useEffect(()=>{
+    const reread=()=>requestRead()
+    const status=(event:Event)=>setMsg(String((event as CustomEvent).detail || ''))
+    window.addEventListener('worldview:application-reread',reread)
+    window.addEventListener('worldview:application-status',status)
+    return ()=>{window.removeEventListener('worldview:application-reread',reread);window.removeEventListener('worldview:application-status',status)}
+  },[])
+  const autoRead = useRef(false)
+  useEffect(() => {
+    if (helper && native && !autoRead.current && !captured) {autoRead.current=true; void readForm()}
+  })
   const parse = (text: string, name: string) => {
     const field = (label: string) =>
       new RegExp('(?:^|\\n)' + label + '\\s*:\\s*([^\\n]+)', 'i').exec(text)?.[1]?.trim() || ''
@@ -498,7 +540,7 @@ export function Applications({
     .reverse()
   const matches = answers
     .map(v => ({ ...v, score: answerRelevance(q, v.question, v.answer, v.application.organization + ' ' + v.application.opportunity) }))
-    .filter(v => v.score > 0)
+    .filter(v => v.score > 0 && (!!q.trim() || !!focused || !!v.answer.trim()))
     .sort((a, b) => b.score - a.score || b.revision.at - a.revision.at)
   const field = (name: 'organization' | 'opportunity' | 'step' | 'source') => (
     <label key={name}>{name}<input ref={name === 'opportunity' ? opportunityField : undefined} name={name} value={entry[name]} onChange={e => patch({ [name]: e.target.value })} /></label>
@@ -616,6 +658,7 @@ export function Applications({
         <button
           ref={startCapture}
           onClick={() => {
+            if (native) { void readForm(); return }
             setEntry(blankApplication())
             setRaw('')
             setEdit(true)
@@ -644,41 +687,9 @@ export function Applications({
               </select>}
               <button
                 disabled={reading || openingForm || saving}
-                onClick={async () => {
-                  setReading(true)
-                  setMsg('Reading form…')
-                  try {
-                    const form = await native.form(source)
-                    const matching =
-                      state.applications.find((a) => a.id === entry.id) ||
-                      state.applications.find(
-                        (a) =>
-                          a.revisions.some((r) => r.source === form.source) && a.opportunity === form.opportunity
-                      )
-                    const same = matching?.revisions.findLast(
-                      (r) =>
-                        r.source === form.source &&
-                        r.answers.map((v) => v.question).join('\n') ===
-                          form.answers.map((v) => v.question).join('\n')
-                    )
-                    patch({
-                      ...form,
-                      id: matching?.id,
-                      step:
-                        same?.step ||
-                        (matching
-                          ? 'Step ' + (new Set(matching.revisions.map((v) => v.step)).size + 1)
-                          : entry.step),
-                      organization: entry.organization || matching?.organization || form.organization,
-                      opportunity: entry.opportunity || matching?.opportunity || form.opportunity
-                    })
-                    setMsg('Review this step before saving.')
-                  } catch (e) {
-                    setMsg(explain(e))
-                  } finally { setReading(false) }
-                }}
+                onClick={() => void readForm()}
               >
-                {reading ? 'Reading…' : 'Read this form'}
+                {reading ? 'Reading…' : 'Refresh from page'}
               </button>
               {!helper && captureScreen}
             </div>
@@ -705,7 +716,16 @@ export function Applications({
           <div className="study-fields">
             {(helper ? ['opportunity', 'organization'] as const : ['organization', 'opportunity', 'step', 'source'] as const).map(field)}
           </div>
+          <div className="application-facts" aria-label="Application details">
+            <label>Deadline<input name="deadline" value={entry.deadline || ''} placeholder="Not published" onChange={event=>patch({deadline:event.target.value})} /></label>
+            <div><span>Applied</span><strong>{entry.appliedAt ? new Date(entry.appliedAt).toLocaleString() : entry.submitted ? 'Submitted · date not available' : 'No submission observed'}</strong></div>
+            {entry.deadlineEvidence && <p>{entry.deadlineEvidence}{entry.deadlineSource && <> <a href={entry.deadlineSource} target="_blank" rel="noreferrer">Source</a></>}</p>}
+            {entry.deadline && !/\b20\d{2}\b/.test(entry.deadline) && <small>The published deadline does not specify a year.</small>}
+            {entry.description && <p>{entry.description}</p>}
+            {entry.organizationId && <p>Matched to a saved organization in your CRM.</p>}
+          </div>
           {helper && <details className="enki-step-details"><summary>Step and source</summary>{appendTo}<div className="study-fields">{(['step','source'] as const).map(field)}</div></details>}
+          <details className="application-answer-review" open={!helper || undefined}><summary>{entry.answers.length} {entry.answers.length===1 ? 'question' : 'questions'} · {entry.answers.filter(row=>row.answer.trim()).length} answers captured</summary>
           {entry.answers.map((v, i) => (
             <div className="study-pair" key={i}>
               <label>
@@ -739,6 +759,7 @@ export function Applications({
           <button onClick={() => patch({ answers: [...entry.answers, { question: '', answer: '' }] })}>
             Add question
           </button>
+          </details>
           <label>
             <input
               type="checkbox"
@@ -762,7 +783,8 @@ export function Applications({
             onClick={async () => {
               setSaving(true)
               try {
-                await study('application', entry)
+                const saved = await study<{id:string;workspaceToken?:string}>('application', entry)
+                await native?.saved?.(saved.id, { ...entry, workspaceToken:saved.workspaceToken ?? entry.workspaceToken })
                 setEdit(false)
                 refresh()
                 setMsg('Application saved')
@@ -787,7 +809,7 @@ export function Applications({
           .map((a) => (
             <details key={a.id} open={focused === a.id || undefined}>
               <summary>
-                {a.opportunity} · {a.organization}
+                {a.opportunity}{a.organization && a.organization!==a.opportunity ? ' · '+a.organization : ''}{a.deadline ? ' · Due ' + a.deadline : ''}{applicationAppliedAt(a) ? ' · Applied ' + new Date(applicationAppliedAt(a)!).toLocaleDateString() : ''}
               </summary>
               {a.revisions.map((r) => (
                 <p key={r.id}>
@@ -844,7 +866,8 @@ export function Applications({
   )
 }
 export interface StudyNative {
-  form: (mode: string) => Promise<Pick<ApplicationInput, 'organization' | 'opportunity' | 'source' | 'answers'>>
+  form: (mode: string) => Promise<Pick<ApplicationInput, 'organization' | 'opportunity' | 'source' | 'answers'> & Partial<ApplicationInput> & { embeddedForms?: {url:string;title:string}[]; pageText?:string }>
+  saved?: (id:string,entry:ApplicationInput) => Promise<void>
   ocr?: () => Promise<string>
   activeTab?: boolean
   openBrowser?: (url: string) => Promise<void>

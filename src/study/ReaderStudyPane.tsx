@@ -20,6 +20,8 @@ export function ReaderStudyPane({ parentOrigin, mode }: { parentOrigin: string; 
         setSelection({ serial: 1, text: event.data.term.slice(0,160), context: {url: event.data.url, sourceApp:'Worldview Reader'} })
       }
       channel.onmessage = ({ data }) => {
+        if (data?.type === 'reread-form') window.dispatchEvent(new Event('worldview:application-reread'))
+        if (data?.type === 'tracking-status') window.dispatchEvent(new CustomEvent('worldview:application-status',{detail:data.message}))
         if (data?.type === 'form') waiting.current?.(data.form, data.error)
         if (data?.type === 'focus') content.current?.querySelector<HTMLElement>('input,button')?.focus({preventScroll:true})
       }
@@ -57,6 +59,6 @@ export function ReaderStudyPane({ parentOrigin, mode }: { parentOrigin: string; 
   })
   return <div className="enki-reader-scroll"><div className="helper-pane" ref={content}>
     {!connected ? <p role="status">Opening tool…</p> : mode === 'word' ? <Dictionary selection={selection} /> :
-      <><h1>Applications</h1><StudyDesk mode="application" native={{ form, activeTab: true }} helper /></>}
+      <><h1>Applications</h1><StudyDesk mode="application" native={{ form, activeTab: true, saved:async(id,entry)=>{if(entry.submitted)return;port.current?.postMessage({type:'form-saved',id,source:entry.source,workspaceToken:entry.workspaceToken})} }} helper /></>}
   </div></div>
 }

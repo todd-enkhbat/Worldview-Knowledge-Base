@@ -1,3 +1,4 @@
+import { applicationContext } from './applicationContext.ts'
 import {explainLocally} from './studyExplanation.ts'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { WorldDb } from './worldDb.ts'
@@ -24,6 +25,11 @@ export async function studyHttp(
     const v = await readMemoryBody(req,action==='application'?2*1024*1024:128*1024)
     if (generation !== db.getReplacementGeneration() || db.getKv('importInProgress') !== undefined)
       throw Error('The workspace changed. Reopen capture.')
+    if(action==='application-context') {
+      const result = await applicationContext(v, db)
+      if (generation !== db.getReplacementGeneration()) throw Error('The workspace changed. Read this application again.')
+      return sendMemoryJson(res,200,result)
+    }
     if(action==='explain-local'){
       if(!['localhost','127.0.0.1','[::1]'].includes(new URL('http://'+req.headers.host).hostname))throw Error('Local explanations require the desktop workspace.')
       return sendMemoryJson(res,200,await explainLocally(String(v.text??''),String(v.book??'')))
@@ -39,6 +45,7 @@ export async function studyHttp(
       installPack(dir, String(v.language))
       return sendMemoryJson(res, 202, { started: true })
     }
+    if(action==='application' && v.workspaceToken && v.workspaceToken!==db.crm.workspaceFingerprint())throw Error('The workspace changed. Read this application again.')
     const state = decodeStudy(db.getKv(STUDY_KEY)),
       revision = state.revision
     const id = applyStudy(state, action, v)
@@ -46,7 +53,7 @@ export async function studyHttp(
     if (!db.compareAndSwapKv(STUDY_KEY, state, revision))
       return sendMemoryJson(res, 409, { error: 'The archive changed. Retry your edit.' })
     bus.publish({ v: 1, from: 'study-helper', change: { type: 'kv', keys: [STUDY_KEY] } })
-    return sendMemoryJson(res, 200, { id })
+    return sendMemoryJson(res, 200, { id, ...(action==='application' ? {workspaceToken:db.crm.workspaceFingerprint()} : {}) })
   } catch (e) {
     return sendMemoryJson(res, 400, { error: e instanceof Error ? e.message : 'Capture failed.' })
   }

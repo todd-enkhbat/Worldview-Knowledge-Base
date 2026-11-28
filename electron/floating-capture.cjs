@@ -1,7 +1,7 @@
 const { join, basename } = require('node:path')
 const { pathToFileURL } = require('node:url')
 const { createHash, randomUUID } = require('node:crypto')
-const { publicPage, assertSource, diaSource, ownedSource, snapshot, visibleProfiles, visibleEducation, collect } = require('./profile-source.cjs')
+const { publicPage, assertSource, ownedSource, snapshot, visibleProfiles, visibleEducation, collect } = require('./profile-source.cjs')
 
 const schoolLabel = { student: 'Attending', graduate: 'Graduated', alum: 'Alum', attended: 'Attended' }
 function preview(data, status, saved) {
@@ -44,19 +44,22 @@ function captureBounds(screen, prefs, anchor) {
     y: Math.round(Math.max(area.y, Math.min(y, area.y + area.height - height))) }
 }
 
-function createFloatingCapture({ electron, runtime, context, loadRecord, celebrate, preferences = {} }) {
+function createFloatingCapture({ electron, runtime, context, loadRecord, celebrate, preferences = {}, screenContacts, restart }) {
   const { BrowserWindow, ipcMain, session } = electron
   let panel = null, browser = null, current = null, destination = null, active = false, epoch = 0
-  const helperModes = ['word', 'person', 'application', 'todo']
+  let idle = Promise.resolve()
+  const helperModes = ['page', 'word', 'person', 'application', 'todo']
   const isHelperPage = url => helperModes.some(mode => url === context().origin + '/study-helper.html?mode=' + mode)
   let scan = null
   let opening = null, pendingMode = null, lastBounds = null, wantVisible = false
-  const dia = diaSource(), owned = ownedSource(() => browser)
+  const owned = ownedSource(() => browser)
   const moduleAt = path => import(pathToFileURL(join(runtime, path)).href)
   const extract = () => moduleAt('extensions/worldview-reader/extract.js')
   const secure = { contextIsolation: true, sandbox: true, nodeIntegration: false, webSecurity: true, allowRunningInsecureContent: false }
   const sameWorkspace = (a,b) => a.origin === b.origin && a.workspace === b.workspace && a.epoch === b.epoch
   const here = () => ({ ...context(), epoch })
+  const reader = require('./reader-source.cjs').readerSource(here)
+  const source = mode => mode === 'browser' ? owned : reader
   const verify = expected => { if (!panel || !sameWorkspace(expected, here())) throw new Error('The workspace changed. Read the selected profile again.') }
   const api = async (state, route, body) => {
     verify(state)
@@ -72,7 +75,7 @@ function createFloatingCapture({ electron, runtime, context, loadRecord, celebra
     if (!response.ok) throw new Error(result.error || 'The local workspace could not finish this capture.')
     return result
   }
-  function clear() { epoch++; current = null; destination = null; scan = null }
+  function clear() { epoch++; current = null; destination = null; scan = null; reader.reset() }
   function close() { wantVisible = false; clear(); panel?.close(); browser?.close() }
   function dismissIfVisible() {
     const visible = wantVisible && panel && !panel.isDestroyed() && (opening || panel.isVisible())
@@ -82,13 +85,15 @@ function createFloatingCapture({ electron, runtime, context, loadRecord, celebra
     return true
   }
   let selected = '', selectionContext = {}, previousPid = 0
-  function show(value = '', requestedMode, anchor) {
+  function show(value = '', requestedMode, anchor, summon) {
     const prefs = preferences.read?.() || {}
     selected = typeof value === 'string' ? value : value?.text || ''
     previousPid = value?.pid || 0
     selectionContext = { ...(value?.url && { url: value.url }), ...(value?.app && { sourceApp: value.app }) }
     const selectionMode = selected.endsWith('?') || selected.length > 160 ? 'application' : 'word'
     const mode = requestedMode || (selected ? selectionMode : helperModes.includes(prefs.mode) ? prefs.mode : 'person')
+    if (mode === 'person') clear()
+    if (mode === 'page') { clear(); if (summon) reader.bind(summon.client, summon.ref) }
     const local = new URL(context().origin)
     if (!helperModes.includes(mode) || local.protocol !== 'http:' || !['localhost','127.0.0.1'].includes(local.hostname) || local.username || local.password) throw Error('Open your local workspace first.')
     wantVisible = true
@@ -101,12 +106,12 @@ function createFloatingCapture({ electron, runtime, context, loadRecord, celebra
         panel.setBounds(next)
       }
       if (opening) {
-        pendingMode = { mode, hasSelection: !!selected }
+        pendingMode = { mode, hasSelection: !!selected, refreshPage: mode === 'page' || mode === 'person' }
         return opening
       }
       panel.show()
       panel.focus()
-      panel.webContents.send('worldview:show-mode', { mode, hasSelection: !!selected })
+      panel.webContents.send('worldview:show-mode', { mode, hasSelection: !!selected, refreshPage: mode === 'page' || mode === 'person' })
       return
     }
 
@@ -132,6 +137,7 @@ function createFloatingCapture({ electron, runtime, context, loadRecord, celebra
     }
     win.on('moved', rememberBounds)
     win.on('resized', rememberBounds)
+    if (screenContacts) win.on('focus', () => screenContacts.refresh())
     // macOS can hide a panel before the last native resize notification arrives.
     win.on('hide', rememberBounds)
     win.on('close', rememberBounds)
@@ -167,10 +173,14 @@ function createFloatingCapture({ electron, runtime, context, loadRecord, celebra
   }
   const guard = (name, handler) => ipcMain.handle('worldview:capture-' + name, async (event, ...args) => {
     if (event.sender !== panel?.webContents || event.senderFrame !== panel?.webContents.mainFrame || !isHelperPage(event.senderFrame.url)) throw new Error('Use the local floating capture window.')
-    if (['mode', 'close', 'celebrate', 'selection', 'shortcut'].includes(name)) return handler(...args)
+    if (name === 'follow-page') return active ? null : handler(...args)
+    if (['mode', 'close', 'celebrate', 'selection', 'shortcut', 'screen-state', 'screen-pause'].includes(name)) return handler(...args)
+    if (name === 'page') await idle
     if (active) throw new Error('Finish the current capture first.')
     active = true
-    try { return await handler(...args) } finally { active = false }
+    let finished
+    idle = new Promise(resolve => { finished = resolve })
+    try { return await handler(...args) } finally { active = false; finished() }
   })
   guard('selection', () => { const value = {text:selected,context:selectionContext}; selected = ''; selectionContext={}; return value })
   guard('shortcut', value => preferences.shortcut?.(value))
@@ -179,8 +189,11 @@ function createFloatingCapture({ electron, runtime, context, loadRecord, celebra
     preferences.write?.({ mode })
   })
   guard('celebrate', () => celebrate?.())
+  guard('page', () => { current = null; destination = null; scan = null; return reader.page() })
+  guard('save-page', () => reader.savePage())
   guard('form', async mode => {
-    const state = here(), adapter = mode === 'browser' ? owned : dia, ref = await adapter.identify()
+    const state = here(), adapter = source(mode), ref = await adapter.identify()
+    if (adapter.form) { const result = await adapter.form(ref); verify(state); return result }
     const {readApplicationForm} = await moduleAt('extensions/worldview-reader/application-form.js')
     const result = await adapter.evaluate(ref,'('+readApplicationForm.toString()+')()',false)
     assertSource(await adapter.identify(),ref); verify(state)
@@ -198,10 +211,34 @@ function createFloatingCapture({ electron, runtime, context, loadRecord, celebra
     return true
   })
   guard('browser', async url => { await openBrowser(url); return true })
+  if (screenContacts) {
+    guard('screen-state', () => screenContacts.state())
+    guard('screen-start', () => screenContacts.enable())
+    guard('screen-now', () => screenContacts.readNow(async () => {
+      const win = panel
+      if (!win?.isVisible() || typeof win.setOpacity !== 'function') return
+      win.setOpacity(0)
+      await new Promise(resolve => setTimeout(resolve, 85))
+      return () => { if (!win.isDestroyed()) win.setOpacity(1) }
+    }))
+    guard('screen-pause', () => screenContacts.pause())
+    guard('screen-dismiss', id => screenContacts.discard(id))
+    guard('screen-paste', value => screenContacts.paste(value))
+    guard('screen-settings', () => electron.shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture'))
+    guard('screen-restart', () => restart?.())
+    guard('screen-save', async (id, fields) => {
+      const state = here(), contact = screenContacts.proposal(id)
+      const { workspaceToken } = await api(state, 'groups?entityType=person')
+      screenContacts.proposal(id)
+      const result = await api(state, 'screen-contact', { requestId: id, workspaceToken, name: fields?.name, headline: fields?.headline, phone: fields?.phone, url: contact.url })
+      if (result.status === 'saved' || result.status === 'existing') screenContacts.discard(id)
+      return result
+    })
+  }
   const recordRoute = (type, recordId) => '#/people?' + (type === 'company' ? 'tab=companies&company=' : 'person=') + encodeURIComponent(recordId)
   guard('people', async mode => {
     scan = null
-    const state = here(), adapter = mode === 'browser' ? owned : dia
+    const state = here(), adapter = source(mode)
     let ref
     try {
       ref = await adapter.identify()
@@ -218,10 +255,15 @@ function createFloatingCapture({ electron, runtime, context, loadRecord, celebra
       return { error: error.message, sourceUrl: ref?.url || '' }
     }
   })
+  guard('follow-page', async () => {
+    if (!panel?.isVisible()) return null
+    return reader.peek()
+  })
   guard('read', async (mode, selectedUrl) => {
+    if (mode !== 'browser' && selectedUrl === undefined) reader.acceptPage()
     current = null
     destination = null
-    const state = here(), adapter = mode === 'browser' ? owned : dia
+    const state = here(), adapter = source(mode)
     let ref
     try {
       ref = await adapter.identify()
@@ -246,7 +288,7 @@ function createFloatingCapture({ electron, runtime, context, loadRecord, celebra
       const { educationStatus } = await moduleAt('src/crm/affiliationStatus.ts')
       verify(state)
       assertSource(await adapter.identify(), ref)
-      current = { state, workspaceToken, adapter, ref, selectedUrl, savedAffiliations, existing, name: data.profile.name, id: randomUUID(), groups: groups.map(group => group.id), requests: new Map() }
+      current = { state, workspaceToken, adapter, ref, selectedUrl, savedAffiliations, existing, entityType: data.profile.entityType, name: data.profile.name, id: randomUUID(), groups: groups.map(group => group.id), requests: new Map() }
       if (existing) destination = recordRoute(data.profile.entityType, existing.recordId)
       return { profile: preview(data, educationStatus, savedAffiliations), id: current.id, existing, groups, workspace: basename(state.workspace) }
     } catch (error) {
@@ -307,12 +349,28 @@ function createFloatingCapture({ electron, runtime, context, loadRecord, celebra
     if (saved) pending.existing = { recordId: receipt.recordId, groupIds: [...new Set([...(pending.existing?.groupIds || []), groupId].filter(Boolean))] }
     return { status: receipt.status, existing: pending.existing, notice, message: receipt.message || '', profile: preview(data, (await moduleAt('src/crm/affiliationStatus.ts')).educationStatus, pending.savedAffiliations) }
   })
+  guard('organization', async (id, fields = {}) => {
+    const pending = current
+    if (!pending || pending.id !== id) throw Error('Choose the current saved contact.')
+    verify(pending.state)
+    if (!pending.existing) throw Error('Save this contact before editing its record.')
+    return api(pending.state, 'organization', {
+      ...fields, id: pending.existing.recordId, entityType: pending.entityType,
+      workspaceToken: pending.workspaceToken,
+    })
+  })
+  guard('linked-record', async (previewId, type, id) => {
+    const pending = await requirePreview(previewId)
+    if (!['person', 'company'].includes(type) || typeof id !== 'string' || !id || id.length > 200) throw Error('Choose a saved record.')
+    verify(pending.state)
+    return loadRecord(recordRoute(type, id))
+  })
   guard('record', (action, previewId) => {
     if (!destination || !current) throw new Error('Select a saved contact or review a capture first.')
     if (previewId !== undefined && previewId !== current.id) throw new Error('Read this contact again before opening it.')
     verify(current.state)
     return loadRecord(destination + (action === 'activity' && destination.startsWith('#/people?person=') ? '&action=log-interaction' : ''))
   })
-  return { show, close, dismissIfVisible }
+  return { show, close, dismissIfVisible, screenChanged: value => { if (panel && !panel.isDestroyed()) panel.webContents.send('worldview:screen-contacts', value) } }
 }
 module.exports = { createFloatingCapture, captureBounds, preview }

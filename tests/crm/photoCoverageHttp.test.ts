@@ -132,3 +132,21 @@ it('stages native field review without applying it and saves only the named exis
   expect(db.crm.get('people','local-ben')?.jobTitle).not.toBe('Editor')
   expect((await post('photo-only',{workspaceToken:'stale',name,photoUrl})).status).toBe(409)
 })
+
+it('collects approved screen fields idempotently without retaining a screenshot or silently merging a same-name contact', async () => {
+  const headers = { 'x-wv-client': 'desktop-profile-capture', 'x-wv-workspace-fingerprint': createHash('sha256').update(await realpath(directory)).digest('hex'), 'content-type': 'application/json' }
+  const body = { requestId: '11111111-1111-4111-8111-111111111111', workspaceToken: db.crm.workspaceFingerprint(), name: 'Ada Example', headline: 'Researcher', url: '', phone: '' }
+  const post = (fields: Partial<typeof body> = {}) => fetch(base + '/api/crm/profile-capture/screen-contact', { method: 'POST', headers, body: JSON.stringify({ ...body, ...fields }) })
+  expect((await post({ workspaceToken: 'old' })).status).toBe(409)
+  expect(db.crm.rows('people', false)).toHaveLength(0)
+  expect(await (await post()).json()).toEqual({ status: 'saved' })
+  expect(await (await post()).json()).toEqual({ status: 'saved' })
+  expect(await (await post({ requestId: '22222222-2222-4222-8222-222222222222' })).json()).toMatchObject({ status: 'possible-match' })
+  expect(db.crm.rows('people', false)).toMatchObject([{ fullName: 'Ada Example', jobTitle: 'Researcher', urls: [] }])
+  const phone = { requestId: '33333333-3333-4333-8333-333333333333', name: '', phone: '+1 (415) 555-0126' }
+  expect(await (await post(phone)).json()).toEqual({ status: 'saved' })
+  expect(await (await post({ ...phone, requestId: '44444444-4444-4444-8444-444444444444', phone: '+14155550126' })).json()).toEqual({ status: 'existing' })
+  expect(await (await post({ requestId: '55555555-5555-4555-8555-555555555555', name: '@ada.example', url: 'https://www.instagram.com/ada.example/' })).json()).toEqual({ status: 'saved' })
+  expect(db.crm.rows('people', false).some(person => person.fullName === '' && person.phones.includes('+14155550126'))).toBe(true)
+  expect(await readdir(directory)).toEqual([])
+})

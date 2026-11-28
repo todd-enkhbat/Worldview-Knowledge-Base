@@ -1,8 +1,13 @@
+import { enrichReaderRecord } from './readerEnrichment.ts'
+import { ReaderBridge } from './readerBridge.ts'
+import { ReaderEvents, type ReaderCalendar } from './readerEvents.ts'
+import { readerOrganization } from './readerOrganization.ts'
+import { applyStudy, decodeStudy, STUDY_KEY, applicationInput, applicationAppliedAt } from '../src/study/model.ts'
 import { accessTodos, TodoError } from './todoHttp.ts'
 import { entityUrl } from './crmProfileCapture.ts'
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
-import { existsSync } from 'node:fs'
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { constants, existsSync } from 'node:fs'
+import { open, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { zipSync } from 'fflate'
 import type { IncomingMessage, ServerResponse } from 'node:http'
@@ -37,18 +42,23 @@ interface ProfileDataReceipts { schemaVersion: 1; revision: number; entries: Rec
 interface Receipts { schemaVersion: 1; revision: number; clients: Record<string, { sequence: number; hash: string; result: ArticleCaptureResult }> }
 interface PhotoReceipts { schemaVersion: 1; revision: number; entries: Record<string, { hash: string; capture: ArticleCaptureResult; result?: ArticleCaptureResult }> }
 interface FolkPhotoReceipts { schemaVersion: 1; revision: number; entries: Record<string, { hash: string; result?: FolkPhotoCaptureResult }> }
-interface ArticleCaptureOptions { quickAddProfile?: (draft: CrmProfileCaptureDraft, requestId: string, groupId?: string, authorize?: () => void) => Promise<QuickAddResult>; db: WorldDb; blobDir: string; bus?: ChangeBus; now?: () => number; saveContactPhoto?: (input: CapturedPhotoRequest) => Promise<SavedContactPhoto>; saveFolkPhotos?: (input: FolkPhotoInput & { requestId: string; current: () => void }) => Promise<SavedFolkPhotos>; saveProfileData?: (input: Record<string, unknown> & { requestId: string; current: () => void }) => Promise<CrmProfileCaptureDraft> }
+interface ArticleCaptureOptions { calendar?: ReaderCalendar; quickAddProfile?: (draft: CrmProfileCaptureDraft, requestId: string, groupId?: string, authorize?: () => void) => Promise<QuickAddResult>; db: WorldDb; blobDir: string; bus?: ChangeBus; now?: () => number; saveContactPhoto?: (input: CapturedPhotoRequest) => Promise<SavedContactPhoto>; saveFolkPhotos?: (input: FolkPhotoInput & { requestId: string; current: () => void }) => Promise<SavedFolkPhotos>; saveProfileData?: (input: Record<string, unknown> & { requestId: string; current: () => void }) => Promise<CrmProfileCaptureDraft> }
 export class ArticleCaptureError extends Error { readonly status: number; constructor(message: string, status = 400) { super(message); this.status = status } }
 function assert(condition: unknown, message: string, status = 400): asserts condition { if (!condition) throw new ArticleCaptureError(message, status) }
 
 /** Per-world pairing credentials never enter portable exports; only their hashes are stored. */
 export class ArticleCapture {
+  readonly readerBridge = new ReaderBridge()
   private readonly options: ArticleCaptureOptions
   private queue: Promise<unknown> = Promise.resolve()
   // A five-minute, explicit approval handshake. Pending bearer tokens are memory-only,
   // never written to the world, portable backups, logs, or a webpage response.
   private readonly connections = new Map<string, ConnectionRequest>()
-  constructor(options: ArticleCaptureOptions) { this.options = options }
+  private readonly readerEvents: ReaderEvents
+  constructor(options: ArticleCaptureOptions) {
+    this.options = options
+    this.readerEvents = new ReaderEvents(options.db.crm, options.calendar)
+  }
   private now() { return this.options.now?.() ?? Date.now() }
   private clients(): Clients { return this.options.db.getKv<Clients>(CLIENTS) ?? { schemaVersion: 1, revision: 0, clients: [] } }
   private expireConnections() { for (const [id, request] of this.connections) if (request.expiresAt <= this.now()) this.connections.delete(id) }
@@ -80,7 +90,7 @@ export class ArticleCapture {
     return request.token ? { connected: true, token: request.token, clientId: request.clientId } : { connected: false, expiresAt: request.expiresAt }
   }
   async download(): Promise<Uint8Array> {
-    const files = ['manifest.json', 'background.js', 'content.js', 'folk-content.js', 'extract.js', 'popup.html', 'popup.js', 'group-icon.js', 'worldview-128.png', 'popup.css', 'application-form.js', 'contact-ui.js', 'contact-ui.css', 'todo-ui.js', 'todo-ui.css', 'README.md']
+    const files = ['manifest.json', 'background.js', 'enki-bridge.js', 'enki-shortcut.js', 'content.js', 'folk-content.js', 'extract.js', 'popup.html', 'popup.js', 'group-icon.js', 'worldview-128.png', 'popup.css', 'application-form.js', 'contact-ui.js', 'contact-ui.css', 'organization-ui.js', 'reader-events-ui.js', 'todo-ui.js', 'todo-ui.css', 'README.md']
     const entries = await Promise.all(files.map(async (name) => [`WorldviewReader/${name}`, await readFile(resolve('extensions/worldview-reader', name))] as const))
     return zipSync(Object.fromEntries(entries), { level: 6 })
   }
@@ -101,9 +111,19 @@ export class ArticleCapture {
     assert(client, 'This browser pairing does not exist.', 404)
     client.revokedAt = this.now(); next.revision++
     assert(this.options.db.compareAndSwapKv(CLIENTS, next, before.revision), 'Pairing changed; refresh and try again.', 409)
+    this.readerBridge.disconnect(id)
     return this.status()
   }
   originAllowed(origin: string) { return extensionOrigin(origin) && this.clients().clients.some((client) => client.origin === origin && !client.revokedAt && client.expiresAt > this.now()) }
+  bridgeClient(origin: string, token: string) { return this.authenticate(origin, token).id }
+  bridgeWorkspaceMatches(fingerprint: unknown) { return typeof fingerprint === 'string' && fingerprint === hash(resolve(this.options.blobDir, '..')) }
+  async requestBridge(operation: string, args: Record<string, unknown>, client: string | undefined, signal: AbortSignal) {
+    const db = this.options.db, generation = db.getReplacementGeneration(), workspace = db.crm.workspaceFingerprint()
+    assert(!db.getKv('importInProgress'), 'Finish workspace recovery before reading Dia.', 409)
+    const result = await this.readerBridge.request(operation, args, client, signal)
+    assert(generation === db.getReplacementGeneration() && workspace === db.crm.workspaceFingerprint() && !db.getKv('importInProgress'), 'The workspace changed. Press ]]] again.', 409)
+    return result
+  }
   todos(origin: string, token: string, edit?: Record<string,unknown>) {
     this.authenticate(origin,token)
     try { return accessTodos(this.options.db,this.options.bus,edit) }
@@ -111,6 +131,90 @@ export class ArticleCapture {
       if (error instanceof TodoError) throw new ArticleCaptureError(error.message,error.status)
       throw new ArticleCaptureError('Worldview could not access your saved to-do lists.',500)
     }
+  }
+  applicationSubmitted(input: Record<string,unknown>, origin:string, token:string) {
+    const client=this.authenticate(origin,token)
+    const db=this.options.db
+    const {submissionId,sequence,...submission}=input
+    if (submissionId!==undefined) {
+      assert(typeof submissionId==='string' && /^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/i.test(submissionId) && typeof sequence==='number' && sequence>0 && Number.isSafeInteger(sequence),'Invalid submission receipt.')
+    }
+    const delivery=typeof submissionId==='string' ? {key:hash(client.id+':'+submissionId),fingerprint:hash(JSON.stringify(submission))} : undefined
+    const {result,changed}=db.tx(()=>{
+      assert(input.workspaceToken===db.crm.workspaceFingerprint(),'The workspace changed. Read and save this application again.',409)
+      assert(!db.getKv('importInProgress'),'Finish workspace recovery before tracking submissions.',503)
+      const state=decodeStudy(db.getKv(STUDY_KEY))
+      const record=state.applications.find(app=>app.id===input.applicationId), form=input.form as Record<string,unknown> | undefined
+      const previous=record?.revisions.findLast(row=>row.source===input.source)
+      assert(record && typeof input.source==='string' && previous,'Open and save this application before tracking it.',409)
+      if (delivery) {
+        const stored=record.revisions.find(row=>row.readerSubmission?.key===delivery.key)
+        if (stored) {
+          assert(stored.readerSubmission?.fingerprint===delivery.fingerprint,'The retained submission does not match its original receipt.',409)
+          return {changed:false,result:{ok:true,id:record.id,appliedAt:stored.appliedAt,submissionId,sequence}}
+        }
+      }
+      assert(form?.submitted===true && typeof form.submissionEvidence==='string' && /\b(?:submitted|received|recorded|thank you|thanks)\b/i.test(form.submissionEvidence),'A successful submission acknowledgement is required.')
+      const now=this.now(), observed=Number(form.appliedAt)
+      const retention=delivery ? 7*24*60*60*1000 : 10*60*1000
+      assert(Number.isFinite(observed)&&observed>0&&observed<=now+60000&&observed>=now-retention,'The submission observation expired. Read the confirmation page again.')
+      const value=applicationInput.parse({...previous,...form,id:record.id,organization:record.organization,opportunity:record.opportunity,source:input.source,step:'Submission confirmation',appliedAt:applicationAppliedAt(record) || observed})
+      const existingAnswers=new Map(previous.answers.map(answer=>[answer.question,answer]))
+      for (const answer of value.answers) existingAnswers.set(answer.question,answer)
+      value.answers=[...existingAnswers.values()].slice(0,180)
+      const revisionCount=record.revisions.length
+      applyStudy(state,'application',value,now,delivery)
+      const changed=record.revisions.length!==revisionCount
+      if (changed) { state.revision++; db.putKv(STUDY_KEY,state) }
+      return {changed,result:{ok:true,id:record.id,appliedAt:record.appliedAt,...(delivery ? {submissionId,sequence} : {})}}
+    })
+    if (changed) this.options.bus?.publish({v:1,from:'reader-application',change:{type:'kv',keys:[STUDY_KEY]}})
+    return result
+  }
+  async organization(input: Record<string, unknown>, origin: string, token: string) {
+    const client = this.authenticate(origin, token)
+    const db = this.options.db, store = db.crm
+    assert(input.workspace === store.workspaceFingerprint() && !db.getKv('importInProgress') && db.getSettings()?.firstRunComplete, 'Reopen Reader in the current workspace.', 409)
+    const type = input.entityType === 'person' ? 'person' : 'company'
+    const url = typeof input.url === 'string' && entityUrl(input.url, type)
+    const match = url ? this.profileMatches(type, new Set([url])).get(url) : null
+    assert(match && match.recordId === input.id, 'Open the saved record’s source profile first.', 404)
+    const changed = () => this.options.bus?.publish({ v: 1, from: 'reader-organization', change: { type: 'kv', keys: ['crm.v1'] } })
+    const generation = db.getReplacementGeneration()
+    const current = () => {
+      this.authenticate(origin, token)
+      assert(generation === db.getReplacementGeneration() && input.workspace === store.workspaceFingerprint() && !db.getKv('importInProgress'), 'The workspace changed. Reopen Reader.', 409)
+      assert(url && this.profileMatches(type, new Set([url])).get(url)?.recordId === match.recordId, 'The profile changed. Reopen Reader.', 409)
+    }
+    const scope = { key: JSON.stringify([client.id, input.workspace, generation, type, match.recordId]), id: match.recordId, type } as const
+    if (input.action === 'organization-logo') {
+      const details = store.detail(type === 'person' ? 'people' : 'companies', match.recordId)
+      const company = type === 'company' && input.companyId === match.recordId ? store.get('companies', match.recordId) :
+        [...details.related.companies, ...(details.related.affiliationOrganizations || [])].find(company => company.id === input.companyId)
+      const assetId = company?.logoAssetId
+      assert(assetId && /^crm-avatar-[a-f0-9]{64}$/.test(assetId), 'No saved logo is available.', 404)
+      const meta = db.getAssetMeta(assetId)
+      assert(meta && ['image/png', 'image/jpeg', 'image/webp'].includes(meta.mime) && meta.bytes <= 512_000, 'No supported saved logo is available.', 404)
+      const file = await open(join(this.options.blobDir, assetId), constants.O_RDONLY | constants.O_NOFOLLOW)
+      try {
+        const stat = await file.stat()
+        assert(stat.isFile() && stat.size <= 512_000, 'The logo is unavailable.', 404)
+        const bytes = await file.readFile()
+        current()
+        return { logo: 'data:' + meta.mime + ';base64,' + bytes.toString('base64') }
+      } finally { await file.close() }
+    }
+    if (input.action === 'event-suggestions') return this.readerEvents.suggestions(scope, this.now(), input.online === true, current)
+    if (input.action === 'link-event') {
+      assert(typeof input.eventId === 'string' && input.eventId.length <= 250 && typeof input.requestId === 'string' && /^[a-f0-9-]{36}$/i.test(input.requestId), 'Choose a suggested event.')
+      this.readerEvents.link(scope, input.eventId, input.requestId, this.now(), changed)
+      return readerOrganization(store, match.recordId, {}, this.now(), changed, type)
+    }
+    let enrichment
+    if (input.action === 'enrich') {
+      enrichment = await enrichReaderRecord(db, this.options.blobDir, type, match.recordId, input.requestId, this.now(), current, changed)
+    }
+    return { ...readerOrganization(store, match.recordId, enrichment ? {} : input, this.now(), changed, type), ...(enrichment ? { enrichment } : {}) }
   }
   profileGroups(type: unknown, origin: string, token: string, url?: unknown) {
     this.authenticate(origin, token)
@@ -331,6 +435,39 @@ export async function handleArticleCaptureRequest(service: ArticleCapture, req: 
   try {
     assert(loopback(req), 'Browser capture requires a loopback local service.', 403)
     const path = (req.url ?? '').split('?')[0], origin = String(req.headers.origin ?? '')
+    if (path === '/api/reading-capture/enki/request' || path === '/api/reading-capture/enki/summons') {
+      assert(memoryOriginAllowed(req) && req.headers['x-wv-client'] === 'desktop-profile-capture' && service.bridgeWorkspaceMatches(req.headers['x-wv-workspace-fingerprint']), 'Open Enki in the intended local workspace.', 403)
+      assert(req.method === 'POST', 'Use an Enki browser action.', 405)
+      const input = await body(req)
+      if (path.endsWith('/request')) assert(typeof input.operation === 'string' && input.args && typeof input.args === 'object' && !Array.isArray(input.args), 'Choose an Enki browser action.')
+      const abort = new AbortController(), closed = () => abort.abort()
+      res.once('close', closed)
+      try {
+        const result = path.endsWith('/summons') ? { summon: await service.readerBridge.waitForSummon(abort.signal) } : await service.requestBridge(input.operation as string, input.args as Record<string, unknown>, typeof input.client === 'string' ? input.client : undefined, abort.signal)
+        if (!res.destroyed) return sendMemoryJson(res, 200, result)
+      } finally { res.removeListener('close', closed) }
+      return
+    }
+    if (['/api/reading-capture/enki/poll', '/api/reading-capture/enki/reply', '/api/reading-capture/enki/summon', '/api/reading-capture/enki/disconnect'].includes(path)) {
+      assert(service.originAllowed(origin), 'Pair this extension in the local workspace first.', 403)
+      res.setHeader('access-control-allow-origin', origin); res.setHeader('vary', 'Origin'); res.setHeader('cache-control', 'no-store'); res.setHeader('access-control-allow-private-network', 'true')
+      if (req.method === 'OPTIONS') { res.writeHead(204, { 'access-control-allow-methods': 'POST', 'access-control-allow-headers': 'authorization,content-type', 'access-control-max-age': '300' }); res.end(); return }
+      assert(req.method === 'POST', 'Use an Enki browser action.', 405)
+      const token = /^Bearer (\S+)$/.exec(String(req.headers.authorization ?? ''))?.[1] ?? ''
+      const client = service.bridgeClient(origin, token)
+      const input = await body(req)
+      if (path.endsWith('/summon')) return sendMemoryJson(res, 200, service.readerBridge.summon(client, input.ref))
+      if (path.endsWith('/disconnect')) { service.readerBridge.disconnect(client); return sendMemoryJson(res, 200, { ok: true }) }
+      if (path.endsWith('/reply')) return sendMemoryJson(res, 200, service.readerBridge.reply(client, input))
+      const abort = new AbortController(), closed = () => abort.abort()
+      res.once('close', closed)
+      try {
+        const command = await service.readerBridge.poll(client, abort.signal)
+        service.bridgeClient(origin, token)
+        if (!res.destroyed) return sendMemoryJson(res, 200, { command })
+      } finally { res.removeListener('close', closed) }
+      return
+    }
     if (path === '/api/reading-capture/connect' || /^\/api\/reading-capture\/connect\/[^/]+$/.test(path)) {
       assert(extensionOrigin(origin), 'Connect from the Worldview Reader extension.', 403)
       res.setHeader('access-control-allow-origin', origin); res.setHeader('vary', 'Origin'); res.setHeader('access-control-allow-private-network', 'true'); res.setHeader('cache-control', 'no-store')
@@ -342,15 +479,17 @@ export async function handleArticleCaptureRequest(service: ArticleCapture, req: 
       assert(input.action === 'check' || input.action === 'acknowledge', 'Choose a connection check or acknowledgement.')
       return sendMemoryJson(res, 200, service.connectionStatus(decodeURIComponent(path.split('/').at(-1)!), origin, secret, input.action === 'acknowledge'))
     }
-    if (['/api/reading-capture/capture','/api/reading-capture/profile-groups','/api/reading-capture/profile-people','/api/reading-capture/todos-state','/api/reading-capture/todos-mutate'].includes(path)) {
+    if (['/api/reading-capture/capture','/api/reading-capture/profile-groups','/api/reading-capture/organization','/api/reading-capture/profile-people','/api/reading-capture/todos-state','/api/reading-capture/todos-mutate','/api/reading-capture/application-submitted'].includes(path)) {
       assert(service.originAllowed(origin), 'Pair this extension in the local workspace first.', 403)
       res.setHeader('access-control-allow-origin', origin); res.setHeader('vary', 'Origin'); res.setHeader('access-control-allow-private-network', 'true')
       if (req.method === 'OPTIONS') { res.writeHead(204, { 'access-control-allow-methods': 'POST', 'access-control-allow-headers': 'authorization,content-type', 'access-control-max-age': '300' }); res.end(); return }
       assert(req.method === 'POST', 'Use POST for explicit article captures.', 405)
       const token = /^Bearer (\S+)$/.exec(String(req.headers.authorization ?? ''))?.[1] ?? ''
       const input = await body(req)
+      if(path.endsWith('/application-submitted'))return sendMemoryJson(res,200,service.applicationSubmitted(input,origin,token))
       if (path.endsWith('/todos-state') || path.endsWith('/todos-mutate')) return sendMemoryJson(res,200,service.todos(origin,token,path.endsWith('/todos-mutate') ? input : undefined))
       if (path.endsWith('/profile-people')) return sendMemoryJson(res, 200, service.visiblePeople(input.urls, origin, token))
+      if (path.endsWith('/organization')) return sendMemoryJson(res, 200, await service.organization(input, origin, token))
       if (path.endsWith('/profile-groups')) return sendMemoryJson(res, 200, service.profileGroups(input.entityType, origin, token, input.url))
       if (input.saveProfileData === true && req.socket.localPort) {
         const receipt = await service.capture({ ...input, saveProfileData: true }, origin, token)
@@ -365,5 +504,5 @@ export async function handleArticleCaptureRequest(service: ArticleCapture, req: 
     if (path === '/api/reading-capture' && req.method === 'POST') return sendMemoryJson(res, 201, service.pair(await body(req)))
     if (/^\/api\/reading-capture\/[^/]+$/.test(path) && req.method === 'DELETE') return sendMemoryJson(res, 200, service.revoke(decodeURIComponent(path.split('/').at(-1)!)))
     return sendMemoryJson(res, 405, { error: 'Use the browser pairing or capture controls.' })
-  } catch (error) { return sendMemoryJson(res, error instanceof ArticleCaptureError ? error.status : 400, { error: error instanceof Error ? error.message : 'Browser capture failed.' }) }
+  } catch (error) { return sendMemoryJson(res, error instanceof ArticleCaptureError || error instanceof CrmError ? error.status : 400, { error: error instanceof Error ? error.message : 'Browser capture failed.' }) }
 }

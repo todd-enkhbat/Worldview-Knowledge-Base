@@ -1,3 +1,4 @@
+@import '../worldviewPalette.css';
 @font-face {
   font-family: 'Alte Haas';
   src: url('../assets/fonts/alte-haas/alte-haas-400.woff2') format('woff2');
@@ -40,7 +41,7 @@ input, textarea { caret-color: var(--accent); }
 .enki-header-action { width: 30px; height: 30px; justify-content: center; padding: 0; color: var(--muted); background: transparent; border: 0; }
 .enki-window-tools, #enki-shortcuts { -webkit-app-region: no-drag; }
 .enki-nav {
-  display: grid; grid-template-columns: 1.15fr .85fr 1.22fr .9fr;
+  display: grid; grid-template-columns: .75fr 1.15fr .75fr 1.22fr .9fr;
   padding: 0 9px; border-bottom: 1px solid var(--line);
 }
 .enki-nav button {
@@ -52,9 +53,17 @@ input, textarea { caret-color: var(--accent); }
   position: absolute; content: ''; inset: auto 7px -1px; height: 2px; border-radius: 2px; background: currentColor;
 }
 .enki-nav button:focus-visible { outline-offset: -3px; }
+@media (max-width: 390px) { .enki-nav button { flex-direction: column; gap: 2px; min-height: 48px; font-size: 11px; } }
 .enki-panes { min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
 .helper-pane { max-width: 650px; padding: 16px 18px; margin: auto; }
 .helper-pane[hidden] { display: none; }
+.enki-dia-page { display: grid; gap: 12px; min-width: 0; }
+.enki-dia-page h1, .enki-dia-page p, .enki-dia-page blockquote { overflow-wrap: anywhere; }
+.enki-page-source, .enki-page-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-width: 0; }
+.enki-page-source { justify-content: space-between; font-size: 12px; }
+.enki-page-source span { min-width: 0; overflow-wrap: anywhere; color: var(--accent); }
+.enki-dia-page blockquote { margin: 0; padding: 12px; border: 1px solid var(--line); border-radius: 8px; font-size: 14px; }
+.enki-page-error { display: grid; gap: 10px; justify-items: start; }
 .enki-shell [hidden] { display: none !important; }
 .helper-pane h1, .helper-pane .enki-todo-heading h1 {
   margin: 0 0 13px; font: 400 30px/1.07 'Alte Haas', Helvetica, sans-serif;
@@ -175,3 +184,116 @@ input, textarea { caret-color: var(--accent); }
 .helper-pane .wv-people h2 { margin:10px 0 5px; font:600 12px/1.4 -apple-system,BlinkMacSystemFont,sans-serif; letter-spacing:0; }
 .enki-profile .wv-person-avatar img { width:100%; height:100%; }
 .enki-profile-detail-actions { display:flex; flex-wrap:wrap; gap:4px 12px; align-items:center; }
+@media (max-width:520px) {
+  .helper-pane .study-edit .study-edit-actions .enki-application-status:not(:empty) { flex-basis:100%; }
+}
+
+.enki-screen-contacts,.enki-screen-preview { display: grid; gap: 10px; }
+.enki-screen-contacts p { margin: 0; }
+.enki-screen-contacts .enki-primary { justify-self: start; }
+.enki-screen-preview { border: 1px solid var(--enki-line, #d2d8ce); border-radius: 8px; padding: 12px; }
+.enki-screen-preview h2 { margin: 0; font-size: 16px; }
+.enki-screen-status { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; color: var(--enki-muted, #53615a); }
+.enki-screen-contacts + .enki-change-source { margin-top: 12px; }
+
+/* The tools share one compact shell. Color marks the active tool and capture state. */
+.enki-header {
+  background: radial-gradient(ellipse at 4% -40%, #e2f5e9 0%, transparent 64%),
+    linear-gradient(105deg, #fbfaf4 25%, #f0edf9 85%);
+}
+.enki-nav { padding: 4px 9px 6px; gap: 3px; }
+.enki-nav button { border-radius: 9px; white-space: nowrap; font-size: clamp(11px, 3.75vw, 13px); }
+.enki-nav button[aria-selected=true] { background: #e2efe8; color: #205445; }
+.enki-nav button[aria-selected=true]::after { inset: auto 34% 3px; background: #3c836c; }
+.enki-nav #tool-word[aria-selected=true] { background: #ece7fa; color: #4b3973; }
+.enki-nav #tool-application[aria-selected=true] { background: #fae9d9; color: #703b23; }
+.enki-nav #tool-todo[aria-selected=true] { background: #e4edf9; color: #284c72; }
+.enki-capture-card {
+  display: grid; gap: 11px; padding: 15px; border-radius: 13px; color: #fffaf7;
+  background: var(--wv-night-gradient);
+}
+.enki-capture-card-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px 10px; flex-wrap: wrap; }
+.helper-pane .enki-capture-card h1 { margin: 0; font-size: clamp(20px, 5.6vw, 29px); line-height: 1.12; }
+.enki-capture-card p { color: #f2eef6; font-size: 13px; }
+.enki-capture-state {
+  display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px; border-radius: 30px;
+  background: #fbf4ff22; color: #fff; font-size: 11px; white-space: nowrap;
+}
+.enki-capture-state::before { content: ''; inline-size: 6px; block-size: 6px; border-radius: 50%; background: #dfccf1; }
+.enki-capture-card[data-state=watching] .enki-capture-state::before { background: #97eac9; }
+.enki-capture-card[data-state=permission] .enki-capture-state::before { background: #ffd094; }
+.enki-capture-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; }
+.enki-capture-actions:empty { display: none; }
+.enki-capture-actions button { min-height: 35px; border-color: #ffffff40; background: #ffffff14; color: #fff; }
+.enki-capture-actions button[data-primary] { border-color: transparent; background: #d7f3e6; color: #18382d; font-weight: 650; }
+.enki-capture-actions button:focus-visible { outline-color: #b7e9f4; }
+@media (max-width: 365px) {
+  .enki-capture-card[data-state=permission] button[data-primary] { flex-basis: 100%; text-align: start; }
+}
+.enki-paste-contact summary,.enki-change-source summary { padding: 4px 0; color: var(--muted); font-weight: 550; }
+.enki-paste-contact form { display: grid; gap: 8px; margin-top: 6px; }
+.enki-paste-contact textarea { resize: vertical; width: 100%; min-height: 51px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--paper); }
+.enki-paste-contact form button { justify-self: start; min-height: 35px; }
+.enki-capture-feedback { padding: 8px 10px; background: #e9f3ed; border-radius: 8px; color: #285544; font-size: 13px; }
+.enki-screen-preview { background: #fff; border-color: #d8e4df; }
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  .enki-shell button { transition: transform 120ms cubic-bezier(.22,1,.36,1), background-color 120ms linear; }
+  .enki-shell button:active:not(:disabled, :focus-visible) { transform: scale(.97); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .enki-screen-preview { animation: enki-review-in 165ms cubic-bezier(.22,1,.36,1) both; }
+  .enki-capture-state[data-scanning]::before { animation: enki-scan-pulse 780ms ease-in-out infinite alternate; }
+  @keyframes enki-review-in { from { opacity: .55; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes enki-scan-pulse { from { opacity: .5; transform: scale(.85); } to { opacity: 1; transform: scale(1.2); } }
+}
+
+.enki-saved-record {
+  --green: #24583e;
+  --line: #d9dfd7;
+  --wash: #eef1eb;
+  --muted: #58645e;
+  margin-top: 16px;
+  min-width: 0;
+}
+.enki-saved-record [hidden] { display: none !important; }
+.enki-saved-record .reader-company-mark img { max-width: 100%; }
+.enki-saved-record .reader-event-result { grid-template-columns: 40px minmax(0,1fr) auto; }
+.enki-saved-record #organization-editor button { font-size: 13px; }
+.enki-saved-record #organization-editor :focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+
+.enki-follow-status {
+  margin: 0 0 12px;
+  color: var(--muted, #58645e);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* Compact companion chrome, with room for the record and its editor. */
+.enki-header { min-height: 36px; padding: 5px 14px; }
+.enki-brand { gap: 7px; font-size: 17px; }
+.enki-brand img { width: 30px; height: 30px; }
+.enki-nav { padding: 0 10px; gap: 3px; }
+.enki-nav button { min-height: 36px; padding: 7px 10px; font-size: 12px; gap: 6px; border-radius: 7px; }
+.helper-pane { max-width: 860px; padding: 12px 16px; }
+.enki-profile .wv-profile-identity { padding: 0; gap: 10px; margin-bottom: 10px; }
+.enki-profile .wv-profile-portrait { width: 44px; height: 44px; flex-basis: 44px; }
+.enki-profile .wv-name-line h1 { font-size: 23px; line-height: 1.25; }
+.enki-profile .wv-profile-identity p { font-size: 12px; line-height: 1.45; margin-top: 2px; }
+.enki-membership { padding: 6px 0; margin: 0 0 8px; border-top: 0; min-height: 0; font-size: 12px; }
+.enki-membership > div { gap: 5px; }
+.enki-membership span { padding: 3px 7px; }
+.enki-record-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 0 0 10px; }
+.enki-record-actions > button { min-height: 30px; padding: 5px 9px; font-size: 12px; }
+.enki-record-actions .reader-record-tools { display: contents; }
+.enki-record-actions .reader-record-tools button { padding: 5px 9px; font-size: 12px; min-height: 30px; width: auto; }
+.enki-saved-record { margin-top: 0; }
+.enki-follow-status { font-size: 11px; margin-bottom: 8px; }
+.enki-page-source { font-size: 11px; margin: 0; }
+.enki-dia-page { gap: 8px; position: relative; }
+.enki-page-actions { font-size: 11px; margin: 0; justify-self: start; }
+.enki-page-actions summary { cursor: pointer; color: var(--muted); }
+.enki-page-actions button { font-size: 12px; padding: 5px 8px; margin: 5px 5px 0 0; }
+@media (max-width: 390px) {
+  .enki-nav button { min-height: 36px; padding: 5px 4px; font-size: 11px; flex-direction: row; }
+  .enki-nav button svg { display: none; }
+}

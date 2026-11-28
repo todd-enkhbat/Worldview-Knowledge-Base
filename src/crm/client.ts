@@ -3,7 +3,7 @@ import { getStore, getWorldGeneration, isRepoReady, subscribeRepo, useRepoStatus
 import { canonicalJson, hashText } from '../data/hash.ts'
 import type { CrmBase, CrmCollection, CrmCollectionMap, CrmCommand, CrmCommandResult, CrmCompany, CrmField, CrmFieldValue, CrmGroup, CrmHistory, CrmInteraction, CrmMembership, CrmNote, CrmPerson, CrmRelationship, CrmTask } from './types.ts'
 
-export interface CrmListResult<T = CrmBase> { revision: number; collection: CrmCollection; rows: T[]; total: number; nextOffset: number | null }
+export interface CrmListResult<T = CrmBase> { revision: number; collection: CrmCollection; rows: T[]; total: number; nextOffset: number | null; lastInteractionAt?: Record<string, number> }
 export interface CrmDetail<T = CrmPerson> { revision: number; collection: CrmCollection; record: T; canonicalId?: string; related: { companies: CrmCompany[]; affiliationOrganizations?: CrmCompany[]; companyRoster?: import('./types.ts').CrmCompanyRoster; introductionPaths?: import('./types.ts').CrmIntroductionPath[]; memberships: CrmMembership[]; groups: CrmGroup[]; fields: CrmField[]; fieldValues: CrmFieldValue[]; notes: CrmNote[]; interactions: CrmInteraction[]; tasks: CrmTask[]; relationships: CrmRelationship[]; history: CrmHistory[] } }
 export interface CrmStatus { available: boolean; workspaceFingerprint?: string; lastBrowserSave?: { id: string; kind: 'person' | 'company'; name: string } | null; revision: number; counts: Record<CrmCollection, { active: number; total: number }>; pendingCandidates: number; pendingProposals: number; dueTasks: number; cloudEnrichment: false; sendingEnabled: false }
 export const crmMessage = (cause: unknown) => cause instanceof Error ? cause.message : String(cause)

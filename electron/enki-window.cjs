@@ -9,12 +9,18 @@ function petPosition(point, area) {
     y: clamp(point.y, area.y, area.y + area.height - petSize.height),
   }
 }
-function createEnki({ electron, preferences, openTool, dismissPanel, shortcutMenuItem }) {
+function createEnki({ electron, preferences, openTool, dismissPanel, shortcutMenuItem, screenContacts }) {
   const { BrowserWindow, ipcMain, Menu, screen } = electron
   const file = join(__dirname, 'enki-pet.html')
   const fileUrl = pathToFileURL(file).href
   let window = null
   let dragging = null
+  function contactSuggestion(value = screenContacts?.state()) {
+    if (window && !window.isDestroyed() && value) window.webContents.send('enki:screen-contact', {
+      watching: value.status === 'watching', hasSuggestion: !!value.suggestion,
+      needsAccess: value.status === 'permission', unreadable: value.frame === 'unreadable',
+    })
+  }
   function initialPosition() {
     const saved = preferences.read().enkiPosition
     if (Number.isFinite(saved?.x) && Number.isFinite(saved?.y)) return petPosition(saved, screen.getDisplayNearestPoint(saved).workArea)
@@ -38,6 +44,7 @@ function createEnki({ electron, preferences, openTool, dismissPanel, shortcutMen
     win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
     win.webContents.on('will-navigate', event => event.preventDefault())
     win.once('ready-to-show', () => { if (preferences.read().enkiHidden !== true) win.showInactive() })
+    win.webContents.on('did-finish-load', () => contactSuggestion())
     win.on('closed', () => { window = null; dragging = null })
     void win.loadFile(file).catch(error => console.warn('Enki could not open:', error.message))
   }
@@ -58,11 +65,13 @@ function createEnki({ electron, preferences, openTool, dismissPanel, shortcutMen
   }
   onPet('activate', () => { if (!dismissPanel()) open('todo') })
   onPet('hide', hide)
+  onPet('screen-contact', () => open('person'))
   onPet('menu', () => {
     Menu.buildFromTemplate([
       { label: 'TO-DO', click: () => open('todo') }, { label: 'Dictionary', click: () => open('word') },
       { label: 'People (CRM)', click: () => open('person') }, { label: 'Application capture', click: () => open('application') },
       { type: 'separator' }, { label: 'Face forward', click: () => window?.webContents.send('enki:orient', 'reset') },
+      ...(screenContacts?.state().status === 'watching' ? [{ label: 'Pause screen contact suggestions', click: () => screenContacts.pause() }] : []),
       ...shortcutMenuItem(), { label: 'Hide Enki', click: hide },
     ]).popup({ window })
   })
@@ -92,7 +101,7 @@ function createEnki({ electron, preferences, openTool, dismissPanel, shortcutMen
   screen.on('display-removed', fitDisplay)
   screen.on('display-metrics-changed', fitDisplay)
   if (preferences.read().enkiHidden !== true) show()
-  return { show, hide, summon: () => open('todo'), celebrate: () => {
+  return { show, hide, contactSuggestion, summon: () => open('todo'), celebrate: () => {
     if (window?.isVisible()) window.webContents.send('enki:celebrate')
   } }
 }

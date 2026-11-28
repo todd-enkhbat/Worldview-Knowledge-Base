@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('worldviewDesktop', Object.freeze({
     readPhotoPlaces: ({ offset = 0, requestAccess = true, includeLabels = false, snapshotToken } = {}) => ipcRenderer.invoke('worldview:photo-places', { offset, requestAccess, includeLabels, snapshotToken }),
     photoPlaceThumbnail: id => ipcRenderer.invoke('worldview:photo-thumbnail', id),
   } : {}),
+  pageZoom: direction => ipcRenderer.invoke('worldview:page-zoom', direction),
   info: () => ipcRenderer.invoke('worldview:desktop-info'),
   chooseWorkspace: () => ipcRenderer.invoke('worldview:choose-workspace'),
   showWorkspace: () => ipcRenderer.invoke('worldview:show-workspace'),

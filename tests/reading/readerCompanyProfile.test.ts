@@ -33,3 +33,28 @@ it('rejects private, credentialed, obscured or misrepresented destinations and l
     expect(capture(body, 'about/').profile).toMatchObject({ urls: [profileUrl], images: [] })
   }
 })
+
+it('recognizes the current LinkedIn overview layout with a plain-text organization header', () => {
+  const body = '<div><section><div><img alt="Marsh Studio" src="https://images.example/marsh.png"></div><div><div><span>Marsh Studio</span></div><p>We build research equipment for small teams.</p><p>Research Services · Boston , MA · 2K followers · 11–50 employees</p></div></section><section><h2>More pages to follow</h2><a href="/company/other/">Other Studio</a></section></div>'
+  expect(capture(body, 'overview/').profile).toMatchObject({
+    entityType: 'company', name: 'Marsh Studio', headline: 'We build research equipment for small teams.',
+    industry: 'Research Services', location: 'Boston, MA', urls: [profileUrl],
+    images: [{ subjectName: 'Marsh Studio', url: 'https://images.example/marsh.png' }],
+  })
+})
+
+it('does not use a matching name and follower count from a recommendation card', () => {
+  expect(() => capture('<section><h2>More pages to follow</h2><div><p>Marsh Studio</p><p>800 followers</p></div></section>')).toThrow('couldn’t confirm the organization')
+})
+
+it('reads the matching same-origin LinkedIn preload frame and preserves the outer company URL', () => {
+  const outer = new JSDOM('<title>(1) Marsh Studio: Overview | LinkedIn</title><main><iframe src="/preload/?_bprMode=vanilla"></iframe></main>', { url: profileUrl })
+  const inner = new JSDOM('<title>(1) Marsh Studio: Overview | LinkedIn</title><main aria-label="Organization page for Marsh Studio"><div><img alt="Marsh Studio logo" src="https://images.example/marsh.png"><h1>Marsh Studio</h1><p>A research equipment studio based in Boston.</p><div><div>· Research Services</div><div>· Boston, MA</div><div>· 2K followers</div></div></div></main>', { url: 'https://www.linkedin.com/preload/?_bprMode=vanilla' })
+  Object.defineProperty(outer.window.document.querySelector('iframe'), 'contentDocument', { value: inner.window.document })
+  try {
+    const script = new Script('(' + extractProfile.toString() + ')(document)')
+    const result = script.runInContext(createContext({ document: outer.window.document, URL, TextEncoder }))
+    expect(result.url).toBe(profileUrl)
+    expect(result.profile).toMatchObject({ name: 'Marsh Studio', entityType: 'company', industry: 'Research Services', location: 'Boston, MA', description: 'A research equipment studio based in Boston.', images: [{ url: 'https://images.example/marsh.png' }] })
+  } finally { outer.window.close(); inner.window.close() }
+})

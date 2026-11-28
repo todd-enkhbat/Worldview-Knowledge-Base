@@ -112,3 +112,13 @@
   color: var(--kb-muted, #636964);
 }
 .study-edit-actions { display: contents; }
+
+.application-facts { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; padding:16px 0; border-block:1px solid var(--kb-line,var(--line,#d7dcd5)); margin:16px 0; }
+.application-facts > :is(p,small,a) { grid-column:1 / -1; margin:0; font-size:12px; line-height:1.6; }
+.application-facts > div { display:grid; align-content:start; gap:6px; font-size:13px; }
+.application-facts strong { font-weight:500; }
+.application-facts > div > span { color:var(--kb-muted,var(--muted)); }
+@media(max-width:380px) { .application-facts { grid-template-columns:1fr; } }
+
+.application-answer-review > summary { font-size:14px; font-weight:500; padding-block:8px; }
+.application-answer-review .study-pair { margin-block:16px; }

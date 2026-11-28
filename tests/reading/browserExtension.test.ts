@@ -19,7 +19,7 @@ it('limits permissions to explicit tabs plus local service access and queues off
   const alarms = { get: vi.fn(async () => null), clear: vi.fn(async () => true), create: vi.fn(async () => {}), onAlarm: { addListener: (callback: (...args: unknown[]) => unknown) => { listeners.alarm = callback } } }
   const chrome = { alarms, storage: { local, session }, runtime: { id: extensionId, getURL: (path: string) => `chrome-extension://${extensionId}/${path}`, onMessage: { addListener: (callback: (...args: unknown[]) => unknown) => { listeners.message = callback } } }, action: { setBadgeText: vi.fn(async () => {}), setBadgeBackgroundColor: vi.fn(async () => {}) }, tabs: { get: async () => ({ active: true, url: article.url }), sendMessage: vi.fn(async () => ({ ok: true })), onRemoved: { addListener: (callback: (...args: unknown[]) => unknown) => { listeners.removed = callback } }, onUpdated: { addListener: (callback: (...args: unknown[]) => unknown) => { listeners.updated = callback } } }, scripting: { executeScript: vi.fn(async () => [{ result: article }]) } }
   const fetcher = vi.fn<typeof fetch>(async () => { throw new Error('Local service is offline') })
-  const script = readFileSync('extensions/worldview-reader/background.js', 'utf8').replace(/^import .*$/m, 'const extractArticle = () => {}; const extractFolkPhotos = () => {}; const extractProfile = () => {}')
+  const script = readFileSync('extensions/worldview-reader/background.js', 'utf8').replace(/^import .*enki-bridge\.js.*$/m, '').replace(/^import .*application-form\.js.*$/m, 'const readApplicationForm = () => {}').replace(/^import .*$/m, 'const extractArticle = () => {}; const extractFolkPhotos = () => {}; const extractProfile = () => {}')
   expect(script).not.toMatch(/^await /m)
   new Script(script).runInContext(createContext({ chrome, fetch: fetcher, AbortSignal, crypto, URL, TextEncoder, structuredClone, console }))
   const send = (message: Record<string, unknown>, sender: Record<string, unknown> = { id: extensionId, url: popup }) => new Promise<Record<string, unknown>>((resolve) => listeners.message(message, sender, resolve))
@@ -50,6 +50,47 @@ it('limits permissions to explicit tabs plus local service access and queues off
   listeners.updated(7, { url: 'https://example.com/another-article' })
   await send({ type: 'reader-status' })
   expect(session.values.tracked).toEqual({})
+})
+
+it('binds a Reader window to its original tab, keeps workspace tools available when the page changes, and releases the window on close', async () => {
+  const local = area(), session = area(), listeners: Record<string, (...args: unknown[]) => unknown> = {}
+  const extensionId = 'a'.repeat(32), popup = `chrome-extension://${extensionId}/popup.html`
+  const readerUrl = popup + '?view=window'
+  const source = { id: 7, windowId: 1, active: true, url: article.url }
+  const on = (name: string) => ({ addListener: (callback: (...args: unknown[]) => unknown) => { listeners[name] = callback } })
+  const chrome = {
+    storage: { local, session },
+    commands: { onCommand: on('command') },
+    runtime: { id: extensionId, getURL: (path: string) => `chrome-extension://${extensionId}/${path}`, onMessage: on('message') },
+    tabs: { get: async () => source, update: vi.fn(async () => {}), onUpdated: on('updated'), onRemoved: on('removed') },
+    windows: { create: vi.fn(async () => ({ id: 3, tabs: [{ id: 11 }] })) },
+    scripting: { executeScript: vi.fn(async () => [{ result: article }]) }
+  }
+  const script = readFileSync('extensions/worldview-reader/background.js', 'utf8').replace(/^import .*enki-bridge\.js.*$/m, '')
+    .replace(/^import .*$/gm, '').replace('const DEFAULT_PORT =', 'const extractArticle = () => {}; const DEFAULT_PORT =')
+  const fetcher = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ sourceId: 'source', versionId: 'version', sequence: 1 })))
+  new Script(script).runInContext(createContext({ chrome, fetch: fetcher, AbortSignal, crypto, URL, TextEncoder, structuredClone, console }))
+  const sender = (id: number, frameId = 0) => ({ id: extensionId, url: readerUrl, tab: { id }, frameId })
+  const send = (message: Record<string, unknown>, from: Record<string, unknown>) =>
+    new Promise<Record<string, unknown>>(resolve => listeners.message(message, from, resolve))
+
+  listeners.command('open-reader-window', source)
+  expect(await send({ type: 'reader-window-context' }, sender(11))).toEqual({ ok: true, sourceTab: { id: 7, url: article.url, windowId: 1 }, available: true })
+  expect(chrome.tabs.update).toHaveBeenCalledWith(11, { url: readerUrl })
+  expect(await send({ type: 'reader-window-context' }, sender(12))).toMatchObject({ ok: false })
+  expect(await send({ type: 'reader-window-context' }, sender(11, 1))).toMatchObject({ ok: false })
+  expect(await send({ type: 'reader-pair', token, port: 5189 }, sender(11))).toMatchObject({ ok: true })
+  expect(await send({ type: 'reader-highlight', tabId: 15 }, sender(11))).toMatchObject({ ok: false })
+  expect(chrome.scripting.executeScript).not.toHaveBeenCalled()
+
+  source.url = 'https://example.com/next'
+  expect(await send({ type: 'reader-window-context' }, sender(11))).toMatchObject({ ok: true, available: false })
+  expect(await send({ type: 'reader-highlight', tabId: 7 }, sender(11))).toMatchObject({ ok: false })
+  expect(await send({ type: 'reader-status' }, sender(11))).toMatchObject({ paired: true, port: 5189 })
+  expect(await send({ type: 'todos-state' }, sender(11))).toMatchObject({ ok: true })
+  expect(String(fetcher.mock.calls[0][0])).toBe('http://127.0.0.1:5189/api/reading-capture/todos-state')
+  listeners.removed(11)
+  expect(await send({ type: 'reader-window-context' }, sender(11))).toMatchObject({ ok: false })
 })
 
 it('measures dwell only after explicit following while the chosen document is visible and focused', async () => {
@@ -114,7 +155,7 @@ it('claims an approved connection without exposing its handoff secret or bearer 
     expect(options?.headers).toMatchObject({ authorization: `Bearer ${secret}` })
     expect(options?.method).toBe('POST'); expect(options?.headers).toMatchObject({ 'content-type': 'application/json' }); const body = JSON.parse(String(options?.body)); return body.action === 'acknowledge' ? Response.json({ connected: true }) : Response.json(approved ? { connected: true, token } : { connected: false })
   })
-  const script = readFileSync('extensions/worldview-reader/background.js', 'utf8').replace(/^import .*$/m, 'const extractArticle = () => {}; const extractFolkPhotos = () => {}; const extractProfile = () => {}')
+  const script = readFileSync('extensions/worldview-reader/background.js', 'utf8').replace(/^import .*enki-bridge\.js.*$/m, '').replace(/^import .*application-form\.js.*$/m, 'const readApplicationForm = () => {}').replace(/^import .*$/m, 'const extractArticle = () => {}; const extractFolkPhotos = () => {}; const extractProfile = () => {}')
   new Script(script).runInContext(createContext({ chrome, fetch: fetcher, AbortSignal, crypto, URL, TextEncoder, structuredClone, console }))
   const send = (message: Record<string, unknown>, sender = { id: extensionId, url: popup }) => new Promise<Record<string, unknown>>((resolve) => listener(message, sender, resolve))
   expect(await send({ type: 'reader-connect' })).toMatchObject({ ok: true, openUrl: 'http://127.0.0.1:5173/#/sources?connection=browser' })

@@ -221,3 +221,10 @@
 .crm-last-browser-save strong { font-weight:550; color:var(--kb-text); overflow-wrap:anywhere; }
 .crm-last-browser-save:hover strong { text-decoration:underline; }
 .crm-last-browser-save svg,.crm-last-browser-save span { flex:none; }
+
+.crm-company-tabs { gap: 4px 8px; flex-wrap: wrap; }
+.crm-company-tabs button { min-height: 36px; padding: 4px 2px; }
+.crm-company-groups { display: grid; gap: 4px; margin: 0 0 12px; overflow-wrap: anywhere; }
+.crm-company-activity article, .crm-company-notes article { display: grid; justify-items: start; gap: 5px; border-top: 1px solid var(--kb-line); padding: 12px 0; overflow-wrap: anywhere; }
+.crm-company-activity article small, .crm-company-notes article small { color: var(--kb-muted); }
+.crm-entity-inspector > header > strong { min-width: 0; overflow-wrap: anywhere; color: var(--kb-ink); }

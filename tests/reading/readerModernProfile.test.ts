@@ -22,9 +22,10 @@ it('reads a modern no-H1 primary profile and grouped semantic roles, preferring 
     expect.objectContaining({ kind: 'employment', organization: 'Example University', role: 'Senior Lecturer', startDate: 'Jul 2014', endDate: 'Jun 2025' }),
     expect.objectContaining({ kind: 'employment', organization: 'Example University', role: 'Lecturer', startDate: 'Jul 2008', endDate: 'Jun 2014' }),
     expect.objectContaining({ kind: 'employment', organization: 'Example University', role: 'Assistant Professor', startDate: 'Jul 2000', endDate: 'Jun 2008' }),
+    expect.objectContaining({ kind: 'education', organization: 'JHU', excerpt: 'JHU · Education' }),
   ])
-  expect(result.profile.affiliations?.some(row => row.kind === 'education')).toBe(false)
-  for (const other of ['Wrong Person', 'Wrong University', 'Unrelated messaging text', 'JHU']) expect(JSON.stringify(result)).not.toContain(other)
+  expect(result.profile.affiliations?.filter(row => row.kind === 'education')).toEqual([expect.objectContaining({ organization: 'JHU' })])
+  for (const other of ['Wrong Person', 'Wrong University', 'Unrelated messaging text']) expect(JSON.stringify(result)).not.toContain(other)
 })
 
 it('binds a root-href verification name only through the same bounded header’s exact profile Contact info URL', () => {
@@ -72,7 +73,7 @@ it('reads headline and location from the verified modern card and confirms a hea
 
 it('withholds a dated organization-linked role when no named group employer is available', () => {
   const html = modern().replace('<a href="https://www.linkedin.com/school/2624/">Example University Full-time 26 yrs 5 mos</a>', '')
-  expect(capture(html).profile.affiliations).toEqual([])
+  expect(capture(html).profile.affiliations).toEqual([expect.objectContaining({ kind: 'education', organization: 'JHU' })])
 })
 
 it('fails closed on unknown LinkedIn body layouts and serializes actionable extraction errors without imported helpers', () => {
@@ -83,4 +84,59 @@ it('fails closed on unknown LinkedIn body layouts and serializes actionable extr
     expect(result).toEqual({ extractorError: expect.stringContaining('primary profile content') })
     expect(JSON.stringify(result)).not.toContain('Unrelated messaging text')
   } finally { dom.window.close() }
+})
+
+const topCard = (controls: string, headline = 'Investing @General Catalyst | ex-a16z') => `<title>Ada Example | LinkedIn</title><main><section><h1>Ada Example</h1><p class="text-body-medium">${headline}</p><a href="${source}overlay/contact-info/">Contact info</a>${controls}</section><aside><button>Wrong University</button><a href="/school/wrong/">Wrong School</a></aside><section><h2>People you may know</h2><a href="/school/other/">Other University</a></section></main>`
+it('reads the top-card school beside a confirmed employer before Education is mounted, including the screenshot headline syntax', () => {
+  const result = capture(topCard('<button>General Catalyst</button><button><img alt="Columbia University logo" src="https://media.licdn.com/school.jpg">Columbia University in the City of New York</button>'))
+  expect(result.profile.affiliations).toEqual([
+    expect.objectContaining({kind:'employment',organization:'General Catalyst',current:true}),
+    expect.objectContaining({kind:'education',organization:'Columbia University in the City of New York'}),
+  ])
+  expect(result.profile.affiliations![1]).not.toHaveProperty('current')
+  expect(result.profile.affiliations![1]).not.toHaveProperty('degree')
+  expect(result.text).toContain('Columbia University in the City of New York')
+  expect(result.html).toContain('Columbia University in the City of New York')
+  expect(JSON.stringify(result)).not.toContain('Wrong University')
+})
+it('falls back to the exact LinkedIn shared school highlight on the selected profile',()=>{
+  const html=topCard('').replace('</main>','<section><h2>Highlights</h2><p><strong>You both studied at Columbia University</strong></p></section></main>')
+  const result=capture(html)
+  expect(result.profile.affiliations).toEqual([expect.objectContaining({kind:'education',organization:'Columbia University',excerpt:'You both studied at Columbia University'})])
+  expect(result.text).toContain('You both studied at Columbia University')
+  for (const unrelated of [html.replace('<section><h2>Highlights</h2>','<aside><section><h2>Highlights</h2>').replace('</main>','</aside></main>'),html.replace('You both studied at','Other people studied at')]) {
+    expect(capture(unrelated).profile.affiliations).toEqual([])
+  }
+})
+it.each([
+  ['<a href="/school/1/">University of Example</a>','University of Example'],
+  ['<button aria-label="Education: MIT. Click to see education">MIT</button>','MIT'],
+  ['<a href="#education">Caltech</a>','Caltech'],
+  ['<button data-field="school">Sciences Po</button>','Sciences Po'],
+])('recognizes a school only from a profile-bound school link or education control: %s', (control,school) => {
+  expect(capture(topCard(control)).profile.affiliations).toEqual([expect.objectContaining({kind:'education',organization:school})])
+})
+it('does not turn a university employer, a generic university mention, or a hidden school control into education', () => {
+  for (const control of ['<button>Example University</button>','<a href="/school/1/">Example University</a>','<button hidden data-field="school">MIT</button>']) {
+    expect(capture(topCard(control,'Professor at Example University')).profile.affiliations!.filter(row=>row.kind==='education')).toEqual([])
+  }
+})
+it('prefers the detailed education entry over the same top-card school and keeps the extractor serializable', () => {
+  const html=topCard('<a href="/school/1/">University of Example</a>').replace('</main>','<section><h2>Education</h2><ul><li><a href="/school/1/">University of Example</a><p>BS, Physics</p><p>2016–2020</p></li></ul></section></main>')
+  const dom=new JSDOM(html,{url:source})
+  try {
+    const result=new Script(`(${extractProfile.toString()})(null,true)`).runInContext(createContext({document:dom.window.document,URL,TextEncoder}))
+    expect(result.profile.affiliations.filter((row:{kind:string})=>row.kind==='education')).toEqual([expect.objectContaining({organization:'University of Example',degree:'BS',field:'Physics'})])
+  } finally {dom.window.close()}
+})
+
+it('reads the adjacent Berkeley school when the headline is just the employer name', () => {
+  const html = topCard('<button>Core Automation</button><button><img alt="University of California, Berkeley logo" src="https://media.licdn.com/berkeley.png">University of California, Berkeley</button>', 'Core Automation')
+  const result = capture(html)
+  expect(result.profile.affiliations).toContainEqual(expect.objectContaining({
+    kind: 'education', organization: 'University of California, Berkeley',
+    organizationLogoUrl: 'https://media.licdn.com/berkeley.png',
+  }))
+  expect(result.text).toContain('University of California, Berkeley')
+  expect(capture(html.replace('<button>Core Automation</button>', '')).profile.affiliations?.filter(row => row.kind === 'education')).toEqual([])
 })

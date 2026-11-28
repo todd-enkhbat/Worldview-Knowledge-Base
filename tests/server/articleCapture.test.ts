@@ -1,9 +1,13 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { CrmProfileCapture } from '../../server/crmProfileCapture.ts'
+import { createHash } from 'node:crypto'
+import { applyStudy, decodeStudy, STUDY_KEY } from '../../src/study/model.ts'
+import { mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs'
 import { createServer, request as httpRequest, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { ReaderCalendar } from '../../server/readerEvents.ts'
 import { ArticleCapture, handleArticleCaptureRequest } from '../../server/articleCapture.ts'
 import { createHost, type Host } from '../../server/host.ts'
 import { unzipSync, strFromU8 } from 'fflate'
@@ -17,10 +21,10 @@ const origin = `chrome-extension://${'a'.repeat(32)}`
 const article = { url: 'https://example.com/article?utm_source=test#section', title: 'Synthetic orchard article', text: 'The copper orchard uses local storage. The original evidence stays readable.' }
 const live: { db: WorldDb; server: Server; directory: string; host?: Host }[] = []
 afterEach(async () => { for (const item of live.splice(0)) { item.server.closeAllConnections(); await new Promise<void>((resolve) => item.server.close(() => resolve())); item.host?.close(); item.db.close(); rmSync(item.directory, { recursive: true, force: true }) } vi.restoreAllMocks() })
-async function fixture(mode: 'service' | 'host' | 'accounts' = 'service') {
+async function fixture(mode: 'service' | 'host' | 'accounts' = 'service', calendar?: ReaderCalendar) {
   const directory = mkdtempSync(join(tmpdir(), 'worldview-article-')), db = openWorldDb(join(directory, 'world.sqlite'))
   db.putSettings({ T0: Date.UTC(1990, 0, 1), yPerYear: 12, stepsPerYear: 600, physicsSeed: 42, qualityTier: 'auto', firstRunComplete: true, lastBackupAt: null, autoBackupEnabled: false, createdAt: Date.now(), schemaVersion: SCHEMA_VERSION })
-  const service = new ArticleCapture({ db, blobDir: join(directory, 'blobs') }), host = mode === 'service' ? undefined : createHost({ dataDir: directory, accounts: mode === 'accounts' })
+  const service = new ArticleCapture({ db, calendar, blobDir: join(directory, 'blobs') }), host = mode === 'service' ? undefined : createHost({ dataDir: directory, accounts: mode === 'accounts' })
   const server = createServer((req, res) => { if (host) host.handler(req, res); else void handleArticleCaptureRequest(service, req, res) })
   live.push({ db, server, directory, host })
   await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve) })
@@ -34,6 +38,36 @@ async function fixture(mode: 'service' | 'host' | 'accounts' = 'service') {
 }
 
 describe('paired browser article capture over HTTP', () => {
+  it('relays Enki requests only between the intended desktop workspace and an authenticated Reader', async () => {
+    const f = await fixture(), paired = await f.pair()
+    const requestHeaders = { ...f.management, 'x-wv-client': 'desktop-profile-capture', 'x-wv-workspace-fingerprint': createHash('sha256').update(f.directory).digest('hex') }
+    const browserHeaders = { origin, authorization: 'Bearer ' + paired.token, 'content-type': 'application/json' }
+    const post = (path: string, input: unknown, headers: Record<string, string> = requestHeaders) => fetch(f.base + '/enki/' + path, { method: 'POST', headers, body: JSON.stringify(input) })
+    expect((await post('request', { operation: 'page', args: {} }, f.management)).status).toBe(403)
+    expect((await post('request', { operation: 'page', args: {} }, { ...requestHeaders, origin: 'https://untrusted.example' })).status).toBe(403)
+    expect((await post('poll', {}, { ...browserHeaders, authorization: 'Bearer invalid' })).status).toBe(401)
+    const observed = vi.spyOn(f.service.readerBridge, 'poll')
+    const polling = post('poll', {}, browserHeaders)
+    await vi.waitFor(() => expect(observed).toHaveBeenCalledOnce())
+    const desktop = post('request', { operation: 'page', args: {} })
+    const { command } = await (await polling).json()
+    expect(command.operation).toBe('page')
+    const reply = { id: command.id, value: { title: 'Field notes', url: article.url } }
+    expect((await post('reply', reply, browserHeaders)).status).toBe(200)
+    const result = await (await desktop).json()
+    expect(result).toEqual({ client: paired.clientId, value: reply.value })
+    expect(JSON.stringify(result)).not.toContain(paired.token)
+    expect((await post('summons', {}, f.management)).status).toBe(403)
+    const summons = vi.spyOn(f.service.readerBridge, 'waitForSummon'), waiting = post('summons', {})
+    await vi.waitFor(() => expect(summons).toHaveBeenCalledOnce())
+    const ref = { id: '17', url: article.url, documentId: 'test-document' }
+    expect((await post('summon', { ref }, browserHeaders)).status).toBe(200)
+    expect(await (await waiting).json()).toMatchObject({ summon: { client: paired.clientId, ref } })
+    expect((await post('reply', reply, browserHeaders)).status).toBe(400)
+    expect((await post('request', { operation: 'evaluate', args: { code: 'alert(1)' } })).status).toBe(400)
+    await post('disconnect', {}, browserHeaders)
+    expect((await post('request', { operation: 'page', args: {} })).status).toBe(400)
+  })
   it('retains profile references in originals and versions even when the visible text is unchanged', async () => {
     const f = await fixture(), paired = await f.pair()
     expect((await f.capture(paired.token, { ...article, sequence: 1 })).status).toBe(200)
@@ -57,7 +91,7 @@ describe('paired browser article capture over HTTP', () => {
     const response = await fetch(`${f.base}/download`, { headers: f.management })
     expect(response.status).toBe(200); expect(response.headers.get('content-disposition')).toContain('WorldviewReader.zip')
     const files = unzipSync(new Uint8Array(await response.arrayBuffer()))
-    expect(Object.keys(files).sort()).toEqual(['README.md', 'background.js', 'content.js', 'folk-content.js', 'extract.js', 'group-icon.js', 'worldview-128.png', 'manifest.json', 'popup.css', 'popup.html', 'popup.js', 'application-form.js', 'contact-ui.js', 'contact-ui.css', 'todo-ui.js', 'todo-ui.css'].map((name) => `WorldviewReader/${name}`).sort())
+    expect(Object.keys(files).sort()).toEqual(['README.md', 'background.js', 'enki-bridge.js', 'enki-shortcut.js', 'content.js', 'folk-content.js', 'extract.js', 'group-icon.js', 'worldview-128.png', 'manifest.json', 'popup.css', 'popup.html', 'popup.js', 'application-form.js', 'contact-ui.js', 'contact-ui.css', 'organization-ui.js', 'reader-events-ui.js', 'todo-ui.js', 'todo-ui.css'].map((name) => `WorldviewReader/${name}`).sort())
     expect(strFromU8(files['WorldviewReader/folk-content.js'])).toContain('MutationObserver')
     expect(JSON.parse(strFromU8(files['WorldviewReader/manifest.json'])).permissions).toEqual(['activeTab', 'scripting', 'storage', 'alarms'])
     expect(Object.keys(files).some((path) => /token|\.env|sqlite|blobs/.test(path))).toBe(false)
@@ -203,4 +237,158 @@ it('connects a requesting extension only after local approval, binds the secret 
   now += 5 * 60_000 + 1
   expect(() => timed.approveConnection(pending.requestId)).toThrow(/expired/)
   expect(timed.status().requests).toEqual([])
+})
+
+it('persists an observed application submission through the paired Reader HTTP route',async()=>{
+ const f=await fixture('host'),paired=await f.pair(),now=Date.now(),state=decodeStudy(undefined)
+ const id=applyStudy(state,'application',{organization:'Alive Prize',opportunity:'Alive Prize',source:'https://aliveprize.com/apply',step:'Application',submitted:false,answers:[],deadline:'11/25'},now-1000)
+ f.db.putKv(STUDY_KEY,state)
+ const payload={applicationId:id,submissionId:crypto.randomUUID(),sequence:1,workspaceToken:f.db.crm.workspaceFingerprint(),source:'https://aliveprize.com/apply',form:{submitted:true,appliedAt:now,submissionEvidence:'Thank you for your application',answers:[{question:'Why apply?',answer:'My final answer.'}]}}
+ const post=(value:unknown)=>fetch(f.base+'/application-submitted',{method:'POST',headers:{origin,authorization:'Bearer '+paired.token,'content-type':'application/json'},body:JSON.stringify(value)})
+ expect((await post({...payload,workspaceToken:'earlier-workspace'})).status).toBe(409)
+ const saved=await post(payload), receipt=await saved.json();expect(saved.status,JSON.stringify(receipt)).toBe(200)
+ expect(receipt).toMatchObject({ok:true,id,appliedAt:now,submissionId:payload.submissionId,sequence:1})
+ const persisted=f.db.getKv(STUDY_KEY)
+ const retried=await post({...payload,sequence:2})
+ expect(await retried.json()).toEqual({...receipt,sequence:2})
+ expect(f.db.getKv(STUDY_KEY)).toEqual(persisted)
+ expect((await post({...payload,form:{...payload.form,answers:[]}})).status).toBe(409)
+ expect(decodeStudy(f.db.getKv(STUDY_KEY)).applications[0]).toMatchObject({appliedAt:now,deadline:'11/25',revisions:[expect.anything(),expect.objectContaining({submitted:true,answers:[{question:'Why apply?',answer:'My final answer.'}]})]})
+})
+
+it('edits the matched saved organization and keeps related activity scoped to that company', async () => {
+  const f = await fixture(), { token } = await f.pair()
+  const url = 'https://www.linkedin.com/company/acme-example/'
+  const company = f.db.crm.command({ requestId: 'seed-company', operation: 'create', collection: 'companies', record: { name: 'Acme', urls: [url], addresses: [{ label: 'Retained address' }] } }).record!
+  const other = f.db.crm.command({ requestId: 'seed-other', operation: 'create', collection: 'companies', record: { name: 'Other', urls: ['https://www.linkedin.com/company/another/'] } }).record!
+  const companyContext = { id: company.id, url, workspace: f.db.crm.workspaceFingerprint() }
+  const send = (data: Record<string, unknown> = {}, auth = token) => fetch(f.base + '/organization', {
+    method: 'POST', headers: { origin, authorization: 'Bearer ' + auth, 'content-type': 'application/json' },
+    body: JSON.stringify({ ...companyContext, ...data }),
+  })
+  const edit = { action: 'edit', requestId: '00000001-0000-4000-8000-000000000000', revision: company.revision, patch: { foundationYear: 2022, employeeRange: '11–50', fundingRaised: 12500, lastFundingDate: '2026-03-12', status: 'Researching' } }
+  expect((await send({}, 'invalid')).status).toBe(401)
+  expect((await send({ ...edit, id: other.id })).status).toBe(404)
+  expect((await send({ ...edit, workspace: 'somewhere-else' })).status).toBe(409)
+  const saved = await send(edit)
+  expect(saved.status).toBe(200)
+  expect((await saved.json()).record).toMatchObject({ ...edit.patch, addresses: [{ label: 'Retained address' }] })
+  expect((await send({ ...edit, requestId: '00000002-0000-4000-8000-000000000000' })).status).toBe(409)
+  expect((await send({ ...edit, requestId: '00000003-0000-4000-8000-000000000000', patch: { archivedAt: 1 } })).status).toBe(400)
+  const note = { action: 'note', body: 'Prepare questions for next meeting', requestId: '00000004-0000-4000-8000-000000000000' }
+  expect((await send(note)).status).toBe(200)
+  expect((await send(note)).status).toBe(200)
+  expect((await (await send()).json()).notes).toHaveLength(1)
+  expect(f.db.crm.detail('companies', other.id).related.notes).toHaveLength(0)
+})
+
+
+it('enriches missing saved-person fields with source evidence and keeps manually supplied values', async () => {
+  const f = await fixture(), { token } = await f.pair()
+  const url = 'https://www.linkedin.com/in/river-example/'
+  const capture = new CrmProfileCapture({ db: f.db, store: f.db.crm, blobDir: join(f.directory, 'blobs') })
+  const draft = await capture.stage({ requestId: 'reader-enrichment-seed', url, title: 'River Example', text: 'Public profile evidence for River Example.',
+    profile: { name: 'River Example', entityType: 'person', headline: 'Engineer', emails: ['river@example.org'], phones: ['+14155550123'], urls: [url] } })
+  const { record } = await capture.apply(draft.id, { requestId: 'reader-enrichment-accept', createNew: true, fields: ['name', 'urls'] })
+  f.db.crm.command({ requestId: 'reader-enrichment-manual-role', operation: 'update', collection: 'people', id: record.id,
+    expectedRecordRevision: record.revision, patch: { jobTitle: 'Manual role' } })
+  const send = async (extra: Record<string, unknown> = {}) => {
+    const response = await fetch(f.base + '/organization', {
+      method: 'POST', headers: { origin, authorization: 'Bearer ' + token, 'content-type': 'application/json' },
+      body: JSON.stringify({ id: record.id, url, workspace: f.db.crm.workspaceFingerprint(), entityType: 'person', ...extra }),
+    })
+    return { status: response.status, body: await response.json() }
+  }
+  const result = await send({ action: 'enrich', requestId: '00000005-0000-4000-8000-000000000000' })
+  expect(result).toMatchObject({ status: 200, body: {
+    record: { jobTitle: 'Manual role', emails: ['river@example.org'], phones: ['+14155550123'] },
+    evidence: { emails: { provider: 'Saved profile', url }, phones: { provider: 'Saved profile', url } },
+    enrichment: { fields: ['emails', 'phones'] },
+  } })
+  expect((await send()).body.evidence).not.toHaveProperty('jobTitle')
+  const updated = await send({ action: 'edit', requestId: '00000006-0000-4000-8000-000000000000', revision: result.body.record.revision, patch: { emails: ['manual@example.org'] } })
+  expect(updated).toMatchObject({ status: 200, body: { record: { emails: ['manual@example.org'] } } })
+  expect(updated.body.evidence).not.toHaveProperty('emails')
+  const note = await send({ action: 'note', requestId: '00000007-0000-4000-8000-000000000000', body: 'Met at the conference.' })
+  expect(note).toMatchObject({ status: 200, body: { notes: [{ body: 'Met at the conference.' }] } })
+})
+
+
+it('suggests events across accounts and reuses a single event across people and companies', async () => {
+  const now = Date.now()
+  const accounts = ['personal', 'work'].map(id => ({
+    id, email: id + '@example.test', label: id, configured: true, connected: true, autoSync: false,
+    capabilities: ['calendar' as const], scopes: [], connectedAt: null, lastSyncAt: null, includeSubjects: false,
+  }))
+  const calendar: ReaderCalendar = {
+    status: async () => ({ available: true, accounts, driveClientAvailable: false, aiRequired: false,
+      happenstance: { configured: false, automaticResearch: false, mcpUrl: '' } }),
+    calendars: async accountId => ({ complete: true, calendars: [
+      { id: accountId, summary: 'Calendar', primary: true, selected: true, timeZone: 'UTC', accessRole: 'owner' },
+    ] }),
+    events: async ({ accountId }) => ({ nextPageToken: null, timeZone: 'UTC', attendanceConfirmed: false, events: [{
+      id: String(accountId), accountId: String(accountId), calendarId: String(accountId), iCalUID: 'same-invitation',
+      title: 'Community dinner', body: 'https://partiful.com/e/example and private agenda', status: 'confirmed', startAt: now,
+      endAt: now + 3600000, timezone: 'UTC', allDay: false, htmlLink: '', updated: '', originalStartTime: '',
+      raw: { location: 'private location' }, organizer: { email: 'host@example.test', name: 'Host' },
+      attendees: accountId === 'work' ? [{ email: 'river@example.test', name: 'River', responseStatus: 'accepted', self: false, organizer: false }] : [],
+    }] }),
+  }
+  const f = await fixture('service', calendar), { token } = await f.pair()
+  const personUrl = 'https://www.linkedin.com/in/river-example/'
+  const companyUrl = 'https://www.linkedin.com/company/company-example/'
+  const person = f.db.crm.command({ requestId: 'event-person', operation: 'create', collection: 'people',
+    record: { fullName: 'River Example', emails: ['river@example.test'], urls: [personUrl] } }).record!
+  const company = f.db.crm.command({ requestId: 'event-company', operation: 'create', collection: 'companies',
+    record: { name: 'Example', urls: [companyUrl] } }).record!
+  const send = (entityType: 'person' | 'company', data: Record<string, unknown>, auth = token) => fetch(f.base + '/organization', {
+    method: 'POST', headers: { origin, authorization: 'Bearer ' + auth, 'content-type': 'application/json' },
+    body: JSON.stringify({ ...data, entityType, id: entityType === 'person' ? person.id : company.id,
+      url: entityType === 'person' ? personUrl : companyUrl, workspace: f.db.crm.workspaceFingerprint() }),
+  })
+  const suggestions = await (await send('person', { action: 'event-suggestions', online: true })).json()
+  expect(suggestions.calendarStatus).toBe('complete')
+  expect(suggestions.events).toHaveLength(1)
+  expect(suggestions.events[0]).toMatchObject({ title: 'Community dinner', source: 'Partiful', matched: true })
+  expect(JSON.stringify(suggestions)).not.toContain('private')
+  const attach = { action: 'link-event', eventId: suggestions.events[0].id, requestId: '11111111-0000-4000-8000-000000000000' }
+  expect((await send('company', attach)).status).toBe(400)
+  expect((await send('person', attach, (await f.pair()).token)).status).toBe(400)
+  expect((await send('person', attach)).status).toBe(200)
+  expect((await send('person', attach)).status).toBe(200)
+  const saved = await (await send('company', { action: 'event-suggestions', online: true })).json()
+  expect(saved.events).toHaveLength(1)
+  expect(saved.events[0]).toMatchObject({ title: 'Community dinner', source: 'Partiful' })
+  expect((await send('company', { ...attach, eventId: saved.events[0].id,
+    requestId: '22222222-0000-4000-8000-000000000000' })).status).toBe(200)
+  expect(f.db.crm.rows('interactions', false)).toMatchObject([
+    { personIds: [person.id], companyIds: [company.id], attendanceConfirmed: false },
+  ])
+
+  const create = { action: 'interaction', kind: 'event', title: 'Demo evening', body: '', date: null,
+    requestId: '33333333-0000-4000-8000-000000000000' }
+  expect((await send('company', create)).status).toBe(200)
+  expect((await send('company', create)).status).toBe(200)
+  const local = await (await send('person', { action: 'event-suggestions' })).json()
+  expect(local.events).toEqual([expect.objectContaining({ title: 'Demo evening', source: 'Saved' })])
+  expect(f.db.crm.rows('interactions', false)).toHaveLength(2)
+})
+
+it('edits the same saved CRM record through the workspace-bound Enki endpoint', async () => {
+  const f = await fixture('host')
+  const person = f.db.crm.command({requestId:'enki-record-seed',operation:'create',collection:'people',
+    record:{fullName:'Enki Example',urls:['https://www.linkedin.com/in/enki-example/']}}).record!
+  const headers = {...f.management,'x-wv-client':'desktop-profile-capture',
+    'x-wv-workspace-fingerprint':createHash('sha256').update(realpathSync(f.directory)).digest('hex')}
+  const post = (fields:Record<string,unknown>) => fetch(f.base.replace('/reading-capture','/crm/profile-capture/organization'),
+    {method:'POST',headers,body:JSON.stringify({id:person.id,entityType:'person',workspaceToken:f.db.crm.workspaceFingerprint(),...fields})})
+  expect((await post({workspaceToken:'wrong-workspace'})).status).toBe(409)
+  const read = await post({})
+  const value = await read.json()
+  expect(read.status, JSON.stringify(value)).toBe(200)
+  expect(value.record.fullName).toBe('Enki Example')
+  const note={action:'note',body:'A note from Enki',requestId:'aaaaaaaa-0000-4000-8000-000000000000'}
+  expect((await post(note)).status).toBe(200)
+  expect((await post(note)).status).toBe(200)
+  expect(f.db.crm.detail('people',person.id).related.notes).toHaveLength(1)
 })

@@ -1,3 +1,6 @@
+import { readerOrganization } from './readerOrganization.ts'
+import { ReaderEvents, type ReaderCalendar } from './readerEvents.ts'
+import { enrichReaderRecord } from './readerEnrichment.ts'
 import { createHash } from 'node:crypto'
 import { realpathSync } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
@@ -5,7 +8,7 @@ import type { WorldDb } from './worldDb.ts'
 import type { ChangeBus } from './changes.ts'
 import { memoryOriginAllowed } from './memoryHttp.ts'
 import { CrmError, SqliteCrmStore } from './crmStore.ts'
-import { isCrmCollection, validateCrmFilter } from '../src/crm/model.ts'
+import { isCrmCollection, normalizePhone, validateCrmFilter } from '../src/crm/model.ts'
 import { CRM_COLLECTIONS, type CrmCommand, type CrmListQuery, type CrmPerson } from '../src/crm/types.ts'
 import { CrmProfileMedia } from './crmProfileMedia.ts'
 import { discoverProfileWebsite } from './crmProfileDiscovery.ts'
@@ -56,15 +59,17 @@ function queryFrom(url: URL): CrmListQuery {
   for (const key of ['q', 'groupId', 'entityId', 'status'] as const) if (params.has(key)) query[key] = params.get(key)!
   for (const key of ['limit', 'offset'] as const) if (params.has(key)) { const value = params.get(key)!; if (!/^\d+$/.test(value)) throw new CrmError('Choose an integer CRM page.'); query[key] = Number(value) }
   if (params.has('archived')) { if (!['true', 'false', '1', '0'].includes(params.get('archived')!)) throw new CrmError('Choose active or archived CRM records.'); query.archived = ['true', '1'].includes(params.get('archived')!) }
+  if (params.get('includeActivity') === '1') query.includeActivity = true
   if (params.has('entityType')) { const value = params.get('entityType'); if (!['person', 'company', 'object'].includes(String(value))) throw new CrmError('Choose a supported CRM entity type.'); query.entityType = value as CrmListQuery['entityType'] }
   try { if (params.has('filter')) { const value: unknown = JSON.parse(params.get('filter')!); if (!validateCrmFilter(value)) throw new Error(); query.filter = value } if (params.has('sort')) query.sort = JSON.parse(params.get('sort')!) as CrmListQuery['sort'] } catch { throw new CrmError('The CRM filter or sort is invalid.') }
   return query
 }
 
 /** Parent routing retains account authentication; browser requests also require same-origin and x-wv-client. */
-export function createCrmHttp(db: WorldDb, options: { store?: SqliteCrmStore; bus?: ChangeBus; now?: () => number; worldId?: string; workspaceDirectory?: string; blobDir?: string; profileMediaFetch?: typeof fetch; profileMediaLookup?: (host: string) => Promise<string[]> } = {}) {
+export function createCrmHttp(db: WorldDb, options: { calendar?: ReaderCalendar; store?: SqliteCrmStore; bus?: ChangeBus; now?: () => number; worldId?: string; workspaceDirectory?: string; blobDir?: string; profileMediaFetch?: typeof fetch; profileMediaLookup?: (host: string) => Promise<string[]> } = {}) {
   const directoryFingerprint = options.workspaceDirectory ? createHash('sha256').update(realpathSync(options.workspaceDirectory)).digest('hex') : undefined
   const store = options.store ?? new SqliteCrmStore(db, { bus: options.bus, now: options.now })
+  const readerEvents = new ReaderEvents(store, options.calendar)
   if (options.bus) store.setChangeBus(options.bus)
   const media = options.blobDir ? new CrmProfileMedia({ db, store, blobDir: options.blobDir, now: options.now, fetch: options.profileMediaFetch, lookup: options.profileMediaLookup }) : null
   const photos = options.blobDir ? new CrmPhotoCoverage({ db, store, blobDir: options.blobDir, now: options.now, fetch: options.profileMediaFetch, lookup: options.profileMediaLookup }) : null
@@ -149,6 +154,39 @@ export function createCrmHttp(db: WorldDb, options: { store?: SqliteCrmStore; bu
             if (native && parts.length === 2 && parts[1] === 'visible-matches') {
               if (!Array.isArray(body.digests)) throw new CrmError('Choose visible profiles for this preview.')
               send(res, 200, { matches: matchPreviewUrls(store, 'person', body.digests), workspaceToken: store.workspaceFingerprint() })
+            } else if (native && parts.length === 2 && parts[1] === 'screen-contact') {
+              if (db.getKv('importInProgress') || !db.getSettings()?.firstRunComplete || body.workspaceToken !== store.workspaceFingerprint()) throw new CrmError('The workspace changed. Read the profile again.', 409)
+              const { requestId, name, headline, url, phone: suppliedPhone = '' } = body
+              const phone = typeof suppliedPhone === 'string' ? normalizePhone(suppliedPhone) : ''
+              if (typeof requestId !== 'string' || !/^[a-f0-9-]{36}$/.test(requestId) || typeof name !== 'string' || name.length > 120 ||
+                  typeof headline !== 'string' || headline.length > 180 || typeof url !== 'string' || typeof suppliedPhone !== 'string' ||
+                  suppliedPhone.trim() && (!/^\+?[\d.() -]{8,32}$/.test(suppliedPhone.trim()) || !/^\+?[0-9]{8,15}$/.test(phone)) ||
+                  !name.trim() && !phone ||
+                  url && !/^https:\/\/www\.(?:linkedin\.com\/in\/[a-z0-9][a-z0-9-]{2,98}|instagram\.com\/[a-z0-9_.]{1,30}\/)$/i.test(url)) throw new CrmError('Check the name or phone number before collecting this contact.')
+              const id = 'screen-contact-' + requestId
+              const request = { operation: 'create' as const, requestId: id, collection: 'people' as const,
+                record: { id, fullName: name.trim(), jobTitle: headline.trim(), urls: url ? [url] : [], phones: phone ? [phone] : [] } }
+              const people = store.rows('people', false).filter(person => !person.mergedIntoId)
+              const urlDigest = url && previewUrlDigest(url)
+              const sameUrl = urlDigest && people.some(person => [...person.urls,
+                ...person.sourceRefs.filter(ref => ref.provider === 'profile-capture').map(ref => ref.url || ref.externalId)]
+                .some(value => previewUrlDigest(value) === urlDigest))
+              const phoneKey = (value: string) => normalizePhone(value).replace(/^\+/, '')
+              const normalizedPhone = phoneKey(phone)
+              const samePhone = normalizedPhone && people.some(person => person.phones.some(value => phoneKey(value) === normalizedPhone))
+              const nameDigest = name.trim() && previewNameDigest(name)
+              const possibleName = nameDigest && people.some(person =>
+                previewNameDigest(person.fullName || [person.firstName, person.lastName].filter(Boolean).join(' ')) === nameDigest)
+              if (store.get('people', id)) {
+                store.command(request, 'desktop-screen-contact')
+                send(res, 200, { status: 'saved' })
+              } else if (sameUrl || samePhone) send(res, 200, { status: 'existing' })
+              else if (possibleName) {
+                send(res, 200, { status: 'possible-match', message: 'A contact with this name is already in People. Check that contact before collecting another.' })
+              } else {
+                store.command(request, 'desktop-screen-contact')
+                send(res, 200, { status: 'saved' })
+              }
             } else if (native && parts.length === 2 && ['review-fields','photo-only'].includes(parts[1])) {
               const authorize = () => {
                 if (generation !== db.getReplacementGeneration() || db.getKv('importInProgress') || !db.getSettings()?.firstRunComplete || body.workspaceToken !== store.workspaceFingerprint()) throw new CrmError('The workspace changed. Read this profile again.', 409)
@@ -170,6 +208,28 @@ export function createCrmHttp(db: WorldDb, options: { store?: SqliteCrmStore; bu
                   const status = await media.saveProfileImage('person', person.id, body.photoUrl, body.url, requestId, authorize)
                   send(res, 200, { status, message: status === 'saved' ? 'Contact photo saved.' : status === 'kept' ? 'This contact already has a saved photo.' : 'The visible portrait is unavailable.' })
                 }
+              }
+            } else if (native && parts.length === 2 && parts[1] === 'organization') {
+              const current = () => {
+                if (generation !== db.getReplacementGeneration() || body.workspaceToken !== store.workspaceFingerprint() || db.getKv('importInProgress')) throw new CrmError('The workspace changed. Read the profile again.', 409)
+              }
+              current()
+              const type: 'company' | 'person' = body.entityType === 'company' ? 'company' : 'person'
+              const id = String(body.id || '')
+              const now = options.now?.() ?? Date.now()
+              const scope = { key: JSON.stringify([body.workspaceToken, generation, type, id]), id, type }
+              const changed = () => options.bus?.publish({ v: 1, from: 'enki-record', change: { type: 'kv', keys: ['crm.v1'] } })
+              readerOrganization(store, id, {}, now, changed, type)
+              if (body.action === 'event-suggestions') send(res, 200, await readerEvents.suggestions(scope, now, body.online === true, current))
+              else {
+                let enrichment
+                if (body.action === 'link-event') {
+                  if (typeof body.requestId !== 'string' || !/^[a-f0-9-]{36}$/i.test(body.requestId)) throw new CrmError('Choose a current event.')
+                  readerEvents.link(scope, String(body.eventId), body.requestId, now, changed)
+                }
+                if (body.action === 'enrich') enrichment = await enrichReaderRecord(db, options.blobDir!, type, id, body.requestId, now, current, changed)
+                current()
+                send(res, 200, { ...readerOrganization(store, id, body.action === 'link-event' || enrichment ? {} : body, now, changed, type), ...(enrichment ? { enrichment } : {}) })
               }
             } else if (parts.length === 2 && parts[1] === 'discover') send(res, 200, await discoverProfileWebsite(body, options.profileMediaFetch))
             else if (parts.length === 2 && parts[1] === 'quick-add') {

@@ -1,3 +1,4 @@
+import { applyStudy, decodeStudy, STUDY_KEY } from '../../src/study/model.ts'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -82,4 +83,15 @@ it('saves a profile, its portrait and group, then reuses the same contact on ret
     expect(store.rows('people')[0].fullName).toBe('Ada Example')
     expect(store.rows('people')[0].urls).not.toContain(conflicting.url)
   } finally { await rm(blobDir, { recursive: true, force: true }) }
+})
+it('records a source-bound successful application submission with the observed time and typed answers',()=>{
+  const now=Date.UTC(2026,10,26,18), service=new ArticleCapture({db,blobDir:'/unused',now:()=>now}), paired=service.pair({origin})
+  const state=decodeStudy(undefined),id=applyStudy(state,'application',{organization:'Alive Prize',opportunity:'Alive Prize',source:'https://aliveprize.com/apply',step:'Application',deadline:'11/25',submitted:false,answers:[{question:'Why apply?',answer:''}]},now-1000)
+  db.putKv(STUDY_KEY,state)
+  const payload={workspaceToken:db.crm.workspaceFingerprint(),applicationId:id,source:'https://aliveprize.com/apply',form:{submitted:true,appliedAt:now,submissionEvidence:'Thank you for your application',answers:[{question:'Why apply?',answer:'The exact final answer.'}]}}
+  expect(()=>service.applicationSubmitted(payload,origin,'wrong')).toThrow()
+  expect(()=>service.applicationSubmitted({...payload,source:'https://different.example/'},origin,paired.token)).toThrow()
+  expect(()=>service.applicationSubmitted({...payload,form:{...payload.form,submitted:false}},origin,paired.token)).toThrow()
+  expect(service.applicationSubmitted(payload,origin,paired.token)).toMatchObject({id,appliedAt:now})
+  expect(decodeStudy(db.getKv(STUDY_KEY)).applications[0]).toMatchObject({deadline:'11/25',appliedAt:now,revisions:[expect.anything(),expect.objectContaining({step:'Submission confirmation',submitted:true,answers:[{question:'Why apply?',answer:'The exact final answer.'}]})]})
 })

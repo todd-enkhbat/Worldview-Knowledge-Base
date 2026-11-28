@@ -90,6 +90,28 @@ it('renders the real virtual table, keeps unknown pipeline cards visible and mov
   expect(state.fieldValues.find(row => row.id === 'value_b')!.value).toBe('b_close')
 })
 
+it('shows the existing company links in the compact contact table and switches to company columns', async () => {
+  state.companies.push(record('companies', { id: 'com_1', name: 'Example Instruments', domain: 'instruments.example.test' }))
+  state.people[0].companyIds = ['com_1']
+  await act(async () => root.render(<PeopleWorkspace hash="#/people" />))
+  await until(() => !!host.querySelector('.crm-company-cell a'))
+  const link = host.querySelector<HTMLAnchorElement>('.crm-company-cell a')!
+  expect(link.getAttribute('href')).toBe('#/people?tab=companies&company=com_1')
+  await act(async () => link.click())
+  await until(() => host.querySelector('.crm-entity-inspector')?.textContent?.includes('Example Instruments') === true)
+  await click('Close record')
+  await act(async () => host.querySelector<HTMLButtonElement>('.crm-nav nav > button:nth-child(2)')!.click())
+  await until(() => host.querySelector('table')?.getAttribute('aria-label') === 'companies records')
+  expect([...host.querySelectorAll('th')].map(header => header.textContent)).toContain('Domain')
+  expect([...host.querySelectorAll('th')].map(header => header.textContent)).toContain('Last logged interaction')
+  expect(host.querySelector('th[data-pin=name]')?.textContent).toBe('Name')
+  await act(async () => root.render(<PeopleWorkspace hash="#/people?tab=people" />))
+  await until(() => host.querySelector('table')?.getAttribute('aria-label') === 'people records')
+  expect([...host.querySelectorAll('th')].map(header => header.textContent)).toContain('Job title')
+  expect(host.textContent).not.toContain('Domain')
+  expect(requests).toHaveLength(0)
+})
+
 it('prevents write controls in the read-only table while keeping the saved records visible', async () => {
   scope.writer = false
   await act(async () => root.render(<PeopleWorkspace hash="#/people" />)); await until(() => host.textContent!.includes('Ada Example'))

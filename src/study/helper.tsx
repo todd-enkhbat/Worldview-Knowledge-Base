@@ -1,6 +1,7 @@
 import { createRoot } from 'react-dom/client'
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react'
-import { AddressBookTabs, BookOpenText, CheckSquare, FileText, Keyboard, X } from '@phosphor-icons/react'
+import { AddressBookTabs, BookOpenText, CheckSquare, FileText, Globe, Keyboard, X } from '@phosphor-icons/react'
+import { EnkiPage, type PageBridge } from './EnkiPage'
 import portrait from '../../electron/enki-model-front.webp'
 import { StudyDesk, type StudyNative } from './StudyDesk'
 import { EnkiTodos } from './EnkiTodos'
@@ -11,6 +12,7 @@ import type { WordContext } from './model'
 import './helper.css'
 
 const tools = [
+  { id: 'page', label: 'Page', icon: Globe },
   { id: 'word', label: 'Dictionary', icon: BookOpenText },
   { id: 'person', label: 'CRM', icon: AddressBookTabs },
   { id: 'application', label: 'Application', icon: FileText },
@@ -18,12 +20,12 @@ const tools = [
 ] as const
 type Mode = typeof tools[number]['id']
 type Selection = { text: string; context: WordContext }
-type Bridge = StudyNative & ProfileBridge & {
+type Bridge = StudyNative & ProfileBridge & PageBridge & {
   mode: (mode: Mode) => Promise<void>
   close: () => Promise<void>
   selection: () => Promise<Selection>
   shortcut: (accelerator?: string) => Promise<string>
-  onShowMode: (callback: (request: {mode: Mode; hasSelection?: boolean}) => void) => () => void
+  onShowMode: (callback: (request: {mode: Mode; hasSelection?: boolean; refreshPage?: boolean}) => void) => () => void
   celebrate: () => void
 }
 const bridge = (window as unknown as { profileCapture?: Bridge }).profileCapture
@@ -40,7 +42,7 @@ function Shortcuts({ native }: { native: Bridge }) {
       if (event.newState === 'open') void native.shortcut().then(setShortcut).catch(e => setMessage(e.message))
     }}>
       <h2>Keyboard shortcuts</h2>
-      <p>Show TO-DO <kbd>]]]</kbd></p>
+      <p>Open Enki <kbd>]]]</kbd> · Reads your current page in Dia.</p>
       <form onSubmit={async event => {
         event.preventDefault()
         if (saving) return
@@ -63,6 +65,7 @@ function Helper() {
   const [word, setWord] = useState<(Selection & { serial: number }) | null>(null)
   const [applicationQuery, setApplicationQuery] = useState('')
   const [error, setError] = useState('')
+  const [pageSerial, setPageSerial] = useState(0)
   const focusFrame = useRef(0)
   const selectionRequest = useRef(0)
   const scroll = useRef<Partial<Record<Mode, number>>>({})
@@ -109,8 +112,9 @@ function Helper() {
   useEffect(() => {
     void readSelection(initial)
     focus(initial)
-    const stop = bridge?.onShowMode?.(({ mode: id, hasSelection }) => {
+    const stop = bridge?.onShowMode?.(({ mode: id, hasSelection, refreshPage }) => {
       activate(id)
+      if (refreshPage) setPageSerial(value => value + 1)
       if (hasSelection) void readSelection(id)
     })
     const escape = (event: globalThis.KeyboardEvent) => {
@@ -150,9 +154,10 @@ function Helper() {
         {error && <p role="alert" className="enki-help-error">{error}</p>}
         {tools.map(({ id }) => <div key={id} className="helper-pane" id={'pane-' + id} role="tabpanel" aria-labelledby={'tool-' + id} data-mode={id} hidden={mode !== id}>
           {visited.includes(id) && <>
+            {id === 'page' && <EnkiPage key={pageSerial} bridge={bridge} />}
             {id === 'todo' && <EnkiTodos onCelebrate={bridge?.celebrate} />}
             {id === 'word' && <Dictionary selection={word} />}
-            {id === 'person' && <EnkiPerson bridge={bridge} autoRead={mode === id} />}
+            {id === 'person' && <EnkiPerson key={pageSerial} bridge={bridge} autoRead={mode === id} browserConnected />}
             {id === 'application' && <><h1>Applications</h1><StudyDesk mode="application" initialQuery={applicationQuery} native={bridge} helper /></>}
           </>}
         </div>)}

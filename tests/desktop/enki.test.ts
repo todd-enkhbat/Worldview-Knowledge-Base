@@ -64,5 +64,5 @@ it('keeps the capture window and its user-sized bounds when switching tools or s
   expect(windows).toHaveLength(1)
   expect(win.loadURL).toHaveBeenCalledExactlyOnceWith(origin + '/study-helper.html?mode=word')
   expect(win.setBounds).not.toHaveBeenCalled()
-  expect(win.webContents.send).toHaveBeenCalledWith('worldview:show-mode', { mode: 'todo', hasSelection: false })
+  expect(win.webContents.send).toHaveBeenCalledWith('worldview:show-mode', { mode: 'todo', hasSelection: false, refreshPage: false })
 })

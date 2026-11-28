@@ -36,7 +36,10 @@ const word = z.object({
   source: short
 })
 const answer = z.object({ question: z.string().min(1).max(8000), answer: text })
+const applicationDetails = { deadline: short.optional(), deadlineSource: z.string().max(4000).optional(), deadlineEvidence: short.optional(), appliedAt: time.nullable().optional(), submissionEvidence: z.string().max(4000).optional(), description: short.optional(), organizationId: id.optional() }
 export const applicationInput = z.object({
+  ...applicationDetails,
+  workspaceToken: short.optional(),
   captureId:z.uuid().optional(),
   id: id.optional(),
   organization: short,
@@ -49,6 +52,7 @@ export const applicationInput = z.object({
   answers: z.array(answer).max(180)
 })
 const revision = z.object({
+  ...applicationDetails,
   id,
   at: time,
   step: short,
@@ -56,9 +60,11 @@ const revision = z.object({
   answers: z.array(answer),
   evidence: text.optional(),
   sourceDate: short.optional(),
+  readerSubmission: z.object({key: short, fingerprint: short}).optional(),
   submitted: z.boolean()
 })
 const application = z.object({
+  ...applicationDetails,
   id,
   organization: short,
   opportunity: short,
@@ -78,8 +84,18 @@ export type Sense = z.infer<typeof sense>
 export function decodeStudy(raw: unknown): StudyState {
   return schema.parse(raw ?? { schemaVersion: 1, revision: 0, words: [], applications: [] })
 }
+/** Historical confirmations can supply a date; a capture timestamp cannot. */
+export function applicationAppliedAt(record: StudyState['applications'][number]): number | null {
+  if (record.appliedAt != null) return record.appliedAt
+  const dates = record.revisions.filter(revision=>revision.submitted).flatMap(revision=>{
+    if(revision.appliedAt != null)return [revision.appliedAt]
+    if(revision.sourceDate && /\b(?:19|20)\d{2}\b/.test(revision.sourceDate)) {const date=Date.parse(revision.sourceDate);if(Number.isFinite(date))return [date]}
+    return []
+  })
+  return dates.length ? Math.min(...dates) : null
+}
 export const normalizeTerm = (s: string) => s.normalize('NFC').trim().toLocaleLowerCase().replace(/\s+/g, ' ')
-export function applyStudy(state: StudyState, action: string, input: unknown, now = Date.now()) {
+export function applyStudy(state: StudyState, action: string, input: unknown, now = Date.now(), readerSubmission?: {key: string; fingerprint: string}) {
   if (action === 'encounter') {
     const v = z
       .object({
@@ -127,11 +143,15 @@ export function applyStudy(state: StudyState, action: string, input: unknown, no
       }
       state.applications.push(record)
     }
+    const details = Object.fromEntries(Object.keys(applicationDetails).flatMap(key => { const value = v[key as keyof typeof v]; return value === undefined ? [] : [[key, value]] }))
+    if (v.submitted && !record.appliedAt) details.appliedAt = v.appliedAt ?? (v.sourceDate && /\b(?:19|20)\d{2}\b/.test(v.sourceDate) && Number.isFinite(Date.parse(v.sourceDate)) ? Date.parse(v.sourceDate) : null)
+    const metadataChanged = Object.entries(details).some(([key,value]) => JSON.stringify(record[key as keyof typeof record]) !== JSON.stringify(value))
+    Object.assign(record, details)
     record.organization = v.organization
     record.opportunity = v.opportunity
     const latest = record.revisions.findLast((r) => r.step === v.step)
     if (
-      !latest ||
+      !latest || metadataChanged || readerSubmission ||
       latest.source !== v.source ||
       latest.evidence !== v.evidence ||
       latest.sourceDate !== v.sourceDate ||
@@ -139,11 +159,13 @@ export function applyStudy(state: StudyState, action: string, input: unknown, no
       JSON.stringify(latest.answers) !== JSON.stringify(v.answers)
     ) {
       record.revisions.push({
+        ...details,
         id: crypto.randomUUID(),
         at: now,
         step: v.step,
         source: v.source,
         submitted: v.submitted,
+        ...(readerSubmission ? {readerSubmission} : {}),
         answers: v.answers,
         evidence: v.evidence,
         sourceDate: v.sourceDate

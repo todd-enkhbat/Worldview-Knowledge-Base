@@ -25,6 +25,24 @@ describe('normalized CRM record store', () => {
     expect(store.list('people', { q: '100%_real' }).rows.map(row => row.id)).toEqual(['p-50'])
     expect(() => store.list('people', { limit: 501 })).toThrow('at most 500')
   })
+  it('sorts the entire contact table by logged activity and includes dates on the requested page', () => {
+    const first = person('a'), recent = person('b'), none = person('c')
+    const company = create('companies', { id: 'company', name: 'Company' })
+    create('interactions', { id: 'older', status: 'logged', occurredAt: 500, personIds: [first.id], companyIds: [company.id] })
+    create('interactions', { id: 'recent', status: 'logged', startAt: 1000, personIds: [recent.id] })
+    create('interactions', { id: 'cancelled', status: 'cancelled', occurredAt: 1800, personIds: [none.id] })
+    create('interactions', { id: 'unconfirmed', type: 'calendar', status: 'logged', occurredAt: 1900, personIds: [none.id] })
+    create('interactions', { id: 'future', status: 'logged', occurredAt: 2200, personIds: [first.id] })
+
+    const sort = [{ field: 'lastInteractionAt', direction: 'desc' as const }]
+    expect(store.list('people', { includeActivity: true, sort, limit: 1 })).toMatchObject({ total: 3, nextOffset: 1, lastInteractionAt: { b: 1000 } })
+    const next = store.list('people', { includeActivity: true, sort, offset: 1 })
+    expect(next.rows.map(row => row.id)).toEqual(['a', 'c'])
+    expect(next.lastInteractionAt).toEqual({ a: 500 })
+    expect(store.list('companies', { includeActivity: true }).lastInteractionAt).toEqual({ company: 500 })
+    expect(store.get('people', first.id)).not.toHaveProperty('lastInteractionAt')
+  })
+
   it('preserves source data, unnamed people, unknown metadata and local edits across repeat imports', () => {
     const raw = { id: 'folk-person', futureData: { owner: ['private'] } }, imported = { id: 'folk-person', fullName: '', emails: ['private@example.test'], raw, sourceRefs: [{ provider: 'folk', accountId: 'workspace', externalId: 'folk-person' }] }
     expect(cmd('import', { collections: { people: [imported] } }).counts).toEqual({ created: 1, unchanged: 0, staged: 0 })

@@ -1,5 +1,8 @@
+import { EnkiSavedRecord } from './EnkiSavedRecord.tsx'
+import type { ReaderRecord } from '../../extensions/worldview-reader/organization-ui.js'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { contactActions, renderPeopleRows, renderProfileIdentity, type VisiblePerson } from '../../extensions/worldview-reader/contact-ui.js'
+import { EnkiScreenContacts, type ScreenContactBridge } from './EnkiScreenContacts.tsx'
 import { groupDisplay } from '../../extensions/worldview-reader/group-icon.js'
 import '../../extensions/worldview-reader/contact-ui.css'
 
@@ -13,7 +16,10 @@ type Profile = {
 type Group = { id: string; name: string; emoji?: string; icon?: string }
 type Preview = { id: string; profile: Profile; groups: Group[]; workspace: string; existing?: Existing | null }
 type ReadError = {error: string; sourceUrl?: string}
-export interface ProfileBridge {
+export interface ProfileBridge extends Partial<ScreenContactBridge> {
+  followPage?: () => Promise<{id: string; url: string; documentId: string} | null>
+  openLinkedRecord?: (previewId: string, type: 'person' | 'company', id: string) => Promise<void>
+  organization?: (id: string, fields: Record<string, unknown>) => Promise<ReaderRecord>
   listVisiblePeople?: (source: Source) => Promise<{people: VisiblePerson[]; sourceUrl: string} | ReadError>
   read: (source: Source, selectedUrl?:string) => Promise<Preview | ReadError>
   save: (id: string, group: string) => Promise<{ status: string; existing?: Existing | null; profile?: Profile; message?: string; notice?: string }>
@@ -40,12 +46,12 @@ function ProfileHeader({person,saved}: {person:Profile;saved:boolean}) {
     if (host.current) renderProfileIdentity(host.current,{
       name:person.name, entityType:person.entityType, headline:person.headline,
       photoUrl:person.photo, location:person.location,
-      current:person.savedCompanies ? [] : person.companies, schools:person.savedSchools ? [] : person.schools,
+      current:person.savedCompanies ? [] : person.companies, schools:saved || person.savedSchools ? [] : person.schools,
     },{saved,nameId:'enki-preview-name'})
   },[person,saved])
   return <div ref={host} className="wv-profile-identity enki-identity" />
 }
-export function EnkiPerson({bridge, autoRead = false}: {bridge?:ProfileBridge; autoRead?:boolean}) {
+export function EnkiPerson({bridge, autoRead = false, browserConnected = false}: {bridge?:ProfileBridge; autoRead?:boolean; browserConnected?:boolean}) {
   const [source,setSource] = useState<Source>('dia')
   const [address,setAddress] = useState('')
   const [record,setRecord] = useState<Preview | null>(null)
@@ -58,6 +64,11 @@ export function EnkiPerson({bridge, autoRead = false}: {bridge?:ProfileBridge; a
   const [error,setError] = useState('')
   const [busy,setBusy] = useState(false)
   const locked = useRef(false)
+  const profileHost = useRef<HTMLDivElement>(null)
+  const [followingPaused, setFollowingPaused] = useState(false)
+  const followState = useRef({ url: '', selected: false, protected: false })
+  const lastReadSucceeded = useRef(false)
+  const followRead = useRef<() => Promise<void>>(async () => {})
   const groupField = useRef<HTMLSelectElement>(null)
   const recordButton = useRef<HTMLButtonElement>(null)
   const justRead = useRef(false)
@@ -79,12 +90,13 @@ export function EnkiPerson({bridge, autoRead = false}: {bridge?:ProfileBridge; a
     catch (e) { setMessage(''); setError((e instanceof Error ? e.message : String(e)).replace(/^Error invoking remote method '[^']+': (?:Error: )?/, '')) }
     finally { setBusy(false); locked.current = false }
   }
-  function showRecord(value: Preview, selected = '') {
+  function showRecord(value: Preview, selected = '', focus = true) {
     setRecord(value); setSelectedUrl(selected); setGroupId(''); setChooseGroup(false); setReview(false); setMessage('')
-    justRead.current = true
+    justRead.current = focus
   }
-  function read() {
-    void run('Reading page…', async api => {
+  function read(automatic = false) {
+    lastReadSucceeded.current = false
+    return run('Reading page…', async api => {
       clearDetail(); setPeople([])
       const list = await api.listVisiblePeople?.(source)
       const rows = list && 'people' in list ? list.people : []
@@ -96,12 +108,55 @@ export function EnkiPerson({bridge, autoRead = false}: {bridge?:ProfileBridge; a
         return
       }
       setPeople(rows.filter(row => row.url.replace(/\/$/,'') !== primary.profile.url.replace(/\/$/,'')))
-      setAddress(primary.profile.url); showRecord(primary)
+      lastReadSucceeded.current = true
+      setAddress(primary.profile.url); showRecord(primary, '', !automatic)
     })
   }
+  followState.current = { url: record?.profile.url || '', selected: !!selectedUrl, protected: chooseGroup || !!groupId || review }
+  followRead.current = () => read(true)
+  useEffect(() => {
+    if (!autoRead || !browserConnected || source !== 'dia' || !bridge?.followPage) return
+    let stopped = false, timer: ReturnType<typeof setTimeout>
+    let previous = '', retryKey = '', attempts = 0
+    const editing = () => {
+      const host = profileHost.current
+      return !!host?.querySelector('.reader-inline-form, .organization-details-form[data-dirty="true"]') ||
+        [...(host?.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>('form input, form textarea') ?? [])]
+          .some(field => !field.closest('.organization-details-form') && !!field.value.trim()) ||
+        !!host?.querySelector('form :focus') || followState.current.protected || followState.current.selected
+    }
+    const check = async () => {
+      try {
+        if (!stopped && !locked.current && !profileHost.current?.closest('[hidden]')) {
+          const paused = editing()
+          setFollowingPaused(paused)
+          if (!paused) {
+            const page = await bridge.followPage!()
+            if (stopped || locked.current || editing() || profileHost.current?.closest('[hidden]')) return
+            const key = page && JSON.stringify([page.id, page.url, page.documentId])
+            if (key && key !== previous) {
+              const firstSamePage = !previous && page.url.replace(/\/$/, '') === followState.current.url.replace(/\/$/, '')
+              if (firstSamePage) previous = key
+              else {
+                if (retryKey !== key) { retryKey = key; attempts = 0 }
+                await followRead.current()
+                attempts++
+                if (lastReadSucceeded.current || attempts >= 3) previous = key
+              }
+            }
+          }
+        }
+      } catch { /* The next check recovers after a sleeping browser or service restart. */ }
+      finally { if (!stopped) timer = setTimeout(() => void check(), 1500) }
+    }
+    timer = setTimeout(() => void check(), 1500)
+    return () => { stopped = true; clearTimeout(timer) }
+  }, [autoRead, browserConnected, source, bridge])
+  const screen = !browserConnected && bridge?.screenState && bridge.onScreenContacts ? bridge as ScreenContactBridge : undefined
   const initialRead = useRef(false)
   useEffect(() => {
-    if (autoRead && bridge && !initialRead.current) { initialRead.current = true; read() }
+    if (!autoRead) initialRead.current = false
+    if (autoRead && bridge && !screen && !initialRead.current) { initialRead.current = true; read() }
   })
   async function update(api:ProfileBridge, chosen:Preview, id:string) {
     const receipt = await api.save(chosen.id,id)
@@ -109,7 +164,7 @@ export function EnkiPerson({bridge, autoRead = false}: {bridge?:ProfileBridge; a
     const value = { ...chosen, existing: receipt.existing ?? chosen.existing, profile:receipt.profile ?? chosen.profile }
     if (value.existing) setPeople(prev => prev.map(row => row.url === value.profile.url ? {...row,existing:value.existing} : row))
     setRecord(value); setReview(receipt.status === 'review'); setGroupId(''); setChooseGroup(false)
-    setMessage([receipt.status === 'saved' ? (id ? 'Added to group.' : 'Saved to Worldview.') : receipt.message || 'Ready for review in Worldview.',receipt.notice].filter(Boolean).join(' '))
+    setMessage([receipt.status === 'saved' ? (id ? 'Added to group.' : chosen.existing ? 'Updated from profile.' : 'Saved to Worldview.') : receipt.message || 'Ready for review in Worldview.',receipt.notice].filter(Boolean).join(' '))
   }
   function chooseRow(row:VisiblePerson, action:'primary'|'review') {
     void run('',async api => {
@@ -144,7 +199,7 @@ export function EnkiPerson({bridge, autoRead = false}: {bridge?:ProfileBridge; a
       <select value={source} disabled={busy} onChange={event => {clearDetail();setPeople([]);setSource(event.target.value as Source)}}>
         <option value="dia">Active Dia tab</option><option value="browser">Worldview browser</option>
       </select></label>
-      <button className="enki-primary" data-primary disabled={!bridge || busy} onClick={read}>Read profile</button>
+      <button className="enki-primary" data-primary disabled={!bridge || busy} onClick={() => void read()}>Read profile</button>
     </div>
     {source === 'browser' && <form className="enki-address" onSubmit={event => {event.preventDefault();void run('Opening browser…',async api => {
       clearDetail();setPeople([]);await api.openBrowser(address.trim() || 'https://www.linkedin.com/');setMessage('Open the page, then choose Read profile.')
@@ -152,10 +207,15 @@ export function EnkiPerson({bridge, autoRead = false}: {bridge?:ProfileBridge; a
       <label className="enki-field">Profile URL<input type="url" name="profileUrl" autoComplete="off" spellCheck={false} placeholder="Paste a profile URL…" value={address} onChange={e=>setAddress(e.target.value)}/></label>
       <button disabled={!bridge || busy}>{address.trim() ? 'Open page' : 'Open LinkedIn'}</button></form>}
   </>
-  return <>
-    {!record && !people.length && <><h1>Capture a contact</h1>{captureControls}</>}
-    {!record && !people.length && !message && !error && <p className="enki-hint">{bridge ? 'Read a profile or a page with links to people.' : 'Open Worldview for Mac to capture a browser profile.'}</p>}
-    {selectedUrl && <button className="enki-text-action" disabled={busy} onClick={read}>‹ People on this page</button>}
+  return <div ref={profileHost}>
+    {!screen && !record && !people.length && <h1>Capture a contact</h1>}
+    {screen && <EnkiScreenContacts bridge={screen} />}
+    {!record && !people.length && (screen ? <details className="enki-change-source"><summary>Read a browser page instead</summary>{captureControls}</details> : captureControls)}
+    {!screen && !record && !people.length && !message && !error && <p className="enki-hint">{bridge ? 'Read a profile or a page with links to people.' : 'Open Worldview for Mac to capture a browser profile.'}</p>}
+    {selectedUrl && <button className="enki-text-action" disabled={busy} onClick={() => void read()}>‹ People on this page</button>}
+    {browserConnected && bridge?.followPage && <p className="enki-follow-status" role="status">
+      {followingPaused ? 'Following paused while you edit or review this contact.' : 'Following the active page in Dia'}
+    </p>}
     {record && person && <article className="enki-profile">
       <ProfileHeader person={person} saved={!!existing}/>
       {existing && <div className="enki-membership"><div>{existing.groupIds.length ? record.groups.filter(g=>existing.groupIds.includes(g.id)).map(g=><span key={g.id}>{groupName(g)}</span>):'No groups yet'}</div>
@@ -169,8 +229,10 @@ export function EnkiPerson({bridge, autoRead = false}: {bridge?:ProfileBridge; a
         {!existing && <button className="enki-primary" disabled={busy} onClick={()=>void run('Saving…',api=>update(api,record,groupId))}>{labels.save}</button>}
       </div>}
       {(existing || review) && <div className="enki-record-actions"><button ref={recordButton} className="enki-primary" data-primary disabled={busy} onClick={()=>void run('',api=>api.openRecord(undefined,record.id))}>{review ? 'Review capture' : labels.open}</button>
-        {existing && person.entityType === 'person' && <button className="enki-text-action" disabled={busy} onClick={()=>void run('',api=>api.openRecord('activity',record.id))}>{labels.activity}</button>}</div>}
-      <details><summary>Profile details</summary><dl>
+        {existing && <button className="enki-text-action" disabled={busy} onClick={()=>void run('Updating contact…',api=>update(api,record,''))}>Update from profile</button>}
+        {existing && !bridge?.organization && person.entityType === 'person' && <button className="enki-text-action" disabled={busy} onClick={()=>void run('',api=>api.openRecord('activity',record.id))}>{labels.activity}</button>}</div>}
+      {existing && bridge?.organization && <EnkiSavedRecord key={record.id + message} bridge={bridge} previewId={record.id} entityType={person.entityType} />}
+      {!(existing && bridge?.organization) && <details><summary>Profile details</summary><dl>
         {(person.entityType === 'person' ? [['Current company',person.companies.join(', '),person.savedCompanies],['Alma mater',person.schools.join(', '),person.savedSchools]] : [['Website',person.website,false],['Industry',person.industry,false]]).map(([label,value,retained])=><div key={String(label)}><dt>{label}</dt><dd>{value || 'Not shown'} {retained && <small>From Worldview</small>}</dd></div>)}
         <div><dt>Source</dt><dd>{person.url}</dd></div></dl>
         {bridge?.profileAction && <div className="enki-profile-detail-actions">
@@ -181,7 +243,7 @@ export function EnkiPerson({bridge, autoRead = false}: {bridge?:ProfileBridge; a
             const result = await api.profileAction!(record.id,'photo-only');setMessage(result.message)
           })}>Save contact photo only</button>}
         </div>}
-      </details>
+      </details>}
       <details className="enki-change-source" key={record.id}><summary>Read another profile</summary>{captureControls}</details>
     </article>}
     {!selectedUrl && !!people.length && <PeopleList people={people} onAction={chooseRow} busy={busy}/>}
@@ -191,5 +253,5 @@ export function EnkiPerson({bridge, autoRead = false}: {bridge?:ProfileBridge; a
     {error && source === 'dia' && /^https?:\/\//.test(address) && <button className="enki-text-action" disabled={busy} onClick={()=>void run('Opening browser…', async api => {
       await api.openBrowser(address); setSource('browser'); setMessage('Choose Read profile when the page is ready.')
     })}>Open this page in Worldview</button>}
-  </>
+  </div>
 }

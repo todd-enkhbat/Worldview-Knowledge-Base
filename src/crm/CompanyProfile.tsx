@@ -5,12 +5,12 @@ import { personName, type CrmDetail } from './client.ts'
 import { safeProfileUrl, SocialProfileLinks } from './socialProfiles.tsx'
 import type { CrmCompany, CrmCompanyRoster, CrmPerson } from './types.ts'
 
-export function OrganizationMark({ company, name, logo, allowRemote = true }: { company?: CrmCompany; name: string; logo?: string; allowRemote?: boolean }) {
+export function OrganizationMark({ company, name, logo, allowRemote = true, size = 32 }: { company?: CrmCompany; name: string; logo?: string; allowRemote?: boolean; size?: number }) {
   const [failed, setFailed] = useState('')
   const remote = safeProfileUrl(String(company?.logoUrl || logo || ''))
   return allowRemote && !company?.logoAssetId && remote !== failed && remote.startsWith('https://')
-    ? <img className="crm-org-mark" width="32" height="32" referrerPolicy="no-referrer" loading="lazy" alt="" src={remote} onError={() => setFailed(remote)} />
-    : <CrmAvatar name={name} assetId={company?.logoAssetId} size={32} organization />
+    ? <img className="crm-org-mark" width={size} height={size} referrerPolicy="no-referrer" loading="lazy" alt="" src={remote} onError={() => setFailed(remote)} />
+    : <CrmAvatar name={name} assetId={company?.logoAssetId} size={size} organization />
 }
 
 function OrganizationRoster({ roster, onSelect }: { roster: CrmCompanyRoster; onSelect: (person: CrmPerson) => void }) {

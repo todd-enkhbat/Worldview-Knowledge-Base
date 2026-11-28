@@ -2,6 +2,9 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { createRequire } from 'node:module'
+import { extractProfile } from '../../extensions/worldview-reader/extract.js'
+import { quickAddProfile } from '../../server/crmProfileQuickAdd.ts'
 import { createHash } from 'node:crypto'
 import { CrmProfileCapture } from '../../server/crmProfileCapture.ts'
 import { openWorldDb, type WorldDb } from '../../server/worldDb.ts'
@@ -220,4 +223,24 @@ it('links a Michigan Tech degree to the verified Michigan Technological Universi
   expect((record as CrmPerson).affiliations?.map(row => [row.organization, row.organizationId])).toEqual([['Michigan Technological University','mtu'],['Michigan Tech','mtu']])
   expect(db.crm.rows('companies')).toHaveLength(1)
   expect(db.crm.detail('companies','mtu').companyRoster).toMatchObject({ former: [{ id: record.id }], education: [{ id: record.id }] })
+})
+
+it('updates a saved contact with top-card education through the same quick-add path used by the native helper', async () => {
+  const existing = person()
+  const {JSDOM}=createRequire(import.meta.url)('jsdom')
+  const url='https://www.linkedin.com/in/ada-example/'
+  const dom=new JSDOM('<main><section><h1>Ada Example</h1><p class="text-body-medium">Investing @General Catalyst | ex-a16z</p><button>General Catalyst</button><button aria-label="Education: Columbia University in the City of New York">Columbia University in the City of New York</button></section></main>',{url})
+  try {
+    const snapshot=extractProfile(dom.window.document)
+    const draft=await capture.stage({requestId:'header-school',...snapshot})
+    expect(draft.matches[0].id).toBe(existing.id)
+    const result=await quickAddProfile({capture,store:db.crm,media:null},draft,'update-header-school')
+    expect(result).toMatchObject({status:'saved',recordId:existing.id})
+    const saved=db.crm.get('people',existing.id) as CrmPerson
+    expect(saved.jobTitle).toBe('My existing role')
+    expect(saved.affiliations).toEqual(expect.arrayContaining([expect.objectContaining({kind:'education',organization:'Columbia University in the City of New York',evidence:[expect.objectContaining({url,excerpt:expect.stringContaining('Columbia University')})]})]))
+    expect(db.crm.list('people',{filter:{field:'almaMater',operator:'contains',value:'Columbia'}}).rows.map(row=>row.id)).toContain(existing.id)
+    expect(db.crm.list('people',{filter:{field:'almaMater',operator:'eq',value:'Columbia University'}}).rows.map(row=>row.id)).toContain(existing.id)
+    expect(db.crm.list('people',{q:'Columbia University'}).rows.map(row=>row.id)).toContain(existing.id)
+  } finally {dom.window.close()}
 })

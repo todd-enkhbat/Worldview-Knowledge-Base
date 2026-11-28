@@ -113,7 +113,7 @@ function script(fn, ...args) { return '(' + fn.toString() + ')(' + args.map(valu
 
 async function snapshot(adapter, ref, extract) {
   assertSource(await adapter.identify(), ref)
-  const data = await adapter.evaluate(ref, script(extract.extractProfile, null, true), false)
+  const data = adapter.readProfile ? await adapter.readProfile(ref) : await adapter.evaluate(ref, script(extract.extractProfile, null, true), false)
   assertSource(await adapter.identify(), ref)
   if (!data?.profile?.name || !samePage(data.url, ref.url)) throw new Error(data?.extractorError || 'Open one person’s profile or an organization page, then read it again.')
   return data
@@ -122,7 +122,7 @@ async function snapshot(adapter, ref, extract) {
 // selected card's own evidence, never a directory's full text or another card.
 async function visibleProfiles(adapter, ref, extract, selectedUrl = '') {
   assertSource(await adapter.identify(), ref)
-  const data = await adapter.evaluate(ref, script(extract.extractVisiblePeople, null, selectedUrl), false)
+  const data = adapter.readPeople ? await adapter.readPeople(ref, selectedUrl) : await adapter.evaluate(ref, script(extract.extractVisiblePeople, null, selectedUrl), false)
   assertSource(await adapter.identify(), ref)
   if (data?.extractorError) throw new Error(data.extractorError)
   if (!samePage(selectedUrl ? data?.sourcePageUrl : data?.pageUrl, ref.url)) throw new Error('The visible page changed. Scan it again.')
@@ -164,6 +164,7 @@ function mergeEducation(data, source, rows = []) {
   }
 }
 async function visibleEducation(adapter, ref, data) {
+  if (adapter.readProfile) return
   const url = new URL(ref.url)
   if (data.profile.entityType === 'person' && /(^|\.)linkedin\.com$/i.test(url.hostname) && /^\/in\/[^/]+\/?$/.test(url.pathname)) {
     const result = await adapter.evaluate(ref, script(captureEducation, ref.url, false), true)
@@ -190,6 +191,13 @@ function mergeExperience(data, sources) {
   data.html += '<section><h2>Captured experience</h2>' + evidence.map(line=>'<p>'+escape(line)+'</p>').join('') + '</section>'
 }
 async function collect(adapter, ref, extract, expectedName) {
+  if (adapter.collect) {
+    assertSource(await adapter.identify(), ref)
+    const result = await adapter.collect(ref, expectedName)
+    assertSource(await adapter.identify(), ref)
+    if (result?.data?.profile?.name !== expectedName || !samePage(result.data.url, ref.url)) throw Error('The profile changed. Press ]]] again.')
+    return result
+  }
   let data = await snapshot(adapter, ref, extract)
   if (data.profile.name !== expectedName) throw new Error('The person shown on this page changed. Read the profile again.')
   const page = new URL(ref.url), sources = []

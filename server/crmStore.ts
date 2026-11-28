@@ -1,3 +1,4 @@
+import { calendarInteraction, confirmedAttendees } from '../src/crm/calendarDate.ts'
 import { createHash, randomUUID } from 'node:crypto'
 import { institutionGroup, reconcileAffiliationGroups } from './crmAffiliationGroups.ts'
 import { googleContactDetails } from './crmGoogleContact.ts'
@@ -88,6 +89,21 @@ export class SqliteCrmStore {
     return company && company.archivedAt === null ? { ...marker, name: company.name } : null
   }
   status() { const counts = Object.fromEntries(CRM_COLLECTIONS.map((collection) => [collection, { active: Number((this.world.db.prepare('SELECT COUNT(*) AS n FROM crm_rows WHERE collection=? AND archived=0').get(collection) as SqlRow).n), total: Number((this.world.db.prepare('SELECT COUNT(*) AS n FROM crm_rows WHERE collection=?').get(collection) as SqlRow).n) }])); return { available: true, schemaVersion: 1, workspaceFingerprint: this.workspaceFingerprint(), lastBrowserSave: this.lastBrowserSave(), revision: this.revision(), counts, cloudEnrichment: false, sendingEnabled: false, pendingCandidates: this.rows('candidates', false).filter((row) => row.status === 'pending').length, pendingProposals: this.rows('proposals', false).filter((row) => row.status === 'pending').length, dueTasks: this.rows('tasks', false).filter((row) => row.completedAt === null && row.dueAt !== null && row.dueAt <= this.now()).length } }
+  private lastInteractionDates(collection: 'people' | 'companies'): Map<string, number> {
+    const latest = new Map<string, number>(), now = this.now()
+    const rows = this.world.db.prepare(`SELECT json_remove(body,'$.raw','$.extra','$.body') AS body
+      FROM crm_rows WHERE collection='interactions' AND archived=0 AND json_extract(body,'$.status')='logged'`).iterate()
+    for (const entry of rows) {
+      const row = readBody<CrmCollectionMap['interactions']>(entry)!
+      const at = row.occurredAt ?? row.startAt
+      if (at === null || at > now) continue
+      const isCalendar = calendarInteraction(row)
+      const ids = collection === 'people' ? isCalendar ? confirmedAttendees(row) : row.personIds
+        : isCalendar && !row.attendanceConfirmed ? [] : row.companyIds
+      for (const id of ids) if (at > (latest.get(id) ?? -Infinity)) latest.set(id, at)
+    }
+    return latest
+  }
   list<K extends CrmCollection>(collection: K, query: CrmListQuery = {}): CrmPage<K> {
     check(isCrmCollection(collection), 'Unknown CRM collection.'); const offset = query.offset ?? 0, limit = query.limit ?? 50
     check(Number.isSafeInteger(offset) && offset >= 0 && Number.isSafeInteger(limit) && limit >= 1 && limit <= 500, 'Choose a valid CRM page of at most 500 records.')
@@ -110,14 +126,41 @@ export class SqliteCrmStore {
       else { where.push('r.entity_id=?'); params.push(query.entityId) }
     }
     const sql = where.join(' AND '), custom = !!query.filter || !!query.sort?.length
-    if (!custom) { const total = Number((this.world.db.prepare(`SELECT COUNT(*) AS n FROM crm_rows r WHERE ${sql}`).get(...params) as SqlRow).n); const rows = (this.world.db.prepare(`SELECT r.body FROM crm_rows r WHERE ${sql} ORDER BY r.ord,r.id LIMIT ? OFFSET ?`).all(...params, limit, offset) as SqlRow[]).map((row) => readBody<CrmCollectionMap[K]>(row)!); return { revision: this.revision(), collection, rows: rows.map(({ raw: _raw, extra: _extra, ...row }) => row) as CrmCollectionMap[K][], total, nextOffset: offset + rows.length < total ? offset + rows.length : null } }
+    const activity = (collection === 'people' || collection === 'companies') &&
+      (query.includeActivity || Array.isArray(query.sort) && query.sort.some(sort => sort?.field === 'lastInteractionAt'))
+      ? this.lastInteractionDates(collection) : null
+    const result = (rows: CrmCollectionMap[K][], total: number): CrmPage<K> => ({
+      revision: this.revision(), collection,
+      rows: rows.map(({ raw: _raw, extra: _extra, ...row }) => row) as CrmCollectionMap[K][],
+      total, nextOffset: offset + rows.length < total ? offset + rows.length : null,
+      ...(activity && query.includeActivity ? { lastInteractionAt: Object.fromEntries(rows.flatMap(row => {
+        const date = activity.get(row.id)
+        return date === undefined ? [] : [[row.id, date]]
+      })) } : {}),
+    })
+    if (!custom) { const total = Number((this.world.db.prepare(`SELECT COUNT(*) AS n FROM crm_rows r WHERE ${sql}`).get(...params) as SqlRow).n); const rows = (this.world.db.prepare(`SELECT r.body FROM crm_rows r WHERE ${sql} ORDER BY r.ord,r.id LIMIT ? OFFSET ?`).all(...params, limit, offset) as SqlRow[]).map((row) => readBody<CrmCollectionMap[K]>(row)!); return result(rows, total) }
     const fields = this.rows('fieldValues', false), definitions = new Map(this.rows('fields', false).map(field => [field.id, field]))
     const labelValue = (fieldId: string, value: unknown): unknown => { const field = definitions.get(fieldId); const label = (part: unknown) => field?.options.find(option => option.id === part || option.label === part)?.label ?? part; return Array.isArray(value) ? value.map(label) : label(value) }
     const filterLabels = (filter: CrmFilter | null): CrmFilter | null => !filter ? null : 'op' in filter ? { ...filter, rules: filter.rules.map(rule => filterLabels(rule)!) } : filter.field.startsWith('field:') && filter.value !== undefined ? { ...filter, value: labelValue(filter.field.slice(6), filter.value) as typeof filter.value } : filter
-    const resolveField = (record: CrmRow, field: string) => { if (field === 'companyNames') return (Array.isArray(record.companyIds) ? record.companyIds : []).flatMap(id => { const company = this.get('companies', String(id)); return company?.archivedAt === null ? [company.name] : [] }); const value = crmFieldValue(record, field, fields); return field.startsWith('field:') ? labelValue(field.slice(6), value) : value }
+    const companyNames = new Map<string, string[]>()
+    const resolveField = (record: CrmRow, field: string) => {
+      if (field === 'lastInteractionAt') return activity?.get(record.id)
+      if (field === 'companyNames') {
+        const cached = companyNames.get(record.id)
+        if (cached) return cached
+        const names = (Array.isArray(record.companyIds) ? record.companyIds : []).flatMap(id => {
+          const company = this.get('companies', String(id))
+          return company?.archivedAt === null ? [company.name] : []
+        })
+        companyNames.set(record.id, names)
+        return names
+      }
+      const value = crmFieldValue(record, field, fields)
+      return field.startsWith('field:') ? labelValue(field.slice(6), value) : value
+    }
     const filter = filterLabels(query.filter ?? null); let records = (this.world.db.prepare(`SELECT r.body FROM crm_rows r WHERE ${sql} ORDER BY r.ord,r.id`).all(...params) as SqlRow[]).map((row) => readBody<CrmCollectionMap[K]>(row)!).filter((row) => matchCrmFilter(row, filter, (field) => resolveField(row, field)))
-    if (query.sort?.length) { check(query.sort.length <= 20 && query.sort.every((sort) => typeof sort.field === 'string' && ['asc', 'desc'].includes(sort.direction)), 'The CRM sort is invalid.'); records = records.sort((a, b) => { for (const sort of query.sort!) { const left = resolveField(a, sort.field), right = resolveField(b, sort.field); if (left === right) continue; if (left === undefined || left === null || left === '') return 1; if (right === undefined || right === null || right === '') return -1; const compared = typeof left === 'number' && typeof right === 'number' ? left - right : String(left).localeCompare(String(right), undefined, { numeric: true, sensitivity: 'base' }); if (compared) return sort.direction === 'asc' ? compared : -compared } return a.id.localeCompare(b.id) }) }
-    const total = records.length, rows = records.slice(offset, offset + limit); return { revision: this.revision(), collection, rows: rows.map(({ raw: _raw, extra: _extra, ...row }) => row) as CrmCollectionMap[K][], total, nextOffset: offset + rows.length < total ? offset + rows.length : null }
+    if (query.sort?.length) { check(query.sort.length <= 20 && query.sort.every((sort) => sort && typeof sort.field === 'string' && ['asc', 'desc'].includes(sort.direction)), 'The CRM sort is invalid.'); records = records.sort((a, b) => { for (const sort of query.sort!) { const left = resolveField(a, sort.field), right = resolveField(b, sort.field); if (left === right) continue; if (left === undefined || left === null || left === '') return 1; if (right === undefined || right === null || right === '') return -1; const compared = typeof left === 'number' && typeof right === 'number' ? left - right : String(left).localeCompare(String(right), undefined, { numeric: true, sensitivity: 'base' }); if (compared) return sort.direction === 'asc' ? compared : -compared } return a.id.localeCompare(b.id) }) }
+    const total = records.length, rows = records.slice(offset, offset + limit); return result(rows, total)
   }
   resolvePerson(id: string): CrmPerson | undefined { const seen = new Set<string>(); let person = this.get('people', id); while (person?.mergedIntoId) { if (seen.has(person.id)) return undefined; seen.add(person.id); person = this.get('people', person.mergedIntoId) } return person }
   private companyConnections(id: string, organizations: CrmOrganizations) {
@@ -277,6 +320,12 @@ export class SqliteCrmStore {
         else output.record = put('memberships', { groupId: input.groupId, entityType: entity.type, entityId: entity.id })
       }
       else if (input.operation === 'set_field' || input.operation === 'pipeline_move') { check(typeof input.fieldId === 'string' && validEntityRef(input.entity) && input.value !== undefined, 'Choose a custom field, record and value.'); const field = this.get('fields', String(input.fieldId)); check(field && !field.archivedAt, 'This custom field is unavailable.'); const entity = input.entity as CrmEntityRef, existing = this.rows('fieldValues', false).find((row) => row.fieldId === field!.id && row.entityId === entity.id && row.entityType === entity.type); const before = existing ? required('fieldValues', existing.id) : undefined; if (!existing) check(input.expectedRecordRevision === undefined || input.expectedRecordRevision === 0, 'The custom field value changed.', 409); output.record = put('fieldValues', { fieldId: field!.id, groupId: field!.groupId, entityType: entity.type, entityId: entity.id, value: input.value }, before) }
+      else if (input.operation === 'log_reader_interaction') {
+        check(actor === 'reader-organization' && object(input.record), 'Open a saved record in Reader to log an interaction.', 403)
+        const startAt = typeof input.record!.startAt === 'number' ? input.record!.startAt : now
+        const occurredAt = startAt <= now ? startAt : null
+        output.record = put('interactions', { ...input.record!, startAt, occurredAt, status: occurredAt === null ? 'scheduled' : 'logged' })
+      }
       else if (input.operation === 'log_calendar') { check(object(input.record), 'Select a calendar event.'); const record = input.record!, refs = Array.isArray(record.sourceRefs) ? record.sourceRefs as CrmSourceRef[] : []; check(refs.some((ref) => /calendar|ics|luma|partiful/.test(ref.provider)), 'A calendar interaction needs retained event provenance.'); const existing = unique(refs.flatMap((ref) => this.findBySource('interactions', ref))); check(existing.length <= 1, 'This event has multiple local matches. Review it before logging.', 409); if (existing.length) { if (input.confirmAttendance === true) { const before = required('interactions', existing[0].id); check(before.status !== 'cancelled' && before.startAt !== null && before.startAt <= now, 'Only a past, uncancelled event can be confirmed attended.'); output.record = put('interactions', { status: 'logged', attendanceConfirmed: true, confirmedPersonIds: before.personIds, occurredAt: before.startAt }, before) } else {
           const saved = existing[0]
           check(saved.archivedAt === null, 'Restore the saved calendar interaction before adding it to another contact.', 409)

@@ -11,6 +11,16 @@ static napi_threadsafe_function summon;
 static unsigned taps;
 static uint32_t previousCount;
 static CFTimeInterval firstTap, pressedAt;
+static void deliver(napi_env env, napi_value callback, void *, void *data) {
+  NSString *bundle = CFBridgingRelease(data);
+  if (!env) return;
+  napi_value source, value, receiver;
+  napi_create_object(env, &source);
+  napi_create_string_utf8(env, bundle.UTF8String ?: "", NAPI_AUTO_LENGTH, &value);
+  napi_set_named_property(env, source, "bundleId", value);
+  napi_get_undefined(env, &receiver);
+  napi_call_function(env, receiver, callback, 1, &source, nullptr);
+}
 
 static void bracket(void *, IOReturn result, void *, IOHIDValueRef value) {
   if (result != kIOReturnSuccess || !summon) return;
@@ -33,7 +43,11 @@ static void bracket(void *, IOReturn result, void *, IOHIDValueRef value) {
   const uint32_t count = CGEventSourceCounterForEventType(kCGEventSourceStateHIDSystemState, kCGEventKeyDown);
   if (!taps || now - firstTap > .85 || count - previousCount != 1) { taps = 0; firstTap = now; }
   previousCount = count;
-  if (++taps == 3) { taps = 0; napi_call_threadsafe_function(summon, nullptr, napi_tsfn_nonblocking); }
+  if (++taps == 3) {
+    taps = 0;
+    void *bundle = (void *)CFBridgingRetain(NSWorkspace.sharedWorkspace.frontmostApplication.bundleIdentifier ?: @"");
+    if (napi_call_threadsafe_function(summon, bundle, napi_tsfn_nonblocking) != napi_ok) CFBridgingRelease(bundle);
+  }
 }
 static void stop(void *) {
   if (manager) {
@@ -59,7 +73,7 @@ static napi_value start(napi_env env, napi_callback_info info) {
   if (argc != 1 || napi_typeof(env, callback, &type) != napi_ok || type != napi_function) return boolean(env, false);
   napi_create_string_utf8(env, "Enki bracket shortcut", NAPI_AUTO_LENGTH, &name);
   if (napi_create_threadsafe_function(env, callback, nullptr, name, 1, 1, nullptr, nullptr,
-      nullptr, nullptr, &summon) != napi_ok) return boolean(env, false);
+      nullptr, deliver, &summon) != napi_ok) return boolean(env, false);
   manager = IOHIDManagerCreate(kCFAllocatorDefault, kIOHIDOptionsTypeNone);
   if (!manager) { stop(nullptr); return boolean(env, false); }
   NSDictionary *keyboards = @{@kIOHIDDeviceUsagePageKey: @(kHIDPage_GenericDesktop),

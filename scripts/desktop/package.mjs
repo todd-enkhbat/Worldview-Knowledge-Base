@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os'
 
 // Only application code, built public assets, explicit runtime dependencies and the
 // verified official Node executable enter the package. No .env, data, logs or corpus.
-const root = process.cwd(), stage = resolve('data/desktop/staging'), out = resolve('data/desktop/releases')
+const root = process.cwd(), stage = resolve(process.env.WORLDVIEW_DESKTOP_STAGE_DIR ?? 'data/desktop/staging'), out = resolve(process.env.WORLDVIEW_DESKTOP_RELEASE_DIR ?? 'data/desktop/releases')
 const nodeRoot = resolve(`data/tools/desktop-node/26.5.0-${process.platform}-${process.arch}`)
 if (!existsSync(join(root, 'dist/index.html')) || !existsSync(join(nodeRoot, 'bin/node'))) throw new Error('Build the app and prepare its official Node runtime before packaging.')
 await rm(stage, { recursive: true, force: true }); await mkdir(join(stage, 'runtime'), { recursive: true })

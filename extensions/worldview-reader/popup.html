@@ -11,9 +11,13 @@
 <body>
   <header class="workspace">
     <div class="brand"><img src="worldview-128.png" alt="" width="24" height="24"><strong>Worldview</strong></div>
-    <span id="state" role="status">Connecting…</span>
+    <div class="workspace-actions">
+      <span id="state" role="status">Connecting…</span>
+      <button type="button" id="open-reader-window" hidden>Open in window</button>
+    </div>
   </header>
   <main>
+    <p id="reader-window-source" role="status" hidden></p>
     <nav class="capture-modes" aria-label="Capture mode">
       <button type="button" id="mode-word">Dictionary</button>
       <button type="button" id="mode-person" aria-current="true">CRM</button>
@@ -31,7 +35,7 @@
 
     <section id="no-profile" hidden>
       <h1>No profile on this page</h1>
-      <p>Open someone’s LinkedIn, Instagram, Facebook profile or personal website to see their CRM record.</p>
+      <p>Open a person’s profile, a LinkedIn organization page, or a company website.</p>
       <button id="browse-people" type="button">Open my contacts <span aria-hidden="true">↗</span></button>
     </section>
     <button type="button" id="return-people" hidden>‹ People on this page</button>
@@ -61,9 +65,15 @@
         <button id="quick-add" class="primary" disabled>Save contact</button>
         <a id="open-desktop-record" class="record-primary" hidden>Open contact <span aria-hidden="true">↗</span></a>
         <a id="open-record" class="record-primary" hidden>Open contact</a>
+        <button id="update-profile" hidden>Update from profile</button>
         <a id="log-interaction" hidden>Log interaction</a>
       </div>
       <p id="quick-status" role="status"></p>
+      <div id="organization-editor" hidden></div>
+      <details id="company-preview" class="tool-section" hidden>
+        <summary>Organization details</summary>
+        <dl id="company-facts"></dl>
+      </details>
     </section>
 
     <section id="visible-people" class="wv-people" hidden><h2>People on this page</h2><ul id="visible-rows"></ul></section>
@@ -84,6 +94,12 @@
 
     <details id="more-tools">
       <summary>More tools</summary>
+      <details class="reader-connection-settings"><summary>Dia connection</summary>
+    <section id="enki-connection" class="enki-connection" hidden>
+      <button type="button" id="connect-enki">Connect Enki to Dia</button>
+      <p id="enki-connection-status" role="status">Press ]]] to open Enki. Its open CRM tab follows your active Dia page.</p>
+    </section>
+      </details>
       <div id="other-record-destinations"></div>
     <details id="capture-tools">
       <summary>Profile tools</summary>
@@ -127,7 +143,7 @@
           <p>Use advanced pairing if the browser approval flow is unavailable.</p>
           <input id="extension-id" aria-label="Extension ID" readonly>
           <label for="workspace-port">Local workspace port</label>
-          <input id="workspace-port" type="number" min="5173" max="5185" step="1" value="5173">
+          <input id="workspace-port" type="number" min="1024" max="65535" step="1" value="5173">
           <label for="token">Pairing token</label>
           <input id="token" type="password" autocomplete="off" spellcheck="false" placeholder="Token from Worldview">
           <button id="pair">Save pairing</button><button id="discard">Discard pending captures</button><button id="disconnect">Disconnect this browser</button>
