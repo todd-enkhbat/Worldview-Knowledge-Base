@@ -1,3 +1,4 @@
+import { sceneMotionEnabled } from '../camera/cameraFlight.ts'
 import { useMemo, useRef } from 'react'
 import { Html } from '@react-three/drei'
 import { useFrame, type ThreeEvent } from '@react-three/fiber'
@@ -53,7 +54,8 @@ function AgentAvatar({ agent, guideRoute, guideHome, onOpen, screenPositions, in
     body.current.visible = visible
     if (label.current) label.current.style.display = visible ? '' : 'none'
     if (!visible) { screenPositions.delete(index); if (trail.current) trail.current.count = 0; return }
-    elapsed.current = advanceAgentTime(elapsed.current, delta, app.view.flow, active)
+    const motionEnabled = sceneMotionEnabled(app.view.flow)
+    elapsed.current = advanceAgentTime(elapsed.current, delta, motionEnabled, active)
     const t = elapsed.current
     const visits = sampleAgentPresentation(route, poses, t, scratch.home, index, scratch.point)
     // Companions remain in the actual 3-D neighborhood they inspect. A bounded local
@@ -81,7 +83,7 @@ function AgentAvatar({ agent, guideRoute, guideHome, onOpen, screenPositions, in
     const view = environment.current
     const changed = view.width !== state.size.width || view.height !== state.size.height || view.fov !== fov || view.overlays !== overlays.current.version || state.camera.matrixWorld.elements.some((value, i) => value !== view.matrix[i])
     if (changed) environment.current = { matrix: [...state.camera.matrixWorld.elements], width: state.size.width, height: state.size.height, fov, overlays: overlays.current.version }
-    const moving = app.view.flow && active
+    const moving = motionEnabled && active
     if (!offset.initialized) {
       // Resolve the first visible placement before drawing, then ease subsequent changes.
       offset.x = target.x * unitsPerPixel; offset.y = target.y * unitsPerPixel

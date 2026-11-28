@@ -3,6 +3,7 @@ import { ArrowSquareOut, ArrowsClockwise, BookOpen, Books, CaretDown, ChatCircle
 import { useApp, useWorld } from '../app/store.ts'
 import { useRepoStatus } from '../data/repo.ts'
 import { buildTypedLinks } from '../world/links/style.ts'
+import { cancelCameraFlight } from '../world/camera/cameraFlight.ts'
 import { recenterWorld } from '../world/camera/OrbitRig.tsx'
 import { stopOrbitMotion, toggleOrbitMotion, useOrbitMotion } from '../world/camera/orbitMotion.ts'
 import { spatialGroundFor } from '../world/environment/knowledgeGround.ts'
@@ -19,12 +20,13 @@ import { AsciiOrbit } from '../workspace/AsciiOrbit.tsx'
 import '../workspace/worldviewVisuals.css'
 import { usePersonalLibrary } from '../reading/personalLibrary.ts'
 import { returnToWorkspace } from '../workspace/state.ts'
+import type { ExploreRecord } from '../world/exploreRecords.ts'
 
 function revealWorld() {
   if (window.matchMedia('(max-width: 660px)').matches) useApp.getState().togglePanel('chat', false)
 }
 
-export function WorkspaceNav() {
+export function WorkspaceNav({ onOpenRecords, onFrame }: { onOpenRecords?: (search?: boolean) => void; onFrame?: () => void }) {
   const { nodes } = usePersonalLibrary()
   const library = useApp((s) => s.panels.library)
   const selected = useApp((s) => s.selectedId)
@@ -37,16 +39,17 @@ export function WorkspaceNav() {
   return <>
     <aside className="workspace-nav" aria-label="Main navigation">
       <a className="workspace-brand" href="#/" aria-label="Worldview home"><WorldviewMark /><span>Worldview</span></a>
-      <button className="workspace-search" onClick={() => openPalette()} title={`Search your world (${MOD_KEY}K)`}><MagnifyingGlass size={17} /><span>Search your world</span><kbd>{MOD_KEY}K</kbd></button>
+      <button className="workspace-search" onClick={() => onOpenRecords ? onOpenRecords(true) : openPalette()} title={`Search your world (${MOD_KEY}K)`}><MagnifyingGlass size={17} /><span>Search your world</span><kbd>{MOD_KEY}K</kbd></button>
       <button aria-label="Add to your world" className="workspace-add" onClick={() => useApp.getState().togglePanel('chat', true)} disabled={!writer}><Plus size={18} /><span>Add to your world</span></button>
       <nav className="workspace-links">
         <a href="#/write" aria-label="Writing studio" title="Writing studio"><PencilSimple size={20} /><span>Writing studio</span></a>
         <a href="#/bookshelf" aria-label="Bookshelf" title="Bookshelf"><Books size={20} /><span>Bookshelf</span></a>
+        <a href="#/explore" aria-label="3D Knowledge Graph" title="3D Knowledge Graph"><TreeStructure size={20} /><span>3D Knowledge Graph</span></a>
         <a href="#/graph" aria-label="Knowledge graph" title="Knowledge graph"><TreeStructure size={20} /><span>Knowledge graph</span></a>
         <a href="#/people" aria-label="People" title="People"><Users size={20} /><span>People</span></a>
         <button aria-label="Return to knowledge workspace" onClick={() => returnToWorkspace()}><BookOpen size={20} /><span>Back to workspace</span></button>
-        <button aria-label="My world" className={!library ? 'is-active' : ''} onClick={() => { revealWorld(); useApp.getState().togglePanel('library', false); useApp.getState().setMode('orbit'); recenterWorld() }}><Compass size={20} /><span>My world</span></button>
-        <button aria-label="Library" className={library ? 'is-active' : ''} onClick={() => { revealWorld(); useApp.getState().togglePanel('library') }}><BookOpen size={20} /><span>Library</span><small>{nodes.size}</small></button>
+        <button aria-label="My world" className={!library ? 'is-active' : ''} onClick={() => { revealWorld(); useApp.getState().togglePanel('library', false); useApp.getState().setMode('orbit'); onFrame?.(); recenterWorld() }}><Compass size={20} /><span>My world</span></button>
+        {onOpenRecords ? <a href="#/library" aria-label="Library" title="Library"><BookOpen size={20} /><span>Library</span></a> : <button aria-label="Library" className={library ? 'is-active' : ''} onClick={() => { revealWorld(); useApp.getState().togglePanel('library') }}><BookOpen size={20} /><span>Library</span><small>{nodes.size}</small></button>}
         <button aria-label="Agents" className={modal === 'agents' ? 'is-active' : ''} onClick={() => setModal('agents')}><Robot size={20} /><span>Agents</span><small>{agentCount || 'Guide'}</small></button>
         <button aria-label="Daily reflection" onClick={() => setModal('reflection')}><Sun size={20} /><span>Daily reflection</span></button>
         <button aria-label="Sources" onClick={() => setModal('sources')}><Stack size={20} /><span>Sources</span></button>
@@ -62,10 +65,16 @@ export function WorkspaceNav() {
   </>
 }
 
-export function WorldToolbar() {
+export function WorldToolbar({ records, recordsOpen, onOpenRecords, onCloseRecords, onFrame }: {
+  records?: readonly ExploreRecord[]
+  recordsOpen?: boolean
+  onOpenRecords?: (search?: boolean) => void
+  onCloseRecords?: () => void
+  onFrame?: () => void
+}) {
   const nodes = useWorld((s) => s.nodes)
   const neighborhoods = useMemo(() => spatialGroundFor(nodes), [nodes])
-  const count = nodes.size
+  const count = records?.length ?? nodes.size
   const connections = useMemo(() => buildTypedLinks(nodes).length, [nodes])
   const memories = useMemo(() => [...nodes.values()].filter((n) => n.archetype === 'memory').length, [nodes])
   const flow = useApp((s) => s.view.flow)
@@ -89,17 +98,18 @@ export function WorldToolbar() {
 
   const controlsHint = mode === 'third_person' ? 'WASD walk · Drag to look · O orbit'
     : mode === 'autonav' ? 'Following dated memories · Esc to stop'
-      : mode === 'orbit' ? orbiting ? 'Orbiting · Drag or scroll to take control' : 'Select a cluster to explore · Drag to rotate · Scroll to zoom'
+      : mode === 'orbit' ? orbiting ? 'Orbiting · Drag or scroll to take control' : 'Select a record to focus · Drag to rotate · Scroll to zoom'
         : 'WASD move · Q / E down / up · Esc to leave'
   return <>
     <header className="world-toolbar">
-      <div><h1>Your world</h1><p>{count ? `${count} ${count === 1 ? 'note' : 'notes'} · ${connections} saved ${connections === 1 ? 'link' : 'links'}` : 'Add a thought, memory, or file to begin'}</p></div>
+      <div><h1>Your world</h1><p>{count ? `${count.toLocaleString()} ${count === 1 ? 'record' : 'records'} · ${connections} saved ${connections === 1 ? 'link' : 'links'}` : 'Add a thought, memory, or file to begin'}</p></div>
       <div className="world-toolbar-actions">
+        {onOpenRecords && <button type="button" className="world-records-toggle" aria-label="Browse workspace records" aria-expanded={recordsOpen} aria-controls={recordsOpen ? 'world-records' : undefined} onClick={() => recordsOpen ? onCloseRecords?.() : onOpenRecords()}><Books size={17} aria-hidden="true" /><span>Records</span></button>}
         <div className="world-view-switch" aria-label="Render treatment">
           <button aria-label="World view" aria-pressed={field} title="Embodied notes in three-dimensional neighborhoods" onClick={() => setWorldView('field')}><Planet size={17} /><span>World</span></button>
           <button aria-label="Structure view" aria-pressed={!field} title="The same spatial positions, with structural detail" onClick={() => setWorldView('classic')}><Stack size={17} /><span>Structure</span></button>
         </div>
-        {field && <button className="world-motion-control" aria-label={flow ? 'Pause scene motion' : 'Resume scene motion'} title="Agents, particles, and galaxy motion. History has its own play control." aria-pressed={flow} onClick={() => { useApp.getState().setView({ flow: !flow }); if (flow) stopOrbitMotion() }}>{flow ? <Pause size={15} /> : <Play size={15} />}<span>{flow ? 'Motion on' : 'Motion paused'}</span></button>}
+        <button className="world-motion-control" aria-label={flow ? 'Pause scene motion' : 'Resume scene motion'} title="Agents, particles, and galaxy motion. History has its own play control." aria-pressed={flow} onClick={() => { useApp.getState().setView({ flow: !flow }); if (flow) { stopOrbitMotion(); cancelCameraFlight() } }}>{flow ? <Pause size={15} /> : <Play size={15} />}<span>{flow ? 'Motion on' : 'Motion paused'}</span></button>
         <button className="world-icon-button" aria-label={chat ? 'Hide conversation' : 'Open conversation'} title="Conversation" onClick={() => useApp.getState().togglePanel('chat')}><ChatCircle size={22} /></button>
         <div className="world-tools">
           <button className="world-icon-button" aria-label="World tools" aria-expanded={tools} onClick={() => setTools(!tools)}><DotsThree size={25} /></button>
@@ -107,7 +117,8 @@ export function WorldToolbar() {
             <button onClick={() => { openAgentsPanel(); setTools(false) }}><Robot size={17} />Meet your agents</button>
             <button onClick={() => { openPicker(); setTools(false) }} disabled={!writer}><Plus size={17} />Create a note</button>
             <button onClick={() => { openSceneFilePicker(); setTools(false) }} disabled={!writer}><UploadSimple size={17} />Import a 3D capture</button>
-            <button onClick={() => { useApp.getState().togglePanel('demons'); setTools(false) }}><MagnifyingGlass size={17} />Saved queries</button>
+            <button onClick={() => { useApp.getState().togglePanel('demons'); setTools(false) }}><MagnifyingGlass size={17} />Query agents</button>
+            {onOpenRecords && <button onClick={() => { openPalette(); setTools(false) }}><Compass size={17} />Scene commands</button>}
             <button onClick={() => { useApp.getState().togglePanel('stats'); setTools(false) }}><ArrowSquareOut size={17} />Physics diagnostics</button>
           </div>}
         </div>
@@ -120,7 +131,7 @@ export function WorldToolbar() {
     </div>}
     <div className="world-guide" data-label-avoid>
       <button className="world-guide-help" aria-label="How to read and navigate your world" onClick={() => setHelp(true)}><Info size={16} /></button>
-      <div><p className="world-axis-cue">3D neighborhoods · timeline = history · lines = saved links</p><p className="world-control-cue">{controlsHint}</p></div>
+      <div><p className="world-axis-cue"><span className="world-guide-copy">Timeline follows the dates on your records.</span></p><p className="world-control-cue">{controlsHint}</p></div>
     </div>
     {help && <ProductDialog title="Read your world" description="Explore meaning in three dimensions, and revisit it through time." onClose={() => setHelp(false)}>
       <dl className="world-help">
@@ -136,7 +147,7 @@ export function WorldToolbar() {
     <div className="world-explore-tools" aria-label="World navigation">
       {mode === 'orbit' ? <button className="world-orbit-control" aria-pressed={orbiting} onClick={() => toggleOrbitMotion()}><ArrowsClockwise size={17} /><span>{orbiting ? 'Stop orbit' : 'Orbit scene'}</span></button>
         : <button className="world-orbit-control" disabled={!canNavigateTo('orbit', mode)} onClick={() => navigateTo('orbit')}><Compass size={17} />Return to orbit</button>}
-      <button className="world-frame-control" aria-label="Recenter world" title="Frame the whole world" onClick={() => recenterWorld()}><Compass size={16} /><span>Frame world</span></button>
+      <button className="world-frame-control" aria-label="Recenter world" title="Frame the whole world" onClick={() => { onFrame?.(); recenterWorld() }}><Compass size={16} /><span>Frame world</span></button>
       <div ref={navigation} className="world-navigation-picker">
         <button aria-expanded={navigationOpen} aria-controls="world-navigation-choices" onClick={() => setNavigationOpen(!navigationOpen)}>Navigate<CaretDown size={13} /></button>
         {navigationOpen && <div id="world-navigation-choices" className="world-navigation-choices" aria-label="Navigation choices">

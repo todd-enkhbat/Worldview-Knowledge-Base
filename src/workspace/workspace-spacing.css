@@ -1,0 +1,89 @@
+/* Shared rhythm for workspace pages. Keep editor, map and reader canvases independent. */
+.knowledge-workbench {
+  --workspace-page-gutter: clamp(20px, 3vw, 48px);
+  --workspace-control-height: 40px;
+  --workspace-section-gap: 24px;
+}
+.knowledge-workbench .knowledge-page:not(.is-reader):not([data-section="write"], [data-section="bookshelf"]) {
+  padding: 32px var(--workspace-page-gutter) 48px;
+}
+.knowledge-workbench .knowledge-page[data-section="bookshelf"] { padding: 0; }
+.knowledge-workbench .knowledge-page > :is(.knowledge-today, .knowledge-search, .knowledge-review, .knowledge-sources, .maintained-knowledge, .study-desk, .workspace-todos) {
+  width: 100%;
+  margin-inline: auto;
+  min-width: 0;
+}
+.knowledge-workbench .knowledge-page > :is(.knowledge-search, .knowledge-review, .knowledge-sources, .maintained-knowledge) { max-width: 1120px; }
+.knowledge-workbench .knowledge-page :is(.knowledge-section-title, .reading-archive-top, .sources-hub-heading) { gap: 16px; flex-wrap: wrap; }
+.knowledge-workbench .knowledge-page :is(.knowledge-section-title, .reading-archive-top, .sources-hub-heading) > div { min-width: 0; }
+.knowledge-workbench .knowledge-page :is(h2, h3) { overflow-wrap: anywhere; }
+.knowledge-workbench .knowledge-page :is(.knowledge-button, .knowledge-text-button) { min-height: 36px; }
+.knowledge-workbench .knowledge-page :is(.knowledge-search-toolbar, .reading-file-toolbar, .study-tools) { gap: 12px; }
+.knowledge-workbench .knowledge-page .quote-collection { padding-inline: 0; padding-top: 0; }
+.knowledge-workbench .knowledge-page .reading-archive { padding: 28px var(--workspace-page-gutter) 48px; }
+.knowledge-workbench :is(button, a, input, textarea, select, summary):focus-visible { outline: 2px solid var(--kb-accent); outline-offset: 3px; }
+.knowledge-workbench :is(button, select, summary) { touch-action: manipulation; }
+.knowledge-workbench .knowledge-todo-shortcut { display: flex; align-items: center; gap: 16px; padding: 20px 0; margin-bottom: 24px; border-block: 1px solid var(--kb-line); }
+.knowledge-todo-shortcut > svg { flex: none; color: var(--kb-muted); }
+.knowledge-todo-shortcut > div { flex: 1; min-width: 0; }
+.knowledge-todo-shortcut strong { font-size: 14px; font-weight: 500; }
+.knowledge-todo-shortcut p { margin: 4px 0 0; color: var(--kb-muted); font-size: 12px; }
+.knowledge-workbench .knowledge-todo-shortcut a { flex: none; }
+.workspace-todos { max-width: 760px; }
+.workspace-todos-intro { margin: 0 0 24px; font-size: 13px; line-height: 1.6; color: var(--kb-muted); }
+.knowledge-workbench .enki-todos { --todo-ink: var(--kb-text); --todo-quiet: var(--kb-muted); --todo-line: var(--kb-line); --todo-accent: var(--kb-text); max-width: none; color: var(--kb-text); font: 14px/1.5 var(--font-sans); }
+.knowledge-workbench .enki-todo-heading { margin-bottom: 24px; gap: 16px; flex-wrap: wrap; }
+.knowledge-workbench .enki-todo-heading h1 { font-family: 'Alte Haas', Inter, sans-serif; font-size: 30px; line-height: 1.2; letter-spacing: -.035em; }
+.knowledge-workbench .enki-todos :is(input, textarea, select, button) { font: inherit; }
+.knowledge-workbench .enki-todos :is(.enki-compose, .enki-create-list input, .enki-edit textarea) { background: var(--kb-panel); }
+.knowledge-workbench .enki-list-controls { gap: 12px; margin-bottom: 16px; }
+.knowledge-workbench .enki-todos :is(.enki-create-list, .enki-delete-actions) { flex-wrap: wrap; gap: 8px; }
+.knowledge-workbench .enki-todos button { border-radius: 6px; min-height: 36px; padding: 6px 10px; }
+.knowledge-workbench .enki-todos :is(.enki-icon-button, .enki-submit) { width: 36px; height: 36px; padding: 0; }
+.knowledge-workbench .enki-submit { color: var(--kb-bg); }
+.knowledge-workbench .enki-task { padding-block: 10px; gap: 8px; }
+.knowledge-workbench .enki-completed { margin-top: 24px; }
+.knowledge-workbench .enki-todos button:hover:enabled { background: var(--kb-hover); color: var(--kb-text); }
+.knowledge-workbench .enki-todos :is(.enki-error, .enki-confirm-delete) { color: var(--kb-danger, #b54a3b); }
+/* Dictionary and application controls share a baseline and wrap as intact groups. */
+.knowledge-workbench :is(.study-desk, .study-lookup) { width: 100%; line-height: 1.6; }
+.knowledge-workbench :is(.study-desk, .study-lookup) :is(input:not([type=checkbox]):not([type=radio]), select, button) { min-height: var(--workspace-control-height); box-sizing: border-box; line-height: 1.4; }
+.knowledge-workbench .study-lookup form { gap: 12px; margin: 0 0 24px; }
+.knowledge-workbench .study-lookup form label { min-width: min(220px, 100%); gap: 8px; }
+.knowledge-workbench .study-lookup form > button { flex-shrink: 0; }
+.knowledge-workbench .study-tools { align-items: center; gap: 12px; margin: 24px 0; }
+.knowledge-workbench .study-tools > :is(input:not([type=checkbox]), select) { flex: 1 1 140px; width: auto; }
+.knowledge-workbench .study-tools > input:first-child { flex: 2 1 220px; }
+.knowledge-workbench .study-tools > button { flex: 0 0 auto; }
+.knowledge-workbench .study-desk > details { padding-block: 20px; }
+.knowledge-workbench .study-desk summary { line-height: 1.6; overflow-wrap: anywhere; }
+.knowledge-workbench .study-desk details[open] > :not(summary) { margin-top: 16px; }
+.knowledge-workbench .study-fields { gap: 16px; }
+.knowledge-workbench .study-pair { gap: 12px; margin-block: 20px; }
+/* Keep delete actions visible to pointer, touch and keyboard users. */
+.knowledge-workbench .library-delete { flex: none; width: 32px; min-height: 32px; padding: 6px; color: var(--kb-muted); }
+.knowledge-workbench .library-delete:hover:enabled { color: var(--kb-danger, #b54a3b); background: var(--kb-hover); }
+.knowledge-workbench .hierarchy-tree-row .library-delete { justify-content: center; }
+.library-delete-description { margin: 20px 0; line-height: 1.65; overflow-wrap: anywhere; }
+.library-delete-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 12px; margin-top: 24px; }
+.knowledge-workbench .library-confirm-delete { color: var(--kb-danger, #b54a3b); }
+@media (max-width: 760px) {
+  .knowledge-workbench .knowledge-page:not(.is-reader):not([data-section="write"], [data-section="bookshelf"]) { padding: 24px 20px max(36px, env(safe-area-inset-bottom)); }
+  .knowledge-workbench .knowledge-page .reading-archive { padding: 24px 20px 36px; }
+  .knowledge-workbench .knowledge-page :is(button.knowledge-icon-button, .library-delete) { min-width: 36px; min-height: 36px; }
+  .knowledge-workbench .knowledge-todo-shortcut { gap: 12px; flex-wrap: wrap; }
+  .knowledge-workbench .knowledge-todo-shortcut > div { flex-basis: calc(100% - 40px); }
+  .knowledge-workbench .knowledge-todo-shortcut > a { margin-left: 32px; }
+  .knowledge-workbench .enki-list-controls { align-items: flex-start; flex-wrap: wrap; }
+}
+@media (max-width: 540px) {
+  .knowledge-workbench .study-tools > button { flex: 1 1 100%; }
+}
+/* The task composer owns its focus ring; avoid a second ring inside it. */
+.knowledge-workbench .enki-compose textarea,
+.knowledge-workbench .enki-compose textarea:focus-visible { border: 0; outline: none; box-shadow: none; }
+.knowledge-workbench .enki-compose:focus-within { outline: 2px solid var(--kb-accent); outline-offset: 3px; }
+.knowledge-workbench .reading-dialog .library-delete-actions { justify-content: flex-end; }
+.knowledge-workbench .reading-dialog .library-delete-actions > :first-child { font-size: 12px; }
+/* Topics uses the shared page gutter rather than adding a second inset. */
+.knowledge-workbench .knowledge-page > .topic-home { padding: 0; }

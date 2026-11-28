@@ -22,7 +22,7 @@ import { initStorageStatus, isStandalone, requestPersistence, safariEvictionRisk
 import { Credits } from './Credits.tsx'
 import { getEnginePreference, migrateWorld, planMigration, probeEngine, type EngineHealth, type EngineKind, type MigrationPlan } from '../data/engine.ts'
 import { disableSemantic, enableSemantic, useSemantic } from '../ai/semanticIndex.ts'
-import { runRecrystallise } from '../ai/recrystallise.ts'
+import { previewRecrystallise, runRecrystallise } from '../ai/recrystallise.ts'
 import { signOut, useAuth } from '../data/auth.ts'
 import { estimateCost, ledgerCost, loadUsage, resetUsage, useUsage } from '../ai/usage.ts'
 import {
@@ -857,15 +857,28 @@ function EngineSection({ canWrite }: { canWrite: boolean }) {
 
 function SemanticSection({ canWrite }: { canWrite: boolean }) {
   const sem = useSemantic()
+  const worldRevision = useWorld((state) => state.revision)
   const [ok, setOk] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [preview, setPreview] = useState<ReturnType<typeof previewRecrystallise> | null>(null)
+  const prepare = () => {
+    setOk(null)
+    setError(null)
+    try { setPreview(previewRecrystallise()) }
+    catch (error) {
+      setPreview(null)
+      setError(error instanceof Error ? error.message : String(error))
+    }
+  }
   const recrystallise = async () => {
+    if (!preview) return
     setBusy(true)
     setOk(null)
     setError(null)
     try {
-      const r = await runRecrystallise()
+      const r = await runRecrystallise(preview)
+      setPreview(null)
       setOk(r.moved ? `Re-crystallised: ${plural(r.moved, 'node')} moved (mean turn ${Math.round((r.meanTurn * 180) / Math.PI)}°). Undo is in the toast.` : 'Already crystallised: nothing moved.')
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -895,10 +908,28 @@ function SemanticSection({ canWrite }: { canWrite: boolean }) {
             Turn off
           </button>
         )}
-        <button type="button" className={BTN} disabled={!canWrite || busy || sem.phase !== 'ready'} onClick={() => void recrystallise()}>
-          {busy ? 'Re-crystallising…' : 'Re-crystallise layout'}
+        <button type="button" className={BTN} disabled={!canWrite || busy || sem.phase !== 'ready'} onClick={prepare}>
+          Preview semantic layout
         </button>
       </div>
+      {preview && <div className="mt-3 space-y-2">
+        <p>{preview.plan.moves.length ? `${plural(preview.plan.moves.length, 'note')} will move.` : 'All anchors stay in their current positions.'}</p>
+        {preview.plan.moves.length > 0 && <details open={preview.plan.moves.length <= 8}>
+          <summary>View affected anchors</summary>
+          <ul className="max-h-48 space-y-1 overflow-auto pl-4">
+            {preview.plan.moves.map(({ id, title, from, to }) => <li key={id}>
+              <strong>{title}</strong> <span className="tabular-nums">({from.map((coordinate) => coordinate.toFixed(2)).join(', ')}) → ({to.map((coordinate) => coordinate.toFixed(2)).join(', ')})</span>
+            </li>)}
+          </ul>
+        </details>}
+        {preview.plan.revision !== worldRevision && <p role="status">The workspace changed. Run another preview to see the current moves.</p>}
+        <div className="flex flex-wrap gap-2">
+          <button type="button" className={BTN_PRIMARY} disabled={!canWrite || !preview.plan.moves.length || busy || sem.phase !== 'ready' || preview.plan.revision !== worldRevision} onClick={() => void recrystallise()}>
+            {busy ? 'Applying layout…' : 'Apply layout'}
+          </button>
+          <button type="button" className={BTN} disabled={busy} onClick={() => setPreview(null)}>Close preview</button>
+        </div>
+      </div>}
       <Note>
         Re-crystallise updates saved semantic anchors using the available embeddings. History dates stay unchanged; topic neighborhoods and explicit placement pins remain separate from the timeline.
       </Note>

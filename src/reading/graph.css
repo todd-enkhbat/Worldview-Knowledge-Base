@@ -429,3 +429,15 @@
 .reading-graph .reading-graph-edge.is-dimmed { opacity:.65; }
 .reading-graph .reading-graph-inspector { background:transparent; }
 .reading-graph :is(.reading-graph-kicker,.reading-graph-source-meta,.reading-graph-inspector-heading,.reading-graph-counts dt,.reading-graph-stage-label small) { font-family:var(--atlas-figure); letter-spacing:0; }
+
+.reading-graph-spatial-link {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 34px;
+  margin-left: auto; padding: 6px 10px; white-space: nowrap; font-size: 12px;
+  color: var(--graph-text); border: 1px solid var(--graph-line); border-radius: 7px;
+}
+.reading-graph-spatial-link:hover { background: var(--graph-hover); }
+@container (max-width: 550px) {
+  .reading-graph-heading { flex-wrap: wrap; justify-content: flex-start; }
+  .reading-graph-heading h2 { flex: 1 0 100%; }
+  .reading-graph-spatial-link { margin-left: 0; }
+}

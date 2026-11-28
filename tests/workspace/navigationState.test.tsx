@@ -94,6 +94,35 @@ afterEach(async () => {
 })
 
 describe('workspace navigation and local capture', () => {
+  it('keeps one Bookshelf link in the primary navigation at its existing destination', async () => {
+    await render('today')
+    const links = host.querySelectorAll<HTMLAnchorElement>('nav a[href="#/bookshelf"]')
+    expect(links).toHaveLength(1)
+    expect(links[0].closest('.knowledge-nav-primary')).not.toBeNull()
+    expect(links[0].getAttribute('aria-label')).toBe('Bookshelf')
+  })
+
+  it('remembers a keyboard-reordered sidebar and appends sections missing from an older order', async () => {
+    localStorage.setItem('worldview.sidebar-order.v1', JSON.stringify(['today', 'bookshelf', 'bookshelf', 'removed']))
+    await render('today')
+    const sections = () => Array.from(host.querySelectorAll('.knowledge-nav-primary a'), link => link.getAttribute('aria-label'))
+    expect(sections()).toEqual(['Today', 'Bookshelf', 'To-do', 'Library', 'Search', 'Writing', 'People'])
+    expect(host.querySelector('[aria-label="Reorder sidebar sections"]')).toBeNull()
+    const handle = byLabel('Reorder Bookshelf')
+    act(() => handle.focus())
+    key(handle, 'ArrowUp')
+    expect(sections().slice(0, 2)).toEqual(['Bookshelf', 'Today'])
+    expect(document.activeElement).toBe(handle)
+    act(() => handle.click())
+    expect(handle.getAttribute('aria-expanded')).toBe('true')
+    key(handle, 'Escape')
+    expect(handle.getAttribute('aria-expanded')).toBe('false')
+    await act(async () => root.unmount())
+    root = createRoot(host)
+    await render('today')
+    expect(sections().slice(0, 2)).toEqual(['Bookshelf', 'Today'])
+  })
+
   it('keeps the filtered Library and its scroll position when returning from Today', async () => {
     await captureThought('Aurora architecture decision')
     await captureThought('Garden planting notes')

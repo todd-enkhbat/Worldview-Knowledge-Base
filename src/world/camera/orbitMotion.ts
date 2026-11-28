@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { Vector3 } from 'three'
 import type { CameraControlsImpl } from '@react-three/drei'
 import { useApp, useWorld } from '../../app/store.ts'
+import { cancelCameraFlight } from './cameraFlight.ts'
 
 interface OrbitMotionState {
   playing: boolean
@@ -20,6 +21,7 @@ export function toggleOrbitMotion(): void {
   }
   const app = useApp.getState()
   if (app.mode !== 'orbit' && !app.setMode('orbit')) return
+  cancelCameraFlight()
   // Starting motion is an explicit action; no ambient motion preference is changed.
   useOrbitMotion.setState({ playing: true })
 }

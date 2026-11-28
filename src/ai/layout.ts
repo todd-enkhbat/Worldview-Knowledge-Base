@@ -110,7 +110,7 @@ export function fitSimilarity(src: readonly XZ[], dst: readonly XZ[], allowRefle
 }
 
 export interface RecrystalliseInput {
-  records: readonly Pick<NodeRecord, 'id' | 'archetype' | 'anchorXZ'>[]
+  records: readonly Pick<NodeRecord, 'id' | 'archetype' | 'anchorXZ' | 'fieldAnchorXZ'>[]
   vectors: ReadonlyMap<string, Float32Array>
   seed: number
 }
@@ -125,9 +125,9 @@ export interface RecrystalliseResult {
 export const MIN_RECRYSTALLISE_NODES = 5
 
 export function recrystallise({ records, vectors, seed }: RecrystalliseInput): RecrystalliseResult {
-  const nodes = records.filter((r) => vectors.has(r.id)).sort((a, b) => (a.id < b.id ? -1 : 1))
+  const nodes = records.filter((r) => vectors.has(r.id) && !r.fieldAnchorXZ).sort((a, b) => (a.id < b.id ? -1 : 1))
   if (nodes.length < MIN_RECRYSTALLISE_NODES) {
-    throw new Error(`Re-crystallising needs at least ${MIN_RECRYSTALLISE_NODES} embedded nodes (have ${nodes.length})`)
+    throw new Error(`Re-crystallising needs at least ${MIN_RECRYSTALLISE_NODES} unpinned notes with embeddings (have ${nodes.length})`)
   }
   const data = nodes.map((r) => Array.from(vectors.get(r.id)!))
   const umap = new UMAP({

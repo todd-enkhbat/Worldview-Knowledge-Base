@@ -5,6 +5,7 @@ import { useApp, useWorld } from '../../src/app/store.ts'
 import { buildDemoWorld } from '../../src/data/seed/demo.ts'
 import type { WorldSettings } from '../../src/domain/types.ts'
 import { recenterWorld } from '../../src/world/camera/OrbitRig.tsx'
+import { updateCameraFlight } from '../../src/world/camera/cameraFlight.ts'
 import { registerOrbitControls } from '../../src/world/camera/flyTo.ts'
 import { resetField } from '../../src/world/field/runtime.ts'
 import { fieldVerticalBounds } from '../../src/world/field/layout.ts'
@@ -28,27 +29,27 @@ function controls() {
   const setLookAt = vi.fn().mockResolvedValue(undefined)
   const c = {
     camera: new PerspectiveCamera(50, 1.5, 0.1, 10000), distance: 150,
-    getTarget: (out: Vector3) => out.set(0, 0, 0), setLookAt,
+    getTarget: (out: Vector3) => out.set(0, 0, 0), getPosition: (out: Vector3) => out.set(180, 90, 30), setLookAt, update: vi.fn(),
   } as unknown as CameraControlsImpl
   registerOrbitControls(c)
-  return { c, setLookAt }
+  return { setLookAt, finish: () => { for (let frame = 0; frame < 9; frame++) updateCameraFlight(c, 0.1) } }
 }
 
 describe('Recenter world', () => {
-  it('moves the already mounted orbit camera immediately for either world', () => {
+  it('frames the already mounted orbit camera for either world', () => {
     loadWorld()
-    const { setLookAt } = controls()
+    const { setLookAt, finish } = controls()
     useApp.setState({ mode: 'orbit', view: { architecture: 0.6, world: 'field', flow: true } })
     expect(recenterWorld()).toBe(true)
-    expect(setLookAt).toHaveBeenCalledOnce()
-    const field = setLookAt.mock.calls[0]!
+    finish()
+    const field = setLookAt.mock.calls.at(-1)!
     expect(field).toHaveLength(7)
-    expect(field[6]).toBe(true)
+    expect(field[6]).toBe(false)
     expect(field[4]).toBe(fieldVerticalBounds(useWorld.getState().nodes.values(), settings).centerY)
     useApp.setState({ view: { architecture: 0.6, world: 'classic', flow: true } })
     expect(recenterWorld()).toBe(true)
-    expect(setLookAt).toHaveBeenCalledTimes(2)
-    expect(setLookAt.mock.calls[1]![4]).toBe(field[4])
+    finish()
+    expect(setLookAt.mock.calls.at(-1)![4]).toBe(field[4])
   })
 
   it('switches flight back to orbit and parks the reframe until controls mount', () => {

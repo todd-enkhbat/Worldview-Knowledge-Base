@@ -1,7 +1,8 @@
+import { DeleteLibraryItem } from './DeleteLibraryItem.tsx'
 import { FolderEditor, FolderIcon, FolderPageHeader } from './FolderPage.tsx'
 import { folderHref, folderTrail } from './hierarchy.ts'
-import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import { ArrowLeft, ArrowUpRight, CaretDown, BookOpen, Books, Browser, Check, FileText, FolderSimple, FolderSimplePlus, Highlighter, List, MagnifyingGlass, NotePencil, Plus, SquaresFour, Star, Tag } from '@phosphor-icons/react'
+import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react'
+import { ArrowLeft, ArrowUpRight, CaretDown, BookOpen, Books, Browser, Check, FileText, FolderSimple, Highlighter, List, MagnifyingGlass, NotePencil, Plus, SquaresFour, Star, Tag } from '@phosphor-icons/react'
 import { usePersonalLibrary } from './personalLibrary.ts'
 import { bookHref } from '../bookshelf/model.ts'
 import { writingPassages } from '../writing/concepts.ts'
@@ -12,7 +13,7 @@ import { getStore, getWorldGeneration, isRepoReady, useRepoStatus } from '../dat
 import { useAuth } from '../data/auth.ts'
 import { useKnowledge } from '../knowledge/index.ts'
 import type { KnowledgeSource, SourceVersion } from '../knowledge/types.ts'
-import { createFolder, deleteFolder, renameFolder, updateReadingItem, useReading, bulkUpdateReadingItems, saveReadingView, removeReadingView } from './store.ts'
+import { createFolder, renameFolder, updateReadingItem, useReading, bulkUpdateReadingItems, saveReadingView, removeReadingView } from './store.ts'
 import { captureArticle } from './captureArticle.ts'
 import { ReadingDialog } from './ReadingDialog.tsx'
 import type { ReadingItem } from './types.ts'
@@ -27,6 +28,17 @@ type Filter = 'all' | 'reading' | 'read' | 'highlights' | 'favorites' | 'article
 type FileEntry = { id: string; book?: ShelfBook; source?: KnowledgeSource; recordId?: string; writingId?: string; edition?: ShelfBook; conceptIds?: string[]; title: string; text: string; annotations?: string; kind: string; updatedAt: number; version?: SourceVersion; item?: ReadingItem; highlights: number; notes: number }
 const errorText = (error: unknown) => error instanceof Error ? error.message : String(error)
 const plainPreview = (text: string) => text.replace(/^#{1,6}\s+/gm, '').replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').replace(/[*_`]/g, '').slice(0, 1600)
+
+function closeDisclosure(disclosure: HTMLDetailsElement) {
+  disclosure.open = false
+  disclosure.querySelector('summary')?.focus({ preventScroll: true })
+}
+
+function escapeDisclosure(event: KeyboardEvent<HTMLDetailsElement>) {
+  if (event.key !== 'Escape' || !event.currentTarget.open) return
+  event.stopPropagation()
+  closeDisclosure(event.currentTarget)
+}
 export function articleUrl(version?: SourceVersion): string | null {
   const value = version?.metadata?.url ?? version?.metadata?.sourceUrl
   if (typeof value !== 'string') return null
@@ -75,10 +87,12 @@ export default function ReadingArchive({ importAction, onOpenSource = openReadin
   const [selection, setSelection] = useState<Set<string>>(new Set()), [bulkFolder, setBulkFolder] = useState(''), [bulkTopic, setBulkTopic] = useState('')
   const [selecting, setSelecting] = useState(false)
   const addMenu = useRef<HTMLDetailsElement>(null)
+  function closeAddMenu() { if (addMenu.current) closeDisclosure(addMenu.current) }
   const searchIndex = useRef(new LocalTextIndex())
   const [modal, setModal] = useState<'article' | 'folder' | 'rename' | 'view' | null>(null), [folderName, setFolderName] = useState('')
   const [title, setTitle] = useState(''), [url, setUrl] = useState(''), [text, setText] = useState(''), [remark, setRemark] = useState('')
   const [busy, setBusy] = useState(false), [error, setError] = useState('')
+  const [removed, setRemoved] = useState<{ title: string; archive: { name: string; href: string } | null } | null>(null)
   const currentFolder = reading.folders.find((entry) => entry.id === folder && !entry.deletedAt)
   useEffect(() => { setLimit(48) }, [query, filter, folder, topic])
   useEffect(() => { if (typeof location === 'undefined' || !location.hash.startsWith('#/library')) return; const route = new URLSearchParams(location.hash.split('?')[1]); if (['source','record','passage'].some(key => route.has(key))) return; const params = new URLSearchParams(); if (query) params.set('q', query); if (filter !== 'all') params.set('filter', filter); if (folder) params.set('folder', folder); if (topic) params.set('topic', topic); if (view !== 'list') params.set('view', view); if (sort !== 'modified') params.set('sort', sort); history.replaceState({ ...(history.state && typeof history.state === 'object' ? history.state : {}), worldviewLibraryAccount: account }, '', `#/library${params.size ? `?${params}` : ''}`) }, [query, filter, folder, topic, view, sort, account])
@@ -182,16 +196,16 @@ export default function ReadingArchive({ importAction, onOpenSource = openReadin
     <header className="reading-archive-top">
       <div><h2>{currentFolder ? 'Inside this page' : 'My library'}</h2><p>{currentFolder ? 'Pages, notes, and files at this level.' : 'Your notes, saved books, and imported files.'}</p></div>
       <div className="reading-archive-actions">
-        <details className="personal-library-add" ref={addMenu} onKeyDown={e => { if (e.key === 'Escape') { addMenu.current!.open = false; addMenu.current!.querySelector('summary')?.focus() } }} onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget)) e.currentTarget.open = false }}>
-          <summary className="knowledge-button">Add to library <CaretDown size={14} /></summary>
-          <div onClick={() => { if (addMenu.current) addMenu.current.open = false }}>
-            <a className="knowledge-button" href="#/bookshelf?new=1"><Books size={16}/>Book</a>
-            <button className="knowledge-button" disabled={!writer} onClick={() => { setError(''); setModal('article') }}><Browser size={16}/>Save article</button>
+        <details className="personal-library-add" ref={addMenu} onKeyDown={escapeDisclosure} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false }}>
+          <summary className="knowledge-button is-primary">New <CaretDown size={14} aria-hidden="true" /></summary>
+          <div>
+            <button type="button" className="knowledge-button" disabled={!writer || busy} onClick={() => { closeAddMenu(); void perform(newNote) }}>New note</button>
+            <a className="knowledge-button" href="#/bookshelf?new=1" onClick={closeAddMenu}>Add book</a>
+            <button type="button" className="knowledge-button" disabled={!writer} onClick={() => { closeAddMenu(); setError(''); setModal('article') }}>Save article</button>
+            <button type="button" className="knowledge-button" disabled={!writer} onClick={() => { closeAddMenu(); setFolderName(''); setError(''); setModal('folder') }}>New folder</button>
             {importAction}
-            <button className="knowledge-button" disabled={!writer} onClick={() => { setFolderName(''); setError(''); setModal('folder') }}><FolderSimplePlus size={16}/>Folder</button>
           </div>
         </details>
-        <button className="knowledge-button is-primary" disabled={!writer || busy} onClick={() => void perform(newNote)}><NotePencil size={16}/>New note</button>
       </div>
     </header>
     <div className="reading-archive-body"><aside className="reading-filters" aria-label="Archive filters">
@@ -202,8 +216,9 @@ export default function ReadingArchive({ importAction, onOpenSource = openReadin
           <button key={id} type="button" aria-pressed={filter===id && !folder} onClick={()=>chooseFilter(id)}><Icon size={15}/><span>{name}</span></button>)}
 <div className="reading-taxonomy"><label htmlFor="reading-topic"><Tag size={15} />Topics</label><select id="reading-topic" value={topic} onChange={(event) => setTopic(event.target.value)}><option value="">All topics</option>{topics.map((entry) => <option key={entry} value={entry}>{entry.replace(/-/g, ' ')}</option>)}</select><a href={selectedTopic ? topicHref(selectedTopic.id) : "#/topics"}>Open topic home <ArrowUpRight size={13} /></a></div><div className="reading-saved-views"><span className="reading-overline">Saved views</span>{(reading.savedViews ?? []).map((saved) => <div key={saved.id}><button type="button" onClick={() => { setQuery(saved.query); setFilter(saved.filter as Filter); setFolder(saved.folderId); setTopic(saved.topic); setView(saved.view); setSort(saved.sort) }}>{saved.name}</button><button type="button" aria-label={`Remove saved view ${saved.name}`} disabled={!writer || busy} onClick={() => void perform(() => removeReadingView(saved.id))}>×</button></div>)}<button type="button" disabled={!writer} onClick={() => { setFolderName(''); setError(''); setModal('view') }}><Plus size={13} />Save this view</button></div></details></aside>
     <div className="reading-files-main"><div className="reading-file-toolbar"><div className="reading-file-search"><MagnifyingGlass size={18} /><label htmlFor="library-filter" className="knowledge-sr-only">Filter library</label><input id="library-filter" value={query} placeholder="Search your files…" onChange={(event) => setQuery(event.target.value)} /></div><label className="reading-sort"><span className="knowledge-sr-only">Sort files</span><select aria-label="Sort files" value={sort} onChange={(event) => setSort(event.target.value)}><option value="modified">Last modified</option><option value="opened">Last opened</option><option value="title">Name</option></select></label><div className="reading-view-toggle" aria-label="File view"><button className="knowledge-icon-button" aria-label="Grid view" aria-pressed={view === 'grid'} onClick={() => setView('grid')}><SquaresFour size={18} /></button><button className="knowledge-icon-button" aria-label="List view" aria-pressed={view === 'list'} onClick={() => setView('list')}><List size={19} /></button></div></div>
-    {currentFolder && <div className="reading-folder-breadcrumb"><button type="button" onClick={() => setFolder(currentFolder.parentId)}><ArrowLeft size={15} />{currentFolder.parentId ? 'Parent folder' : 'My files'}</button><span>/ {currentFolder.name}</span><button disabled={!writer} onClick={() => { setFolderName(currentFolder.name); setError(''); setModal('rename') }}>Rename</button><button disabled={!writer || busy} onClick={() => void perform(async () => { await deleteFolder(currentFolder.id); setFolder(currentFolder.parentId) })}>Remove folder</button></div>}
+    {currentFolder && <div className="reading-folder-breadcrumb"><button type="button" onClick={() => setFolder(currentFolder.parentId)}><ArrowLeft size={15} />{currentFolder.parentId ? 'Parent folder' : 'My files'}</button><span>/ {currentFolder.name}</span><button disabled={!writer} onClick={() => { setFolderName(currentFolder.name); setError(''); setModal('rename') }}>Rename</button><DeleteLibraryItem id={currentFolder.id} name={currentFolder.name} kind="folder" folderDestination={reading.folders.find(entry => entry.id === currentFolder.parentId)?.name} onDeleted={() => setFolder(currentFolder.parentId)} /></div>}
     {error && !modal && <p role="alert" className="knowledge-error">{error}</p>}
+    {removed && <div className="library-removal" role="status"><span>{removed.title} moved to {removed.archive ? <a href={removed.archive.href}>{removed.archive.name}</a> : 'Trash'}</span><button type="button" className="knowledge-text-button" onClick={() => setRemoved(null)}>Dismiss</button></div>}
     {!!folders.length && !query && <div className="reading-folders" aria-label="Folders">{folders.map((entry) => <button key={entry.id} onClick={() => { setFolder(entry.id); setFilter('all'); setTopic('') }}><FolderIcon folder={entry} size={22} /><span>{entry.name}<small>{entry.typeLabel || entry.kind || 'Folder'}</small></span><small>{files.filter((file) => file.item?.folderId === entry.id).length}</small></button>)}</div>}
     {shown.some((entry) => !!eligible(entry)) && <div className="reading-select-tools"><button aria-pressed={selecting} onClick={() => { setSelecting(!selecting); setSelection(new Set()) }}>{selecting ? 'Done selecting' : 'Select files'}</button>{selecting && <label><input type="checkbox" aria-label="Select visible files" checked={shown.slice(0, limit).filter((entry) => !!eligible(entry)).length > 0 && shown.slice(0, limit).filter((entry) => !!eligible(entry)).every((entry) => selection.has(eligible(entry)!))} onChange={(event) => { const visible = shown.slice(0, limit).map(eligible).filter((id): id is string => !!id); setSelection((prior) => event.target.checked ? new Set([...prior, ...visible].slice(0, 500)) : new Set([...prior].filter((id) => !visible.includes(id)))) }} />Select visible files</label>}{selection.size > 0 && <button type="button" onClick={() => setSelection(new Set())}>Clear selection</button>}</div>}
     {selection.size > 0 && <div className="reading-bulk-bar" aria-label="File selected items"><strong>{selection.size} selected</strong><label><span className="knowledge-sr-only">Move selected files to folder</span><select value={bulkFolder} aria-label="Move selected files to folder" onChange={(event) => setBulkFolder(event.target.value)}><option value="">Unfiled</option>{reading.folders.filter((entry) => !entry.deletedAt).map((entry) => <option key={entry.id} value={entry.id}>{folderTrail(reading.folders, entry.id).map(folder => folder.name).join(' / ')}</option>)}</select></label><button className="knowledge-button" disabled={!writer || busy} onClick={() => void bulk({ folderId: bulkFolder || null })}>Move files</button><label><span className="knowledge-sr-only">Topic for selected files</span><select value={bulkTopic} aria-label="Topic for selected files" onChange={(event) => setBulkTopic(event.target.value)}><option value="">Choose a topic</option>{reading.topics.map((entry) => <option key={entry.id} value={entry.id}>{entry.name}</option>)}</select></label><button className="knowledge-button" disabled={!writer || busy || !bulkTopic} onClick={() => void perform(async () => { await bulkUpdateReadingItems([...selection], {}, { addTopicId: bulkTopic }); setSelection(new Set()) })}>Add topic</button><button className="knowledge-button" disabled={!writer || busy} onClick={() => void bulk({ favorite: true })}>Favorite</button><button className="knowledge-button" disabled={!writer || busy} onClick={() => void bulk({ status: 'read' })}>Mark finished</button><button className="knowledge-button" disabled={!writer || busy} onClick={() => void bulk({ libraryVisible: false })}>Hide from Library</button></div>}
@@ -212,7 +227,28 @@ export default function ReadingArchive({ importAction, onOpenSource = openReadin
       const href = articleUrl(entry.version), kind = fileKind(entry)
       const status = entry.item?.status ?? entry.book?.status ?? 'unread', progress = Math.round((entry.item?.progress ?? 0) * 100)
       const open = () => { if (entry.book) location.hash = bookHref(entry.book.id); else if (entry.edition && entry.writingId) location.hash = bookHref(entry.edition.id, entry.writingId); else if (entry.writingId && entry.source && writings.find(doc => doc.id === entry.writingId)?.basedOnSourceId) onOpenSource(entry.source.id, folder ?? undefined); else if (entry.writingId) location.hash = `#/write?doc=${encodeURIComponent(entry.writingId)}`; else if (entry.source) { if (folder) onOpenSource(entry.source.id, folder); else onOpenSource(entry.source.id) } else onOpenRecord(entry.recordId!) }
-      return <article key={entry.id} className="reading-file knowledge-library-item">{selecting && eligible(entry) && <label className="reading-file-select"><input type="checkbox" aria-label={`Select ${entry.title}`} checked={selection.has(eligible(entry)!)} onChange={() => toggleSelected(eligible(entry)!)} /><span className="knowledge-sr-only">Select {entry.title}</span></label>}<button type="button" className="reading-document-cover" aria-label={`Read ${entry.title}`} onClick={open}><FileArtwork entry={entry} kind={kind} list={view === 'list'}/></button><div className="reading-file-caption"><button type="button" className="reading-file-title" onClick={open} title={entry.title}>{entry.title}</button>{eligible(entry) && <button className="knowledge-icon-button reading-favorite" disabled={!writer || busy} aria-label={`${entry.item?.favorite ? 'Unfavorite' : 'Favorite'} ${entry.title}`} aria-pressed={entry.item?.favorite ?? false} onClick={() => void perform(() => bulkUpdateReadingItems([eligible(entry)!], { favorite: !entry.item?.favorite }))}><Star size={16} weight={entry.item?.favorite ? 'fill' : 'regular'} /></button>}<span className="reading-file-meta">{[kind, entry.book?.authors.join(', ') || (href && !entry.book && !entry.edition ? new URL(href).hostname.replace(/^www\./, '') : fileOrigin(entry)), status === 'read' ? 'Finished' : status === 'reading' ? (progress ? progress + '% read' : 'Reading') : null, entry.notes ? entry.notes + (entry.notes === 1 ? ' note' : ' notes') : null].filter(Boolean).join(' · ')}</span><time className="library-row-date" dateTime={new Date(entry.updatedAt).toISOString()}>{new Date(entry.updatedAt).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'})}</time></div></article>
+      const editableId = eligible(entry)
+      const favorite = entry.item?.favorite ?? false
+      const id = entry.book?.id ?? entry.writingId ?? entry.source?.id ?? entry.recordId!
+      const deleteKind = entry.book ? 'book' : entry.writingId ? 'writing' : entry.source ? 'source' : 'record'
+      return <article key={entry.id} className="reading-file knowledge-library-item">
+        {selecting && editableId && <label className="reading-file-select"><input type="checkbox" aria-label={`Select ${entry.title}`} checked={selection.has(editableId)} onChange={() => toggleSelected(editableId)} /></label>}
+        <button type="button" className="reading-document-cover" aria-label={`Read ${entry.title}`} onClick={open} tabIndex={-1}><FileArtwork entry={entry} kind={kind} list={view === 'list'} /></button>
+        <div className="reading-file-caption">
+          <button type="button" className="reading-file-title" onClick={open} title={entry.title}>{entry.title}</button>
+          <span className="reading-file-meta">{[kind, entry.book?.authors.join(', ') || (href && !entry.book && !entry.edition ? new URL(href).hostname.replace(/^www\./, '') : fileOrigin(entry)), status === 'read' ? 'Finished' : status === 'reading' ? (progress ? progress + '% read' : 'Reading') : null, entry.notes ? entry.notes + (entry.notes === 1 ? ' note' : ' notes') : null].filter(Boolean).join(' · ')}</span>
+          <time className="library-row-date" dateTime={new Date(entry.updatedAt).toISOString()}>{new Date(entry.updatedAt).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'})}</time>
+          <DeleteLibraryItem id={id} name={entry.title} kind={deleteKind} shelfKind={entry.book?.kind} retainsSource={!!entry.source && (deleteKind === 'book' || deleteKind === 'writing')} onDeleted={archive => setRemoved({ title: entry.title, archive })}>
+            {(confirm, disabled) => <details className="reading-file-actions" onKeyDown={escapeDisclosure} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false }}>
+              <summary className="knowledge-button" aria-label={`Actions for ${entry.title}`}>Actions</summary>
+              <div>
+                {editableId && <button type="button" className="knowledge-button" disabled={disabled || busy} onClick={event => { closeDisclosure(event.currentTarget.closest('details')!); void perform(() => bulkUpdateReadingItems([editableId], { favorite: !favorite })) }}>{favorite ? 'Remove favorite' : 'Add to favorites'}</button>}
+                <button type="button" className="knowledge-button" disabled={disabled || busy} onClick={event => { closeDisclosure(event.currentTarget.closest('details')!); confirm() }}>Move to Trash</button>
+              </div>
+            </details>}
+          </DeleteLibraryItem>
+        </div>
+      </article>
     })}</div> : <div className="reading-empty"><Books size={36} weight="thin" /><h3>{query ? 'No files found' : filter === 'all' ? 'A place for everything you read' : 'Nothing here yet'}</h3><p>{query ? 'Try another word or clear your filters.' : filter === 'all' ? 'Save an article, import your documents, or capture a thought. Your highlights and remarks will stay with their source.' : 'Your reading activity will appear here as you use the reader.'}</p>{!query && filter === 'all' && <button className="knowledge-button" disabled={!writer} onClick={() => setModal('article')}><Plus size={16} />Save your first article</button>}</div>}
     {shown.length > limit && <button className="knowledge-button reading-more" onClick={() => setLimit((previous) => previous + 48)}>Show more files</button>}
     </div></div>

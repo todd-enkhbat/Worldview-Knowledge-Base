@@ -3,6 +3,7 @@ import { normalizeVaultPath, parseVaultMetadata } from './vault.ts'
 import { structuralSpans, type ChunkOptions } from './chunking.ts'
 import { parsePortableKnowledge } from './portability.ts'
 import { parseVaultDate } from '../data/obsidian.ts'
+import { fnv1a32 } from '../domain/placement.ts'
 
 type Obj = Record<string, unknown>
 const object = (x: unknown): Obj => x !== null && typeof x === 'object' && !Array.isArray(x) ? x as Obj : {}
@@ -70,6 +71,78 @@ function claude(value: Obj): ParsedSource {
   return conversation(id, string(value.name) || string(value.title) || 'Claude conversation', 'claude', messages, value)
 }
 
+function codexRollout(text: string): ParsedSource {
+  const rows = text.split(/\r?\n/).filter((line) => line.trim()).map((line, index) => {
+    try { return object(JSON.parse(line)) }
+    catch {
+      throw new Error(`Invalid Codex session JSON on line ${index + 1}. Export a complete copy and retry. The original is retained.`)
+    }
+  })
+  const metadata = object(rows.find((row) => row.type === 'session_meta')?.payload)
+  const id = string(metadata.id) || string(metadata.session_id)
+  if (!id) throw new Error('This JSONL file has no Codex session identity. The original is retained.')
+  const events: ParsedMessage[] = []
+  const responseItems: ParsedMessage[] = []
+  for (const [index, row] of rows.entries()) {
+    const payload = object(row.payload)
+    const authoredAt = sourceTime(row.timestamp)
+    if (row.type === 'event_msg' && (payload.type === 'user_message' || payload.type === 'agent_message')) {
+      if (typeof payload.message === 'string' && payload.message.trim()) {
+        events.push({ id: `event-${index + 1}`, role: payload.type === 'user_message' ? 'human' : 'assistant', text: payload.message, authoredAt })
+      }
+    } else if (row.type === 'response_item' && payload.type === 'message' && (payload.role === 'user' || payload.role === 'assistant')) {
+      const body = parts(payload.content).trim()
+      if (body && !/^(?:<environment_context>|<user_instructions>|# AGENTS\.md instructions)/i.test(body)) {
+        responseItems.push({ id: string(payload.id) || `response-${index + 1}`, role: role(payload.role), text: body, authoredAt })
+      }
+    }
+  }
+  const messages = [...events, ...responseItems.filter((item) => !events.some((event) => event.role === item.role))]
+    .sort((a, b) => (a.authoredAt ?? Infinity) - (b.authoredAt ?? Infinity))
+  if (!messages.length) throw new Error('The Codex session contains no readable human or assistant messages. The original is retained.')
+  const title = messages.find((message) => message.role === 'human')?.text.split('\n')[0].slice(0, 100)
+  return conversation(`codex:${id}`, title || 'Codex session', 'conversation', messages, { importer: 'codex-rollout', indexedRoles: ['human', 'assistant'] })
+}
+
+const isGeminiActivity = (value: Obj) => /^(?:gemini(?: apps)?|bard)$/i.test(string(value.header)) ||
+  Array.isArray(value.products) && value.products.some((product) => /^(?:gemini(?: apps)?|bard)$/i.test(string(product)))
+
+function activityText(html: string): string {
+  const entities: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' }
+  return html.replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1>/gi, '')
+    .replace(/<(?:br\b[^>]*|\/(?:p|div|li|pre|blockquote|h[1-6]))\s*>/gi, '\n')
+    .replace(/<[^>]*>/g, '')
+    .replace(/&(#(?:x[\da-f]+|\d+)|amp|lt|gt|quot|apos|nbsp);/gi, (match, raw: string) => {
+      const key = raw.toLowerCase()
+      if (key[0] !== '#') return entities[key] ?? match
+      const code = key[1] === 'x' ? Number.parseInt(key.slice(2), 16) : Number(key.slice(1))
+      return code > 0 && code <= 0x10ffff && (code < 0xd800 || code > 0xdfff) ? String.fromCodePoint(code) : match
+    }).trim()
+}
+
+function geminiActivity(rows: unknown[]): ParsedSource[] {
+  const sources = new Map<string, ParsedSource>()
+  for (const raw of rows) {
+    const item = object(raw)
+    if (!isGeminiActivity(item)) continue
+    const match = /^Prompted\s+([\s\S]+)$/i.exec(string(item.title))
+    const authoredAt = sourceTime(item.time)
+    if (!match || authoredAt === null) continue
+    const prompt = match[1].trim()
+    if (!prompt) continue
+    const html = Array.isArray(item.safeHtmlItem) ? item.safeHtmlItem.map((value) => string(object(value).html)).join('\n') :
+      string(item.safeHtmlItem) || string(object(item.safeHtmlItem).html)
+    const response = activityText(html)
+    const id = `gemini:${authoredAt}:${fnv1a32(prompt).toString(16)}`
+    const messages: ParsedMessage[] = [{ id: 'prompt', role: 'human', text: prompt, authoredAt }]
+    // Takeout dates the activity, so the reply's own authored time remains unknown.
+    if (response) messages.push({ id: 'reply', parentId: 'prompt', role: 'assistant', text: response, authoredAt: null })
+    if (!sources.has(id) || response) sources.set(id, conversation(id, `Gemini · ${prompt.split('\n')[0].slice(0, 100)}`, 'conversation', messages, { importer: 'gemini-activity' }))
+  }
+  if (!sources.size) throw new Error('Gemini activity has no dated “Prompted” entries in this export. The original is retained.')
+  return [...sources.values()]
+}
+
 function document(text: string, path: string, kind: ParsedSource['kind'] = 'document'): ParsedSource {
   const base = path.split('/').at(-1) ?? path
   const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(text)
@@ -106,6 +179,7 @@ export function parseKnowledgeText(text: string, path: string, mime = ''): Parse
     parsed.metadata = { path, interchange: 'obsidian-base', evaluation: 'none', formulasRetainedAsText: /^formulas\s*:/m.test(text), diagnostics: ['Bases is retained and searchable as text. Filters and formulas are not executed during import.'] }
     return [parsed]
   }
+  if (/\.(?:jsonl|ndjson)$/i.test(path)) return [codexRollout(text)]
   if (/\.json$/i.test(path) || mime.includes('json')) {
     let value: unknown
     try { value = JSON.parse(text) } catch { throw new Error('Invalid JSON. Original saved; fix the export and retry.') }
@@ -114,6 +188,7 @@ export function parseKnowledgeText(text: string, path: string, mime = ''): Parse
     const rows = Array.isArray(value) ? value : Array.isArray(container.conversations) ? container.conversations : [value]
     if (rows.some((v) => Object.keys(object(object(v).mapping)).length)) return rows.map((v) => chatGpt(object(v)))
     if (rows.some((v) => Array.isArray(object(v).chat_messages))) return rows.map((v) => claude(object(v)))
+    if (rows.some((row) => isGeminiActivity(object(row)))) return geminiActivity(rows)
     // Generic JSON is indexed in full, never a first-items preview.
     return [document(text, path)]
   }

@@ -1,0 +1,203 @@
+@import '../worldviewPalette.css';
+
+/* Each section shares the same controls, with a color suited to its contents. */
+.knowledge-workbench {
+  --wv-section-color: var(--wv-evergreen);
+  --wv-focus: #9de0c8;
+  --wv-surface: #20242d;
+  --wv-chrome: #191f27;
+  --wv-tint: color-mix(in srgb, var(--wv-section-color) 28%, var(--wv-surface));
+  --wv-hover: color-mix(in srgb, var(--wv-section-color) 21%, var(--wv-surface));
+  --wv-line: color-mix(in srgb, var(--wv-focus) 13%, var(--kb-line));
+  --wv-control-radius: 9px;
+  --wv-surface-radius: 15px;
+}
+.knowledge-workbench[data-theme=light] {
+  --wv-focus: #376b58;
+  --wv-surface: #fffefa;
+  --wv-chrome: #f6f5f0;
+  --wv-tint: color-mix(in srgb, var(--wv-section-color) 12%, var(--wv-surface));
+  --wv-hover: color-mix(in srgb, var(--wv-section-color) 8%, var(--wv-surface));
+  --wv-line: color-mix(in srgb, var(--wv-section-color) 16%, var(--kb-line));
+}
+.knowledge-workbench:is([data-active-section=write], [data-active-section=vocabulary], [data-active-section=knowledge], [data-active-section=topics]) {
+  --wv-section-color: var(--wv-lavender);
+}
+.knowledge-workbench:is([data-active-section=bookshelf], [data-active-section=quotes], [data-active-section=applications], [data-active-section=review]) {
+  --wv-section-color: var(--wv-clay);
+}
+.knowledge-workbench:is([data-active-section=library], [data-active-section=search], [data-active-section=maps], [data-active-section=graph], [data-active-section=sources]) {
+  --wv-section-color: var(--wv-lapis);
+}
+
+/* Shell and overlays */
+.knowledge-workbench .knowledge-nav {
+  background: linear-gradient(164deg, var(--wv-tint), var(--wv-chrome) 32%, var(--wv-chrome) 75%, var(--wv-hover));
+  border-color: var(--wv-line);
+}
+.knowledge-workbench .knowledge-top {
+  background: linear-gradient(110deg, var(--wv-tint), var(--wv-surface) 54%, var(--wv-hover));
+  border-color: var(--wv-line);
+}
+.knowledge-workbench .knowledge-top h1 { font-weight: 650; letter-spacing: -.025em; }
+.knowledge-workbench .knowledge-page { background: radial-gradient(ellipse at 50% -12%, var(--wv-hover), transparent 49%) var(--kb-bg); }
+.knowledge-workbench .knowledge-nav-primary-row:has(> a[aria-current=page]) {
+  background: var(--wv-tint); box-shadow: inset 0 0 0 1px var(--wv-line);
+}
+.knowledge-workbench .knowledge-nav-primary-row > a[aria-current=page] { background: transparent; }
+.knowledge-workbench .knowledge-nav :is(nav a, nav summary):hover { background: var(--wv-hover); color: var(--kb-text); }
+.knowledge-workbench .knowledge-nav-primary-row:has(> a[aria-current=page]) > a:hover { background: transparent; }
+.knowledge-workbench .knowledge-nav :is(.knowledge-nav-group-links a[aria-current=page], .knowledge-nav-group[data-active]:not([open]) > summary) { background: var(--wv-tint); }
+.knowledge-workbench .knowledge-capture-shortcut {
+  background: var(--wv-surface); border-color: var(--wv-line); font-weight: 650;
+}
+.knowledge-workbench .knowledge-capture-shortcut:hover { background: var(--wv-hover); }
+.knowledge-workbench .knowledge-nav .knowledge-explore-link {
+  color: var(--wv-night-ink); background: var(--wv-night-gradient);
+  border-color: transparent; border-radius: var(--wv-control-radius);
+}
+.knowledge-workbench .knowledge-nav .knowledge-explore-link:hover { color: #fff; background: var(--wv-night-gradient); box-shadow: inset 0 0 0 1px #ffffff56; }
+.knowledge-workbench .knowledge-explore-link > svg { color: #d8c4eb; }
+.knowledge-workbench .knowledge-top .knowledge-command-shortcut { background: var(--wv-surface); border-color: var(--wv-line); }
+.knowledge-workbench .knowledge-top .knowledge-command-shortcut:hover { background: var(--wv-tint); }
+.knowledge-workbench .knowledge-quick-capture.is-active { background: var(--wv-tint); border-color: var(--wv-line); }
+.knowledge-workbench .knowledge-button { border-radius: var(--wv-control-radius); }
+.knowledge-workbench .knowledge-button.is-primary {
+  color: white; background: var(--wv-section-color); border-color: transparent; font-weight: 600;
+}
+.knowledge-workbench .knowledge-button.is-primary:hover:enabled {
+  color: white; background: color-mix(in srgb, var(--wv-section-color) 89%, black);
+}
+.knowledge-workbench :is(button,a,input,textarea,select,summary):focus-visible { outline-color: var(--wv-focus); }
+.knowledge-workbench .knowledge-banners > div > div { background: var(--wv-hover); border-color: var(--wv-line); }
+.knowledge-workbench .knowledge-companion { border-color: var(--wv-line); }
+.knowledge-workbench .workspace-command-menu {
+  border-color: var(--wv-line); background: var(--wv-surface); border-radius: var(--wv-surface-radius);
+}
+.knowledge-workbench .workspace-command-menu [role=option][aria-selected=true] { background: var(--wv-tint); color: var(--kb-text); }
+
+/* Today uses the strongest color around the primary task. */
+.knowledge-workbench .knowledge-today { max-width: 930px; }
+.knowledge-workbench .knowledge-capture {
+  --wv-focus: #a8edce;
+  padding: clamp(15px, 3.25vw, 38px); margin-bottom: 30px;
+  color: var(--wv-night-ink); background: var(--wv-night-gradient); border-radius: 20px;
+  box-shadow: 0 13px 32px -23px #101323a6;
+}
+.knowledge-workbench .knowledge-today-heading { text-align: start; padding: 0; margin-bottom: 18px; }
+.knowledge-today-heading > div { display: flex; align-items: baseline; justify-content: space-between; gap: 6px 20px; flex-wrap: wrap; }
+.knowledge-workbench .knowledge-today-heading h2 { font-size: clamp(28px, 4.2vw, 48px); line-height: 1.04; letter-spacing: -.045em; margin: 0; }
+.knowledge-today-heading time { color: var(--wv-night-muted); font-size: 12px; }
+.knowledge-workbench .knowledge-capture .knowledge-writing-modes {
+  margin: 0 0 12px; color: var(--wv-night-muted); border-color: #fff4; background: #ffffff16;
+}
+.knowledge-workbench .knowledge-capture .knowledge-writing-modes > :is(span, a) { white-space: nowrap; }
+.knowledge-workbench .knowledge-capture .knowledge-writing-modes > span { color: #203e39; background: #e0f1e9; }
+.knowledge-workbench .knowledge-capture .knowledge-writing-modes a { color: var(--wv-night-ink); }
+.knowledge-workbench .knowledge-capture .knowledge-writing-modes a:hover { background: #ffffff24; }
+.knowledge-workbench .knowledge-capture form { color: var(--kb-text); background: var(--wv-surface); box-shadow: none; border: 1px solid transparent; border-radius: 13px; }
+.knowledge-workbench .knowledge-capture textarea { min-height: 102px; }
+.knowledge-workbench .knowledge-capture form:has(textarea:focus-visible) { outline-color: var(--wv-focus); }
+.knowledge-workbench .knowledge-composer-caption { color: var(--wv-night-muted); padding-inline: 2px; }
+.knowledge-workbench .knowledge-composer-caption kbd { color: var(--wv-night-ink); border-color: #ffffff42; background: #ffffff0d; }
+.knowledge-workbench .knowledge-capture :is(.knowledge-saved, .knowledge-error) {
+  width: fit-content; padding: 6px 10px; border-radius: 7px; background: #ffffff1c;
+}
+.knowledge-workbench .knowledge-capture .knowledge-saved { color: #b5f3d6; }
+.knowledge-workbench .knowledge-capture .knowledge-saved button { color: #daf8ec; }
+.knowledge-workbench .knowledge-capture .knowledge-error { color: #ffcbba; }
+.knowledge-workbench .today-continue { margin-bottom: 27px; }
+.knowledge-workbench .today-resume-list a { background: var(--wv-surface); border-color: var(--wv-line); border-radius: 10px; }
+.knowledge-workbench .today-resume-list a:hover { background: var(--wv-tint); }
+.knowledge-workbench .knowledge-today .knowledge-section-title h2 { font-size: 20px; }
+.knowledge-workbench .knowledge-record-glyph { color: var(--wv-focus); background: var(--wv-tint); }
+.knowledge-workbench .knowledge-today-bottom { justify-content: flex-end; }
+
+/* Tasks and search keep the composer/query at the head of the view. */
+.workspace-todos-head { margin-bottom: 20px; }
+.knowledge-workbench .workspace-todos-head h2 { margin: 0 0 4px; font: 500 clamp(24px,3vw,34px)/1.15 'Alte Haas', Inter, sans-serif; letter-spacing: -.035em; }
+.workspace-todos-head .workspace-todos-intro { margin: 0; }
+.knowledge-workbench .enki-todos { --todo-accent: var(--wv-section-color); }
+.knowledge-workbench .enki-todos .enki-compose { background: linear-gradient(110deg, var(--wv-tint), var(--wv-surface) 65%); border-color: var(--wv-line); border-radius: 11px; }
+.knowledge-workbench .enki-todos .enki-submit { color: white; }
+.knowledge-workbench .enki-todos .enki-submit:hover:enabled { color: white; background: #174438; }
+.knowledge-workbench .knowledge-search-form {
+  background: linear-gradient(112deg, var(--wv-tint), var(--wv-surface) 75%);
+  border-color: var(--wv-line); border-radius: var(--wv-surface-radius);
+}
+.knowledge-workbench .knowledge-search-form > svg { color: var(--wv-focus); flex-shrink: 0; }
+.knowledge-workbench .knowledge-search-form:focus-within { outline-color: var(--wv-focus); }
+.knowledge-workbench :is(.knowledge-search-filter-panel, .knowledge-scope-options, .knowledge-investigations) { border-color: var(--wv-line); }
+
+/* Reading, writing, and contacts keep their own content surfaces. */
+.knowledge-workbench .reading-archive-top { padding-bottom: 2px; }
+.knowledge-workbench :is(.reading-file-search, .writing-files input[type=search]) { background: var(--wv-surface); border-color: var(--wv-line); }
+.knowledge-workbench .reading-file-search input { background: transparent; }
+.knowledge-workbench :is(.reading-filters, .writing-desk-tabs, .maintained-tabs) button[aria-pressed=true] {
+  color: var(--kb-text); background: var(--wv-tint); border-color: var(--wv-line);
+}
+.knowledge-workbench .reading-file:has(.reading-file-select input:checked) { background: var(--wv-tint); }
+.knowledge-workbench .reading-bulk-bar { background: var(--wv-tint); border-color: var(--wv-line); }
+.knowledge-workbench .reading-files--list .reading-file:hover { background: var(--wv-hover); }
+.knowledge-workbench :is(.writing-desk > header, .maintained-summary, .sources-hub-heading, .atlas-title, .topic-home-heading) {
+  padding: clamp(12px, 2.1vw, 24px); border: 1px solid var(--wv-line);
+  border-radius: var(--wv-surface-radius); background: linear-gradient(112deg, var(--wv-tint), var(--wv-surface) 83%);
+}
+.knowledge-workbench .writing-desk > header { flex-wrap: wrap; }
+.knowledge-workbench .writing-desk .writing-files { border-color: var(--wv-line); }
+.knowledge-workbench .writing-desk .writing-resume { background: var(--wv-hover); border-color: var(--wv-line); }
+.knowledge-workbench .writing-desk .writing-resume:hover { background: var(--wv-tint); }
+.knowledge-workbench .bookshelf { background: radial-gradient(ellipse at 95% -12%, color-mix(in srgb,var(--wv-clay) 15%,transparent), transparent 52%), var(--shelf-bg); }
+.knowledge-workbench .bookshelf .bookshelf-add { background: var(--wv-section-color); border-color: transparent; color: #fff; }
+.knowledge-workbench .bookshelf .bookshelf-stage-bar button[aria-pressed=true] { border-bottom-color: var(--wv-section-color); }
+.knowledge-workbench .bookshelf .bookshelf-kind button[aria-pressed=true] { background: color-mix(in srgb,var(--wv-clay) 21%,var(--shelf-bg)); }
+.knowledge-workbench .bookshelf-empty:has(button), .knowledge-workbench .knowledge-empty {
+  border-radius: var(--wv-surface-radius); background: var(--wv-hover);
+}
+.knowledge-workbench .crm-workspace { --crm-soft: var(--wv-tint); }
+.knowledge-workbench .crm-nav { background: linear-gradient(155deg, var(--wv-tint), var(--wv-chrome) 64%); }
+.knowledge-workbench .crm-main { background: radial-gradient(ellipse at 80% -26%, var(--wv-tint), transparent 49%); }
+.knowledge-workbench .crm-search { background: var(--wv-surface); border-color: var(--wv-line); }
+.knowledge-workbench .crm-workspace .crm-layouts > button[aria-pressed=true] { background: var(--wv-tint); color: var(--kb-text); }
+.knowledge-workbench .crm-table tbody tr:hover { background: var(--wv-hover); }
+
+/* Secondary tools use a lighter touch on grouping and selected states. */
+.knowledge-workbench :is(.sources-hub-group, .study-lookup form, .quote-find, .atlas-controls, .maintained-detail) { border-color: var(--wv-line); }
+.knowledge-workbench .study-lookup form {
+  display: flex; flex-wrap: wrap; align-items: end; padding: clamp(12px, 2.5vw, 22px);
+  border: 1px solid var(--wv-line); border-radius: var(--wv-surface-radius);
+  background: linear-gradient(112deg, var(--wv-tint), var(--wv-surface));
+}
+.knowledge-workbench .study-lookup form > label { flex: 1; }
+.knowledge-workbench :is(.study-lookup form > button, .study-desk .study-edit .enki-save-application) {
+  background: var(--wv-section-color); border-color: transparent; color: white;
+}
+.knowledge-workbench :is(.quote-card, .maintained-empty, .atlas-empty) { background: var(--wv-surface); border-color: var(--wv-line); }
+.knowledge-workbench .sources-hub-icon { background: var(--wv-tint); }
+.knowledge-workbench .atlas-layers button[aria-pressed=true] { background: var(--wv-tint); color: var(--kb-text); }
+.knowledge-workbench :is(.knowledge-review .knowledge-tabs, .reading-graph-scope) button[aria-pressed=true] {
+  background: var(--wv-tint); color: var(--kb-text); border-color: var(--wv-line);
+}
+.knowledge-workbench .reading-graph-stage { border-color: var(--wv-line); }
+.knowledge-workbench [data-section=applications] .study-tools > button:first-child {
+  background: var(--wv-section-color); border-color: transparent; color: white;
+}
+
+@media (max-width: 760px) {
+  .knowledge-workbench .knowledge-capture { border-radius: 14px; }
+  .knowledge-workbench .knowledge-capture textarea { min-height: 110px; }
+  .knowledge-workbench .knowledge-today-heading h2 { font-size: clamp(26px, 7.5vw, 34px); }
+  .knowledge-workbench .study-lookup form > button { flex: 0 0 auto; }
+}
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  .knowledge-workbench :is(.bookshelf-add, .enki-submit) { transition: transform 110ms var(--wv-press-ease), background-color 110ms ease; }
+  .knowledge-workbench :is(.bookshelf-add, .enki-submit):active:not(:disabled, :focus-visible) { transform: scale(.97); }
+  .knowledge-workbench :is(.reading-file-actions, .personal-library-add, .bookshelf-more, .writing-export-menu)[open]:has(> summary:focus:not(:focus-visible)) > div {
+    animation: workspace-action-menu-in 120ms var(--wv-press-ease) both;
+    transform-origin: top right;
+  }
+  @keyframes workspace-action-menu-in {
+    from { opacity: .6; transform: scale(.98) translateY(-3px); }
+    to { opacity: 1; transform: scale(1) translateY(0); }
+  }
+}

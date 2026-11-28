@@ -1,5 +1,5 @@
 import type { KnowledgePassage, KnowledgeSnapshot } from '../types.ts'
-import type { ArtifactPageView, ArtifactSnapshot, ClaimRevision, EvidenceRef, KnowledgePage, PageRevision } from './types.ts'
+import type { ArtifactPageView, ArtifactSnapshot, Claim, ClaimRevision, EvidenceRef, KnowledgePage, PageRevision } from './types.ts'
 import { supersededValidUntil } from '../../vendor/gbrain/supersede-interval.ts'
 
 export interface ArtifactReadOptions { aiOnly?: boolean; atTime?: number; sourceIds?: readonly string[]; includeStale?: boolean }
@@ -64,6 +64,31 @@ export function artifactPageView(snapshot: ArtifactSnapshot, knowledge: Knowledg
     claims, stale: state.stale, restricted, missingEvidence: state.missing,
     history: history.filter(visible).map((item) => structuredClone(item)),
   }
+}
+
+export function projectDecisionHistory(snapshot: ArtifactSnapshot, knowledge: KnowledgeSnapshot, pageId: string): {
+  claim: Claim
+  revisions: { revision: ClaimRevision; status: 'current' | 'replaced' | 'withdrawn'; stale: boolean }[]
+}[] {
+  const view = artifactPageView(snapshot, knowledge, pageId)
+  if (!view || view.page.kind !== 'project' || view.restricted) return []
+  const byClaim = new Map<string, ClaimRevision[]>()
+  for (const revision of snapshot.claimRevisions) {
+    if (revision.acceptedAt === null || (revision.status !== 'accepted' && revision.status !== 'withdrawn')) continue
+    const rows = byClaim.get(revision.claimId) ?? []
+    rows.push(revision)
+    byClaim.set(revision.claimId, rows)
+  }
+  return snapshot.claims.filter(claim => claim.pageId === pageId && claim.decision).flatMap(claim => {
+    const revisions = (byClaim.get(claim.id) ?? []).slice().reverse().sort((a, b) => (b.acceptedAt ?? 0) - (a.acceptedAt ?? 0))
+      .flatMap(revision => {
+        const evidence = evidenceState(revision.evidence, knowledge)
+        if (evidence.restricted) return []
+        const status = revision.status === 'withdrawn' ? 'withdrawn' as const : revision.id === claim.currentRevisionId ? 'current' as const : 'replaced' as const
+        return [{ revision, status, stale: evidence.stale }]
+      })
+    return revisions.length ? [{ claim, revisions }] : []
+  })
 }
 
 export interface ArtifactContextEntry { id: string; kind: KnowledgePage['kind']; title: string; content: string; revisionId: string; evidence: EvidenceRef[]; updatedAt: number }

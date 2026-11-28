@@ -217,7 +217,7 @@ export function evidenceLinks(text: string, citations: Readonly<Record<string, E
   })
 }
 
-function EvidenceText({ text, question = 'Saved answer' }: { text: string; question?: string }) {
+function EvidenceText({ text, question = 'Saved answer', streaming = false }: { text: string; question?: string; streaming?: boolean }) {
   const citations = useChat((s) => s.citations)
   const writer = useRepoStatus((s) => s.writer)
   const [saved, setSaved] = useState(''), [saving, setSaving] = useState(false), [error, setError] = useState('')
@@ -239,6 +239,7 @@ function EvidenceText({ text, question = 'Saved answer' }: { text: string; quest
     {sources.length > 0 && <nav aria-label="Answer sources" className="chat-evidence-links">
       {sources.map((source) => <a key={source.citationUrl} href={source.citationUrl}><Paperclip size={14} aria-hidden="true" /><span>{source.title}</span></a>)}
     </nav>}
+    {!streaming && !sources.length && <p className="knowledge-secondary">No verified source citations in the current scope.</p>}
     {passages.length > 0 && (saved ? <a className="knowledge-text-button" href={`#/knowledge?page=${saved}`}>Open saved knowledge page</a> : <button className="knowledge-text-button" disabled={!writer || saving} onClick={() => void save()}>{saving ? 'Saving…' : 'Save answer as knowledge page'}</button>)}
     {error && <p role="alert" className="knowledge-error">{error}</p>}
   </>
@@ -470,7 +471,7 @@ export function Chat({ embedded = false }: { embedded?: boolean }) {
           )}
           {!cloudEnabled && history.length > 0 && <p className="chat-history-label">Saved conversations</p>}
           {turns}
-          {live && <EvidenceText text={live} />}
+          {live && <EvidenceText text={live} streaming />}
           {captureIds.length > 0 && (
             <div className="chat-captures">
               <div className="chat-captures-heading" role="status"><CheckCircle size={16} /> Added to your world</div>

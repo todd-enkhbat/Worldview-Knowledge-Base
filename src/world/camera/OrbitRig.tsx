@@ -8,6 +8,7 @@ import { spatialWorldFor } from '../field/layout.ts'
 import { groundYAt, spatialGroundFor, type SpatialGroundPlan } from '../environment/knowledgeGround.ts'
 import { spatialShot } from './spatialFrame.ts'
 import { getOrbitControls, registerOrbitControls, takeOrbitPivot } from './flyTo.ts'
+import { cancelCameraFlight, moveOrbitCamera, updateCameraFlight } from './cameraFlight.ts'
 import { registerDevApi } from '../../app/devApi.ts'
 import { updateProximity } from './proximity.ts'
 import { createOrbitMotionDriver, stopOrbitMotion } from './orbitMotion.ts'
@@ -91,7 +92,7 @@ export function recenterWorld(): boolean {
   establishNote = `recenter ${app.view.world} ${shot.target.map(Math.round).join(',')}`
   established = true
   requested = false
-  void c.setLookAt(...shot.position, ...shot.target, true)
+  moveOrbitCamera(c, shot.position, shot.target)
   return true
 }
 const _t = new Vector3()
@@ -124,7 +125,7 @@ function establishWhenLoaded(c: CameraControlsImpl, camera: Camera): () => void 
     if (!shot) return
     establishNote = `shot ${useApp.getState().view.world} ${shot.target.map(Math.round).join(',')}`
     established = true
-    void c.setLookAt(...shot.position, ...shot.target, transition)
+    moveOrbitCamera(c, shot.position, shot.target, transition)
   }
   c.addEventListener('controlstart', forfeit)
   attempt(false)
@@ -140,6 +141,7 @@ export function OrbitRig({ proximity = true }: { proximity?: boolean }) {
   const ref = useRef<CameraControlsImpl>(null)
   const motion = useRef<ReturnType<typeof createOrbitMotionDriver> | null>(null)
   const camera = useThree((s) => s.camera)
+  const canvas = useThree((s) => s.gl.domElement)
 
   // Layout phase: the previous rig's layout cleanup (handoff, lastOrbitTarget) has already
   // run, and the adoption lands before the next frame renders, so there is no one-frame snap.
@@ -156,20 +158,26 @@ export function OrbitRig({ proximity = true }: { proximity?: boolean }) {
     const stopEstablish = established && !requested ? null : establishWhenLoaded(c, camera)
     registerOrbitControls(c)
     motion.current = createOrbitMotionDriver(c)
+    c.addEventListener('controlstart', cancelCameraFlight)
+    const input = canvas.parentElement ?? canvas
+    input.addEventListener('wheel', cancelCameraFlight, { capture: true, passive: true })
     return () => {
+      c.removeEventListener('controlstart', cancelCameraFlight)
+      input.removeEventListener('wheel', cancelCameraFlight, true)
       motion.current?.dispose()
       motion.current = null
       stopEstablish?.()
       registerOrbitControls(null)
       setPostFocus(null)
     }
-  }, [camera])
+  }, [camera, canvas])
 
   // Runs after camera-controls' own update (priority −1), before this frame is drawn.
   useFrame((_, delta) => {
     const c = ref.current
     if (!c) return
     if (established) requested = false
+    if (useApp.getState().mode === 'orbit') updateCameraFlight(c, delta)
     motion.current?.update(delta)
     applyOrbitGroundClearance(c, spatialGroundFor(useWorld.getState().nodes))
     // What you orbit is what is sharp: flyTo() moves the target onto a node, so this also

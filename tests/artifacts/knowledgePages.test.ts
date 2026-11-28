@@ -4,7 +4,7 @@ import { createMemoryStore } from '../../src/data/memoryStore.ts'
 import { bytesSink, exportArchive, importArchive } from '../../src/data/archive.ts'
 import { closeRepo, completeFirstRun, emptyTrash, getStore, importWorld, initRepo, softDelete, updateNode, useRepoStatus } from '../../src/data/repo.ts'
 import { captureThought, initializeKnowledge, resetKnowledge, setSourcePolicy, syncKnowledgeNodes } from '../../src/knowledge/index.ts'
-import { ARTIFACTS_KV, artifactContext, artifactHealth, artifactPageView, createKnowledgePage, decodeArtifacts, editKnowledgePage, initializeArtifacts, parseClaimDate, projectKnowledgePage, proposeClaim, queuePageGeneration, readKnowledgePage, reconcileArtifactDependencies, resetArtifacts, reviewClaim, reviewPageRevision, reviseClaim, runArtifactJobs, setArtifactJobState, useArtifacts, type EvidenceRef } from '../../src/knowledge/artifacts/index.ts'
+import { ARTIFACTS_KV, artifactContext, artifactHealth, artifactPageView, createKnowledgePage, decodeArtifacts, editKnowledgePage, initializeArtifacts, parseClaimDate, projectDecisionHistory, projectKnowledgePage, proposeClaim, queuePageGeneration, readKnowledgePage, reconcileArtifactDependencies, resetArtifacts, reviewClaim, reviewPageRevision, reviseClaim, runArtifactJobs, setArtifactJobState, useArtifacts, type EvidenceRef } from '../../src/knowledge/artifacts/index.ts'
 import type { KnowledgeSnapshot } from '../../src/knowledge/types.ts'
 
 beforeEach(async () => {
@@ -27,6 +27,34 @@ async function corpus() { return (await getStore().getKv<KnowledgeSnapshot>('kno
 async function changed(id: string, text: string) { await updateNode(id, { contentMd: text }, { keepAnchor: true }); await syncKnowledgeNodes([...useWorld.getState().nodes.values(), ...useWorld.getState().excluded.values(), ...useWorld.getState().trash.values()]); await reconcileArtifactDependencies() }
 
 describe('maintained knowledge pages', () => {
+  it('preserves reviewed project decisions and exact cross-source evidence through regeneration and backup', async () => {
+    const minutes = await thought('April meeting minutes approve the small trial.')
+    const report = await thought('The field report opposes extending the trial before recovery.')
+    const page = await createKnowledgePage({ title: 'Pilot decisions', kind: 'project', sourceIds: [minutes.source.id, report.source.id], contentMd: 'An active project.' })
+    await drain()
+    const first = await proposeClaim({ pageId: page.id, decision: true, text: 'Start the trial.', evidence: [minutes.ref], eventAt: Date.UTC(2026, 3, 4) })
+    const timeline = async () => projectDecisionHistory(useArtifacts.getState(), await corpus(), page.id)
+    expect(await timeline()).toHaveLength(0)
+    await reviewClaim(first.id, 'accept')
+    const corrected = await reviseClaim(first.claimId, { text: 'Complete the trial before extending it.', evidence: [minutes.ref, { ...report.ref, relation: 'opposes' }], eventAt: Date.UTC(2026, 3, 6) })
+    const other = await reviseClaim(first.claimId, { text: 'An outdated suggestion.', evidence: [minutes.ref] })
+    expect((await timeline())[0].revisions.map(entry => entry.revision.id)).toEqual([first.id])
+    await reviewClaim(corrected.id, 'accept')
+    await expect(reviewClaim(other.id, 'accept')).rejects.toThrow(/decision changed while/)
+    await changed(minutes.node.id, 'The minutes have been supplemented with a new maintenance note.')
+    await queuePageGeneration(page.id); await drain()
+    const history = (await timeline())[0].revisions
+    expect(history.map(entry => [entry.status, entry.revision.text])).toEqual([['current', corrected.text], ['replaced', first.text]])
+    expect(history[0]).toMatchObject({ stale: true, revision: { eventAt: Date.UTC(2026, 3, 6), evidence: [minutes.ref, { ...report.ref, relation: 'opposes' }] } })
+    const sink = bytesSink(); await exportArchive(getStore(), sink)
+    const restored = createMemoryStore(); await importArchive(restored, new Blob([sink.bytes().slice()]), { allowWithoutBackup: true })
+    const snapshot = decodeArtifacts(await restored.getKv(ARTIFACTS_KV))
+    const retained = (await restored.getKv<KnowledgeSnapshot>('knowledge.v1'))!
+    expect(projectDecisionHistory(snapshot, retained, page.id)[0].revisions).toEqual(history)
+    await setSourcePolicy(report.source.id, { excluded: true })
+    expect(await timeline()).toEqual([])
+  })
+
   it('builds a real three-source extractive pilot, requires review, and carries exact evidence into accepted context', async () => {
     const inputs = await Promise.all([thought('Amber launch is approved for November 29. The budget review is complete.'), thought('The entropy model requires another experiment. We have not approved its explanation.'), thought('The lighthouse battery reserve is eighteen hours. Keep the source measurement.')])
     const page = await createKnowledgePage({ title: 'Amber lighthouse', kind: 'project', sourceIds: inputs.map((input) => input.source.id), question: 'What was approved and what remains uncertain?' })

@@ -60,7 +60,9 @@ it('filters articles, personal notes and documents, and searches retained source
 it('persists favorites and topic membership while filtering the same retained sources', async () => {
   const { article, note } = await seed(), topic = await createTopic('Local evidence')
   await assignTopics(article.sourceId, [topic.id]); await render()
-  await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Favorite Copper orchard article"]')!.click())
+  const actions = host.querySelector<HTMLElement>('[aria-label="Actions for Copper orchard article"]')!
+  await act(async () => actions.click())
+  await act(async () => [...actions.parentElement!.querySelectorAll('button')].find(control => control.textContent === 'Add to favorites')!.click())
   await filter('Favorites'); expect(titles()).toEqual(['Copper orchard article'])
   expect(useReading.getState().items.find((entry) => entry.sourceId === article.sourceId)?.favorite).toBe(true)
   await filter('All files')
@@ -75,7 +77,8 @@ it('persists favorites and topic membership while filtering the same retained so
 it('creates and renames a folder through the dialog, then removes only its organization while retaining original bytes', async () => {
   const { article } = await seed(), original = await getSourceOriginal(article.sourceId)
   const originalBytes = Array.from(new Uint8Array(await original!.blob.arrayBuffer()))
-  await render(); await act(async () => button('Folder').click())
+  await render(); await act(async () => host.querySelector<HTMLElement>('.personal-library-add summary')!.click())
+  await act(async () => button('New folder').click())
   await input(host.querySelector('dialog input')!, 'Research shelf')
   await act(async () => button('Create page').click())
   const folder = useReading.getState().folders.find((entry) => entry.name === 'Research shelf')!
@@ -119,7 +122,8 @@ it('shows annotated sources in Highlighted and keeps excluded source originals w
 })
 
 it('captures a pasted article and first impression into the local archive while retaining its original envelope', async () => {
-  await render(); await act(async () => button('Save article').click())
+  await render(); await act(async () => host.querySelector<HTMLElement>('.personal-library-add summary')!.click())
+  await act(async () => button('Save article').click())
   const fields = host.querySelectorAll<HTMLInputElement>('dialog input'), areas = host.querySelectorAll<HTMLTextAreaElement>('dialog textarea')
   await input(fields[0], 'A pasted article'); await input(fields[1], 'https://example.org/new-article?utm_source=test')
   await input(areas[0], 'Exact original words.\nA second paragraph 🌍.'); await input(areas[1], 'Why this matters to me.')

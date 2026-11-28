@@ -1,0 +1,65 @@
+.world-research-context {
+  position: absolute;
+  z-index: 3;
+  inset: 108px auto auto clamp(12px, 3vw, 28px);
+  max-inline-size: calc(100% - 24px);
+  color: #ebeee7;
+  background: #0b1525;
+  border: 1px solid #8194b14d;
+  border-radius: 8px;
+  font-size: 13px;
+  pointer-events: auto;
+}
+
+.world-research-context summary {
+  padding: 9px 12px;
+  cursor: pointer;
+}
+
+.world-research-content {
+  display: grid;
+  gap: 10px;
+  inline-size: min(21rem, 100%);
+  max-block-size: max(5rem, calc(100dvh - 330px));
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 12px;
+  border-block-start: 1px solid #8194b14d;
+  overflow-wrap: anywhere;
+}
+
+.world-research-content p,
+.world-research-content h3 {
+  margin: 0;
+}
+
+.world-research-content ul {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.world-research-content li {
+  border-block-start: 1px solid #8194b14d;
+  padding-block-start: 9px;
+}
+
+.world-research-content li div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-block-start: 6px;
+}
+
+.world-research-content a {
+  color: #caddf4;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.world-research-context :is(summary, a):focus-visible {
+  outline: 2px solid #caddf4;
+  outline-offset: 2px;
+}

@@ -1,5 +1,4 @@
-import { passageHref, writingPassages, writingReferenceStructure, type WritingPassage } from '../writing/concepts.ts'
-import type { WritingDocument } from '../writing/types.ts'
+import { passageHref } from '../writing/concepts.ts'
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type PointerEvent, type RefObject } from 'react'
 import { ArrowLeft, ArrowRight, PencilSimple, Compass, ArrowsOut, FileText, Graph, Hash, LinkSimple, MagnifyingGlass, Minus, Plus, X, Pause, Play, PushPin, Crosshair, Path } from '@phosphor-icons/react'
 import { useWorld } from '../app/store.ts'
@@ -9,113 +8,21 @@ import { getStore, getWorldGeneration, isRepoReady, subscribeRepo, useRepoStatus
 import { useKnowledge } from '../knowledge/index.ts'
 import { createWritingFromSource } from '../writing/store.ts'
 import { GraphPresentation, fitGraphCamera, focusGraphNeighborhood, graphCurve, graphTopology, layoutGraph, placeGraphLabels, zoomGraphCamera, type GraphCamera, type GraphFrame, type GraphPosition } from './graphMotion.ts'
-import { buildTypedLinks, LINK_STYLE } from '../world/links/style.ts'
-import type { NodeRecord } from '../domain/types.ts'
-import type { KnowledgeSource } from '../knowledge/types.ts'
+import { buildGraphModel, type GraphModel as Model, type GraphNode as Node } from './graphModel.ts'
 import { assignTopics, connectReading, createTopic, disconnectReading, initializeReading, updateTopic, useReading } from './store.ts'
 import type { ReadingConnection, ReadingItem, ReadingTopic } from './types.ts'
-import { normalizeTopicName, resolveTopics, topicHref } from './topics.ts'
+import { resolveTopics, topicHref } from './topics.ts'
 import './graph.css'
 
-type Endpoint = ReadingConnection['from']
-type Node = { key: string; title: string; kind: 'source' | 'topic'; endpoint: Endpoint | null; source?: KnowledgeSource; writingId?: string; tag?: string }
-type Edge = { id: string; from: string; to: string; label: string; origin: 'assigned' | 'tag' | 'manual' | 'world' | 'writing'; passage?: WritingPassage; writingId?: string; writingHref?: string; connection?: ReadingConnection; worldLink?: { recordId: string; relation: ReadingConnection['relation']; directed: boolean } }
-type Model = { nodes: Node[]; byKey: Map<string, Node>; edges: Edge[]; adjacent: Map<string, Set<string>> }
+export { buildGraphModel } from './graphModel.ts'
+
 type Run = <T>(task: () => Promise<T>, message: string) => Promise<T | null>
 const PAGE_SIZE = 80
 const EDGE_LIMIT = 400
-const endpointKey = (endpoint: Endpoint) => `${endpoint.kind}:${endpoint.id}`
 const fold = (text: string) => text.normalize('NFKC').toLocaleLowerCase().trim()
 const relationLabel = (relation: ReadingConnection['relation']) => relation.replaceAll('-', ' ')
 const errorText = (error: unknown) => error instanceof Error ? error.message : String(error)
 const labels: ReadingConnection['relation'][] = ['related', 'supports', 'contradicts', 'builds-on']
-
-/**
- * Interaction reference: https://obsidian.md/help/plugins/graph (filters, local depth,
- * pan/zoom) and https://obsidian.md/help/links (explicit relationships). This is original
- * SVG/CSS, with no Obsidian code or assets. Lines come only from retained source tags,
- * user-assigned topic membership, and saved manual connections; proximity is not evidence.
- */
-export function buildGraphModel(sources: KnowledgeSource[], topics: ReadingTopic[], items: ReadingItem[], connections: ReadingConnection[], worldRecords: ReadonlyMap<string, NodeRecord> = new Map(), writings: WritingDocument[] = []): Model {
-  const byKey = new Map<string, Node>(), edges = new Map<string, Edge>()
-  const canonical = resolveTopics(sources, topics, items), names = new Map(canonical.map((topic) => [normalizeTopicName(topic.name), topic]))
-  const aliases = new Map<string, string>()
-  for (const topic of canonical) {
-    const key = topic.readingTopicIds.length ? `topic:${topic.id}` : topic.id
-    const saved = topic.readingTopicIds[0]
-    byKey.set(key, { key, title: topic.name, kind: 'topic', endpoint: saved ? { kind: 'topic', id: saved } : null, ...(!saved ? { tag: topic.name } : {}) })
-    for (const alias of topic.aliases) aliases.set(alias.startsWith('tag:') ? alias : `topic:${alias}`, key)
-  }
-  for (const source of sources.filter((entry) => !entry.excluded && !entry.deleted)) {
-    const key = `source:${source.id}`
-    byKey.set(key, { key, title: source.title || 'Untitled source', kind: 'source', source, endpoint: { kind: 'source', id: source.id } })
-    for (const tag of source.tags) {
-      const topic = names.get(normalizeTopicName(tag))
-      if (!topic) continue
-      const target = topic.readingTopicIds.length ? `topic:${topic.id}` : topic.id
-      edges.set(`membership:${key}:${target}`, { id: `membership:${key}:${target}`, from: key, to: target, label: 'source tag', origin: 'tag' })
-    }
-  }
-  for (const item of items) {
-    const from = `source:${item.sourceId}`
-    if (!byKey.has(from)) continue
-    for (const topicId of item.topicIds) {
-      const to = aliases.get(`topic:${topicId}`) ?? `topic:${topicId}`
-      if (byKey.has(to)) edges.set(`membership:${from}:${to}`, { id: `membership:${from}:${to}`, from, to, label: edges.has(`membership:${from}:${to}`) ? 'topic · source tag' : 'assigned topic', origin: 'assigned' })
-    }
-  }
-  for (const connection of connections) {
-    const from = aliases.get(endpointKey(connection.from)) ?? endpointKey(connection.from), to = aliases.get(endpointKey(connection.to)) ?? endpointKey(connection.to)
-    if (from !== to && byKey.has(from) && byKey.has(to)) edges.set(connection.id, { id: connection.id, from, to, label: relationLabel(connection.relation), origin: 'manual', connection })
-  }
-  const sourceForRecord = new Map(sources.filter((source) => !source.deleted && !source.excluded && source.nodeId).map((source) => [source.nodeId!, `source:${source.id}`]))
-  const liveRecords = new Map([...worldRecords].filter(([id, record]) => sourceForRecord.has(id) && record.deletedAt === null && !record.corpusExcluded))
-  for (const link of buildTypedLinks(liveRecords)) {
-    const from = sourceForRecord.get(link.from)!, to = sourceForRecord.get(link.to)!
-    if (!byKey.has(from) || !byKey.has(to)) continue
-    const id = `world:${link.declaredBy}:${link.target}`, directed = LINK_STYLE[link.kind].arrow
-    const relation = link.kind === 'relates' ? 'related' : link.kind === 'derives' || link.kind === 'influenced-by' ? 'builds-on' : link.kind
-    edges.set(id, { id, from, to, label: link.kind === 'derives' ? 'basis for · 3D world' : link.kind === 'influenced-by' ? 'influences · 3D world' : `${LINK_STYLE[link.kind].verb} · 3D world`, origin: 'world', worldLink: { recordId: link.declaredBy, directed, relation } })
-  }
-  for (const doc of writings) {
-    if (doc.archivedAt !== null) continue
-    const published = doc.sourceId && byKey.get('source:' + doc.sourceId)
-    const from = published ? published.key : 'writing:' + doc.id
-    function endpoint(topicId: string) {
-      const to = aliases.get(topicId) ?? aliases.get('topic:' + topicId) ?? topicId
-      if (!byKey.has(to)) return
-      if (published) published.writingId = doc.id
-      else if (!byKey.has(from)) byKey.set(from, { key: from, title: doc.title || 'Untitled writing', kind: 'source', writingId: doc.id, endpoint: null })
-      return to
-    }
-    for (const topicId of doc.topicIds ?? []) {
-      const to = endpoint(topicId)
-      if (!to) continue
-      const id = `membership:${from}:${to}`
-      if (!edges.has(id)) edges.set(id, { id, from, to, label:'assigned topic', origin:'assigned', writingId:doc.id })
-    }
-    for (const passage of writingPassages(doc.content)) {
-      const to = endpoint(passage.topicId)
-      if (!to) continue
-      const id = 'writing:' + doc.id + ':' + passage.id + ':' + passage.part
-      edges.set(id, { id, from, to, label: passage.relation === 'example' ? 'example of' : 'concept passage', origin: 'writing', passage, writingId: doc.id })
-    }
-    for (const { node, at } of writingReferenceStructure(doc.content).atoms) {
-      if (node.type !== 'writingTopicLink' || typeof node.attrs?.topicId !== 'string') continue
-      const to = endpoint(node.attrs.topicId)
-      if (!to) continue
-      const id = 'wiki:' + doc.id + ':' + at
-      edges.set(id, { id, from, to, label:'wiki link', origin:'writing', writingId:doc.id, writingHref:'#/write?doc=' + encodeURIComponent(doc.id) + '&atom=' + at + '&topic=' + encodeURIComponent(node.attrs.topicId) })
-    }
-  }
-  const adjacent = new Map<string, Set<string>>()
-  for (const edge of edges.values()) {
-    if (!adjacent.has(edge.from)) adjacent.set(edge.from, new Set())
-    if (!adjacent.has(edge.to)) adjacent.set(edge.to, new Set())
-    adjacent.get(edge.from)!.add(edge.to); adjacent.get(edge.to)!.add(edge.from)
-  }
-  return { nodes: [...byKey.values()].sort((a, b) => a.title.localeCompare(b.title) || a.key.localeCompare(b.key)), byKey, edges: [...edges.values()], adjacent }
-}
 
 const shortTitle = (title: string) => [...title].length > 28 ? [...title].slice(0, 26).join('').trimEnd() + '…' : title
 const nodeRadius = (count: number, thumbnail: boolean) => thumbnail ? 9 : Math.min(10, 5 + Math.log2(count + 1) * 1.25)
@@ -333,6 +240,7 @@ export default function KnowledgeGraph({ initialSourceId, initialTopicId }: { in
   const selectedReading = selected?.source ? reading.items.find((item) => item.sourceId === selected.source!.id) : undefined
   return <section className="reading-graph" aria-label="Knowledge graph" data-motion={motion ? 'on' : 'off'}>
     <header className="reading-graph-heading"><h2>Knowledge graph</h2>
+      <a className="reading-graph-spatial-link" aria-label="Open this graph in 3D" href={selected ? `#/explore?node=${encodeURIComponent(selected.key)}` : '#/explore'}>Explore in 3D <ArrowRight size={15} aria-hidden="true" /></a>
       <div className="reading-graph-scope" role="group" aria-label="Graph scope">
         <button type="button" aria-pressed={overview || local} onClick={() => filterChanged(() => { setOverview(true); clearSelection(); setQuery(''); setShowSources(true); setShowTopics(true) })}>Focused view</button>
         <button type="button" aria-pressed={!overview && !local} onClick={() => filterChanged(() => { setOverview(false); clearSelection(); setQuery(''); setShowSources(true); setShowTopics(true) })}>All nodes</button>
@@ -404,7 +312,7 @@ function NodeDetails({ node, model, items, topics, preview, headingRef, disabled
     {node.source && <><a className="reading-graph-open" href={`#/library?source=${encodeURIComponent(node.source.id)}`} onClick={(event) => { if (!useKnowledge.getState().sources.some((source) => source.id === node.source!.id && !source.excluded && !source.deleted)) event.preventDefault() }}>Open original source<ArrowRight size={16} aria-hidden="true" /></a>{thumbnail && <GraphThumbnail blobId={thumbnail} radius={0} clipId="" />}<div className="reading-graph-source-actions"><button type="button" disabled={disabled} onClick={() => void run(() => createWritingFromSource(node.source!.id), 'Writing draft opened.').then((doc) => { if (doc) location.hash = `#/write?doc=${encodeURIComponent(doc.id)}` })}>{node.source.externalId?.startsWith('writing:') ? 'Edit document' : 'Write from this source'}<ArrowRight size={14} aria-hidden="true" /></button><a href={`#/library?source=${encodeURIComponent(node.source.id)}&tab=highlights`}>{annotations} {annotations === 1 ? 'highlight' : 'highlights'}</a></div>{preview && <div className="reading-graph-excerpt"><h4>From the original</h4><p className="reading-graph-preview">{preview.slice(0, expandedPreview ? 1600 : 300)}{preview.length > (expandedPreview ? 1600 : 300) ? '…' : ''}</p>{preview.length > 300 && <button type="button" className="reading-graph-excerpt-toggle" aria-expanded={expandedPreview} onClick={() => setExpandedPreview((value) => !value)}>{expandedPreview ? 'Less' : 'Read more of the excerpt'}</button>}</div>}<details className="reading-graph-assignment"><summary>Assigned topics{chosen.length ? ` · ${chosen.length}` : ''}</summary>{chosen.length > 0 && <p className="reading-graph-assigned-names">{topics.filter((topic) => chosen.includes(topic.id)).map((topic) => topic.name).join(' · ')}</p>}{topics.length ? <><label>Find topics<input aria-label="Find topics to assign" value={topicFilter} onChange={(event) => setTopicFilter(event.target.value)} autoComplete="off" /></label><div className="reading-graph-topic-choices">{matchingTopics.slice(0, 60).map((topic) => <label key={topic.id}><input type="checkbox" checked={chosen.includes(topic.id)} disabled={disabled} onChange={(event) => { const next = event.target.checked ? [...chosen, topic.id] : chosen.filter((id) => id !== topic.id); void run(() => assignTopics(node.source!.id, next), 'Topic membership saved.') }} />{topic.name}</label>)}</div>{matchingTopics.length > 60 && <p>Showing 60 topics. Refine the name to find another.</p>}</> : <p>Create a topic below to organize this source.</p>}</details></>}
     {node.tag && <div className="reading-graph-tag-note"><p>This node comes from source metadata. Save it as a topic to add manual relationships.</p><button type="button" disabled={disabled} onClick={() => { void run(() => createTopic(node.title), 'Topic saved.').then((topic) => { if (topic) onSavedTopic(topic) }) }}>Save as topic</button></div>}
     {node.endpoint?.kind === 'topic' && <form className="reading-graph-rename" onSubmit={submitName}><label>Topic name<input aria-label="Topic name" value={name} maxLength={160} onChange={(event) => setName(event.target.value)} /></label><button type="submit" disabled={disabled || !name.trim() || name.trim() === node.title}>Rename</button></form>}
-    <section className="reading-graph-connections"><h4 ref={connectionsHeading} tabIndex={-1}>Connections <span>{edges.length}</span></h4>{edges.length > 10 && <label>Find a connection<input aria-label="Filter node connections" value={connectionQuery} onChange={(event) => { setConnectionQuery(event.target.value); setConnectionPage(0) }} autoComplete="off" /></label>}{matchingEdges.length ? <ul>{matchingEdges.slice(currentConnectionPage * 50, (currentConnectionPage + 1) * 50).map((edge) => { const outgoing = edge.from === node.key; const other = model.byKey.get(outgoing ? edge.to : edge.from)!; return <li key={edge.id}><button type="button" className="reading-graph-neighbor" onClick={() => onSelect(other.key)}><span>{edge.origin === 'manual' ? `${outgoing ? '→' : '←'} ${edge.label}` : edge.label}</span><strong>{other.title}</strong></button>{edge.writingHref && <a className="reading-graph-remove" href={edge.writingHref} aria-label={`Open wiki link in ${model.byKey.get(edge.from)?.title}`}><ArrowRight size={15} /></a>}{edge.worldLink && <a className="reading-graph-remove" aria-label={`Open ${other.title} relationship in 3D`} href={`#/explore?record=${encodeURIComponent(edge.worldLink.recordId)}`}><Path size={15} aria-hidden="true" /></a>}{edge.connection && <button type="button" className="reading-graph-remove" aria-label={`Remove ${edge.label} connection to ${other.title}`} disabled={disabled} onClick={() => { void run(() => disconnectReading(edge.connection!.id), 'Connection removed.').then(() => connectionsHeading.current?.focus({ preventScroll: true })) }}><X size={15} aria-hidden="true" /></button>}</li> })}</ul> : <p>{connectionQuery ? 'No matching connections.' : 'No connections yet. Add a topic or save a relationship below.'}</p>}{lastConnectionPage > 0 && <div className="reading-graph-pagination"><button type="button" disabled={currentConnectionPage === 0} onClick={() => setConnectionPage(currentConnectionPage - 1)}>Previous links</button><span>{currentConnectionPage + 1}/{lastConnectionPage + 1}</span><button type="button" disabled={currentConnectionPage === lastConnectionPage} onClick={() => setConnectionPage(currentConnectionPage + 1)}>Next links</button></div>}</section>
+    <section className="reading-graph-connections"><h4 ref={connectionsHeading} tabIndex={-1}>Connections <span>{edges.length}</span></h4>{edges.length > 10 && <label>Find a connection<input aria-label="Filter node connections" value={connectionQuery} onChange={(event) => { setConnectionQuery(event.target.value); setConnectionPage(0) }} autoComplete="off" /></label>}{matchingEdges.length ? <ul>{matchingEdges.slice(currentConnectionPage * 50, (currentConnectionPage + 1) * 50).map((edge) => { const outgoing = edge.from === node.key; const other = model.byKey.get(outgoing ? edge.to : edge.from)!; return <li key={edge.id}><button type="button" className="reading-graph-neighbor" onClick={() => onSelect(other.key)}><span>{edge.origin === 'manual' ? `${outgoing ? '→' : '←'} ${edge.label}` : edge.label}</span><strong>{other.title}</strong></button>{edge.writingHref && <a className="reading-graph-remove" href={edge.writingHref} aria-label={`Open wiki link in ${model.byKey.get(edge.from)?.title}`}><ArrowRight size={15} /></a>}{edge.worldLink && <a className="reading-graph-remove" aria-label={`Open ${other.title} relationship in 3D`} href={`#/explore?node=${encodeURIComponent(other.key)}`}><Path size={15} aria-hidden="true" /></a>}{edge.connection && <button type="button" className="reading-graph-remove" aria-label={`Remove ${edge.label} connection to ${other.title}`} disabled={disabled} onClick={() => { void run(() => disconnectReading(edge.connection!.id), 'Connection removed.').then(() => connectionsHeading.current?.focus({ preventScroll: true })) }}><X size={15} aria-hidden="true" /></button>}</li> })}</ul> : <p>{connectionQuery ? 'No matching connections.' : 'No connections yet. Add a topic or save a relationship below.'}</p>}{lastConnectionPage > 0 && <div className="reading-graph-pagination"><button type="button" disabled={currentConnectionPage === 0} onClick={() => setConnectionPage(currentConnectionPage - 1)}>Previous links</button><span>{currentConnectionPage + 1}/{lastConnectionPage + 1}</span><button type="button" disabled={currentConnectionPage === lastConnectionPage} onClick={() => setConnectionPage(currentConnectionPage + 1)}>Next links</button></div>}</section>
   </div>
 }
 

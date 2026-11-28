@@ -51,8 +51,12 @@ export function rememberReaderPosition(id: string, top: number): void {
   useWorkspace.setState((s) => ({ readerPositions: Object.fromEntries([...Object.entries(s.readerPositions).filter(([k]) => k !== id), [id, top]].slice(-80)) }))
 }
 
-export function exploreWorkspaceRecord(id: string): void {
-  useWorkspace.setState({ selectedRecordId: id, returnHash: location.hash.startsWith('#/explore') ? useWorkspace.getState().returnHash : location.hash || '#/library' })
+export function exploreWorkspaceRecord(id: string, context: { sourceIds?: readonly string[]; passageId?: string | null } = {}): void {
+  useWorkspace.setState({
+    selectedRecordId: id,
+    returnHash: location.hash.startsWith('#/explore') ? useWorkspace.getState().returnHash : location.hash || '#/library',
+    exploreContext: { recordId: id, sourceIds: [...new Set(context.sourceIds)].slice(0, 1000), passageId: context.passageId ?? null },
+  })
   location.hash = `#/explore?record=${encodeURIComponent(id)}`
 }
 

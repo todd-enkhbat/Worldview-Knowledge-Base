@@ -192,19 +192,34 @@ export function setArtifactJobState(id: string, action: 'pause' | 'resume' | 'ca
   return mutate((snapshot) => { const job = snapshot.jobs.find((entry) => entry.id === id); if (!job) throw new Error('This knowledge job is unavailable.'); job.status = action === 'pause' ? 'paused' : action === 'cancel' ? 'cancelled' : 'queued'; job.updatedAt = Date.now(); if (action === 'resume') job.error = null; activity(snapshot, job.pageId, id, `job-${action}`) }).then(() => schedule())
 }
 
-export function proposeClaim(input: { pageId: string; text: string; evidence: readonly EvidenceRef[]; attributedTo?: Authorship | null; eventAt?: number | null; validFrom?: number | null; validUntil?: number | null }): Promise<ClaimRevision> {
+export function proposeClaim(input: { pageId: string; text: string; evidence: readonly EvidenceRef[]; attributedTo?: Authorship | null; eventAt?: number | null; validFrom?: number | null; validUntil?: number | null; decision?: boolean }): Promise<ClaimRevision> {
   const text = bodyOf(input.text)
   return mutate(async (snapshot, corpus) => {
-    pageOf(snapshot, input.pageId)
-    const evidence = validEvidence(input.evidence, corpus)
+    const page = pageOf(snapshot, input.pageId)
+    if (input.decision && page.kind !== 'project') throw new Error('Decisions must belong to a project page.')
+    const evidence = validEvidence(input.evidence, corpus, { allowEmpty: input.decision })
     validateInterval(input)
     const fp = await claimFingerprint(input.pageId, text, input.attributedTo ?? null)
     if (snapshot.tombstones.some((item) => item.pageId === input.pageId && item.fingerprint === fp)) throw new Error('This exact interpretation was rejected or withdrawn. Write an explicit correction rather than silently reviving it.')
     let claim = snapshot.claims.find((item) => item.pageId === input.pageId && item.fingerprint === fp)
     if (!claim) { claim = { id: uid(), pageId: input.pageId, currentRevisionId: null, fingerprint: fp, createdAt: Date.now() }; snapshot.claims.push(claim) }
+    if (input.decision) claim.decision = true
     const revision = makeClaimRevision(claim, text, evidence, corpus, { ...input, manual: true, inputHash: '' })
     snapshot.claimRevisions.push(revision); activity(snapshot, input.pageId, revision.id, 'claim-proposed')
     return revision
+  })
+}
+
+export function trackProjectDecision(claimId: string): Promise<void> {
+  return mutate((snapshot, corpus) => {
+    const claim = snapshot.claims.find(item => item.id === claimId)
+    if (!claim || !claim.currentRevisionId) throw new Error('Accept a statement before tracking it as a decision.')
+    const page = pageOf(snapshot, claim.pageId)
+    const view = artifactPageView(snapshot, corpus, page.id)
+    if (page.kind !== 'project' || !view?.claims.some(item => item.claim.id === claimId)) throw new Error('This statement is unavailable on an active project page.')
+    if (claim.decision) return
+    claim.decision = true
+    activity(snapshot, page.id, claim.id, 'decision-tracked')
   })
 }
 
@@ -221,7 +236,7 @@ export function reviseClaim(claimId: string, input: { text: string; evidence: re
   return mutate((snapshot, corpus) => {
     const claim = snapshot.claims.find((item) => item.id === claimId); if (!claim) throw new Error('This claim is unavailable.')
     pageOf(snapshot, claim.pageId)
-    const revision = makeClaimRevision(claim, text, validEvidence(input.evidence, corpus), corpus, { ...input, manual: true, inputHash: '' })
+    const revision = makeClaimRevision(claim, text, validEvidence(input.evidence, corpus, { allowEmpty: claim.decision }), corpus, { ...input, manual: true, inputHash: '' })
     snapshot.claimRevisions.push(revision); activity(snapshot, claim.pageId, revision.id, 'claim-correction-proposed')
     return revision
   })
@@ -233,11 +248,14 @@ export function reviewClaim(id: string, action: 'accept' | 'reject' | 'undo' | '
     const claim = snapshot.claims.find((item) => item.id === revision.claimId)!; pageOf(snapshot, claim.pageId)
     const fp = await claimFingerprint(claim.pageId, revision.text, revision.attributedTo)
     const undoWithdrawal = action === 'undo' && revision.status === 'withdrawn'
+    const allowEmpty = claim.decision && revision.manual
     if (action === 'accept') {
+      if (claim.decision && (revision.status !== 'proposed' || revision.previousRevisionId !== claim.currentRevisionId)) throw new Error('The decision changed while this revision was in review. Propose an update from the current wording.')
       if (snapshot.tombstones.some((item) => item.pageId === claim.pageId && item.fingerprint === fp && item.reason === 'withdrawn')) throw new Error('This interpretation was withdrawn. Propose a different explicit correction.')
-      validEvidence(revision.evidence, corpus, { current: true }); revision.status = 'accepted'; revision.acceptedAt = Date.now(); claim.currentRevisionId = revision.id
+      validEvidence(revision.evidence, corpus, { current: true, allowEmpty }); revision.status = 'accepted'; revision.acceptedAt = Date.now(); claim.currentRevisionId = revision.id
     } else if (action === 'undo') {
-      if (revision.status === 'withdrawn') { validEvidence(revision.evidence, corpus, { current: true }); revision.status = 'accepted'; claim.currentRevisionId = revision.id }
+      if (claim.decision && undoWithdrawal && claim.currentRevisionId !== null) throw new Error('A newer decision has already been accepted. Propose an update from its current wording.')
+      if (revision.status === 'withdrawn') { validEvidence(revision.evidence, corpus, { current: true, allowEmpty }); revision.status = 'accepted'; claim.currentRevisionId = revision.id }
       else { revision.status = 'proposed'; if (claim.currentRevisionId === id) claim.currentRevisionId = revision.previousRevisionId }
       snapshot.tombstones = snapshot.tombstones.filter((item) => !(item.pageId === claim.pageId && (item.fingerprint === fp || undoWithdrawal && item.fingerprint === claim.fingerprint) && (undoWithdrawal || item.reason === 'rejected')))
     } else {
@@ -357,7 +375,7 @@ async function generationStage(): Promise<boolean> {
       if (snapshot.tombstones.some((tombstone) => tombstone.pageId === page.id && tombstone.fingerprint === fp)) continue
       let claim = snapshot.claims.find((claim) => claim.pageId === page.id && claim.fingerprint === fp)
       if (!claim) { claim = { id: uid(), pageId: page.id, currentRevisionId: null, fingerprint: fp, createdAt: Date.now() }; snapshot.claims.push(claim) }
-      if (snapshot.claimRevisions.some((entry) => entry.claimId === claim!.id && (entry.inputHash === job.inputHash || entry.manual && entry.status === 'accepted'))) continue
+      if (claim.decision || snapshot.claimRevisions.some((entry) => entry.claimId === claim!.id && (entry.inputHash === job.inputHash || entry.manual && entry.status === 'accepted'))) continue
       snapshot.claimRevisions.push(makeClaimRevision(claim, text, [{ ...ref, relation: 'supports' }], corpus, { attributedTo: passage.role, manual: false, inputHash: job.inputHash }))
     }
     job.status = 'complete'; job.outputRevisionId = revision.id; job.error = null

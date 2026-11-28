@@ -1,6 +1,6 @@
 import type { RetrievalEngine } from '../knowledge/types.ts'
 
-export const WORKSPACE_SECTIONS = ['today', 'write', 'search', 'library', 'bookshelf', 'quotes', 'people', 'maps', 'graph', 'topics', 'knowledge', 'review', 'sources','vocabulary','applications'] as const
+export const WORKSPACE_SECTIONS = ['today', 'todos', 'write', 'search', 'library', 'bookshelf', 'quotes', 'people', 'maps', 'graph', 'topics', 'knowledge', 'review', 'sources','vocabulary','applications'] as const
 export type WorkspaceSection = typeof WORKSPACE_SECTIONS[number]
 
 export interface WorkspaceContext {
@@ -11,6 +11,7 @@ export interface WorkspaceContext {
   selectedPassageId: string | null
   selectedSourceId: string | null
   returnHash: string
+  exploreContext: { recordId: string; sourceIds: string[]; passageId: string | null } | null
   lastSection: WorkspaceSection
   readerPositions: Record<string, number>
   draft: string
@@ -32,6 +33,7 @@ export function initialWorkspaceContext(): WorkspaceContext {
     selectedPassageId: null,
     selectedSourceId: null,
     returnHash: '#/today',
+    exploreContext: null,
     lastSection: 'today',
     readerPositions: {},
     draft: '',
@@ -47,6 +49,7 @@ export function validateWorkspaceContext(value: unknown): WorkspaceContext {
   const base = initialWorkspaceContext()
   if (!value || typeof value !== 'object') return base
   const v = value as Partial<WorkspaceContext>
+  const explore = v.exploreContext
   return {
     ...base,
     retrievalEngine: ['local', 'qmd-lexical', 'qmd-hybrid'].includes(String(v.retrievalEngine)) ? v.retrievalEngine! : 'local',
@@ -55,7 +58,11 @@ export function validateWorkspaceContext(value: unknown): WorkspaceContext {
     selectedRecordId: typeof v.selectedRecordId === 'string' ? v.selectedRecordId : null,
     selectedPassageId: typeof v.selectedPassageId === 'string' ? v.selectedPassageId : null,
     selectedSourceId: typeof v.selectedSourceId === 'string' ? v.selectedSourceId : null,
-    returnHash: typeof v.returnHash === 'string' && /^#\/(today|write|search|library|bookshelf|quotes|people|maps|graph|topics|knowledge|review|sources)(?:[?]|$)/.test(v.returnHash) ? v.returnHash : base.returnHash,
+    returnHash: typeof v.returnHash === 'string' && WORKSPACE_SECTIONS.some((section) => v.returnHash?.split('?')[0] === `#/${section}`) ? v.returnHash : base.returnHash,
+    exploreContext: explore && typeof explore.recordId === 'string' ? {
+      recordId: explore.recordId, passageId: typeof explore.passageId === 'string' ? explore.passageId : null,
+      sourceIds: Array.isArray(explore.sourceIds) ? explore.sourceIds.filter((id): id is string => typeof id === 'string').slice(0, 1000) : [],
+    } : null,
     lastSection: WORKSPACE_SECTIONS.includes(v.lastSection as WorkspaceSection) ? v.lastSection as WorkspaceSection : 'today',
     readerPositions: v.readerPositions && typeof v.readerPositions === 'object' ? Object.fromEntries(Object.entries(v.readerPositions).filter(([, n]) => typeof n === 'number' && Number.isFinite(n) && n >= 0).slice(-80)) : {},
     draft: typeof v.draft === 'string' ? v.draft : '',

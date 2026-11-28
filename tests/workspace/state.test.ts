@@ -26,6 +26,8 @@ describe('knowledge workspace navigation', () => {
     expect(parseAppRoute('')).toBe('today')
     expect(parseAppRoute('#/library?record=note')).toBe('library')
     expect(parseAppRoute('#/search')).toBe('search')
+    expect(parseAppRoute('#/todos')).toBe('todos')
+    expect(validateWorkspaceContext({ lastSection: 'todos', returnHash: '#/todos' })).toMatchObject({ lastSection: 'todos', returnHash: '#/todos' })
     expect(parseAppRoute('#/knowledge?page=topic')).toBe('knowledge')
     expect(parseAppRoute('#/explore?record=note')).toBe('world')
     expect(parseAppRoute('#/lab/perf')).toBe('perf')

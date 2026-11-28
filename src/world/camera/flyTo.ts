@@ -4,6 +4,7 @@ import { useApp } from '../../app/store.ts'
 import type { Vec3 } from '../../domain/types.ts'
 import { readPose } from '../poses.ts'
 import { stopOrbitMotion } from './orbitMotion.ts'
+import { cancelCameraFlight, moveOrbitCamera } from './cameraFlight.ts'
 
 // Programmatic camera moves, callable from outside the Canvas (editor after save, Library,
 // Cmd+K palette). The orbit CameraControls only exist while the rig is in orbit, so a fly
@@ -20,7 +21,6 @@ export interface FlyToOptions {
 
 let controls: CameraControlsImpl | null = null
 let pending: { point: Vector3; opts: FlyToOptions } | null = null
-
 /** Last orbit target, kept when OrbitRig unmounts (third person starts from its height). */
 export const lastOrbitTarget = new Vector3()
 /** Orbit distance when OrbitRig last unmounted; first person hands back at this range. */
@@ -55,6 +55,7 @@ export function getOrbitControls(): CameraControlsImpl | null {
 /** Called by OrbitRig on mount/unmount. Applies a fly that was waiting for the controls. */
 export function registerOrbitControls(c: CameraControlsImpl | null): void {
   if (c === null && controls) {
+    cancelCameraFlight()
     controls.getTarget(lastOrbitTarget)
     lastOrbitDistance = controls.distance
   }
@@ -77,7 +78,7 @@ const tmpDir = new Vector3()
 
 function applyFly(c: CameraControlsImpl, point: Vector3, opts: FlyToOptions): void {
   if (opts.from) tmpDir.set(opts.from[0], opts.from[1], opts.from[2])
-  else tmpDir.subVectors(c.getPosition(tmpPos, true), c.getTarget(tmpTarget, true))
+  else tmpDir.subVectors(c.getPosition(tmpPos, false), c.getTarget(tmpTarget, false))
   if (tmpDir.lengthSq() < 1e-8) tmpDir.copy(FALLBACK_DIR)
   tmpDir.normalize()
   if (tmpDir.y < MIN_ELEVATION) {
@@ -88,7 +89,7 @@ function applyFly(c: CameraControlsImpl, point: Vector3, opts: FlyToOptions): vo
   }
   const d = Math.min(Math.max(opts.distance ?? DEFAULT_DISTANCE, c.minDistance), c.maxDistance)
   tmpPos.copy(point).addScaledVector(tmpDir, d)
-  void c.setLookAt(tmpPos.x, tmpPos.y, tmpPos.z, point.x, point.y, point.z, opts.transition ?? true)
+  moveOrbitCamera(c, [tmpPos.x, tmpPos.y, tmpPos.z], [point.x, point.y, point.z], opts.transition)
 }
 
 /**

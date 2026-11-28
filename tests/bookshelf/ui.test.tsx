@@ -36,7 +36,7 @@ async function until(check: () => boolean) {
 
 it('starts honestly empty and adds a customized book with its recommender and own details through the real editor', async () => {
   await render(); expect(useBookshelf.getState().books).toEqual([])
-  expect(host.textContent).toContain('Make room for the next good idea.')
+  expect(host.textContent).toContain('No books yet')
   await act(async () => button('Add a book').click()); await until(() => !!host.querySelector('dialog'))
   await act(async () => button('Identify my copy · enter details or add a cover').click())
   await input(host.querySelector<HTMLInputElement>('input[placeholder="The title you want to keep"]')!, 'A deliberate reading choice')
@@ -60,7 +60,7 @@ it('keeps books and articles separate, filters reading stages and protects an un
   await act(async () => host.querySelector<HTMLButtonElement>(`[aria-label="Open details for ${book.title}"]`)!.click()); await until(() => !!host.querySelector('dialog'))
   await act(async () => button('Edition details').click())
   await input(host.querySelector<HTMLTextAreaElement>('textarea[placeholder="What stayed with you? What would you return to?"]')!, 'An unsaved observation worth keeping')
-  await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Close book details"]')!.click())
+  await act(async () => host.querySelector('dialog')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
   expect(host.querySelector('.bookshelf-conflict')?.textContent).toContain('Keep your changes before leaving?')
   expect(host.querySelector<HTMLTextAreaElement>('textarea[placeholder="What stayed with you? What would you return to?"]')?.value).toBe('An unsaved observation worth keeping')
   await act(async () => button('Keep editing').click())

@@ -1,0 +1,16 @@
+.knowledge-workbench .today-continue { min-width: 0; }
+.knowledge-workbench .today-resume-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 208px), 1fr)); gap: 10px; margin: 0; padding: 0; list-style: none; }
+.knowledge-workbench .today-resume-list li { display: flex; min-width: 0; }
+.knowledge-workbench .today-resume-list :is(a, button) { display: grid; align-content: start; gap: 4px; width: 100%; padding: 12px 14px; border: 1px solid var(--kb-line); border-radius: 8px; background: transparent; color: var(--kb-text); text-align: left; text-decoration: none; cursor: pointer; font: inherit; }
+.knowledge-workbench .today-resume-list :is(a, button):is(:hover, :focus-visible) { background: var(--kb-hover); }
+.knowledge-workbench .today-resume-list :is(a, button) span { color: var(--kb-muted); font-size: 12px; }
+.knowledge-workbench .today-resume-list :is(a, button) strong { overflow-wrap: anywhere; font-size: 14px; font-weight: 600; }
+.knowledge-workbench .today-continue-empty { margin: 0; color: var(--kb-muted); font-size: 14px; }
+.knowledge-workbench .today-capture-issue { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 6px 16px; margin: 0 0 12px; padding: 10px 12px; border-radius: 6px; background: var(--kb-panel); color: var(--kb-text); font-size: 13px; text-decoration: none; }
+.knowledge-workbench .today-capture-issue span { text-decoration: underline; text-underline-offset: 3px; }
+.today-shared-text {
+  max-block-size: 16rem;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}

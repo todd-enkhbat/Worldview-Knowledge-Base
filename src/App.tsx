@@ -9,12 +9,12 @@ import { initializeWorkspacePersistence } from './workspace/persistence.ts'
 import { WORKSPACE_SECTIONS, workspaceScopeForAccount } from './workspace/state.ts'
 import { initialWorkspaceTheme } from './workspace/appearance.ts'
 
-// Daily routes open without WebGL; #/explore retains the full world, alongside the lab routes.
+// Daily routes open without WebGL; #/explore opens the spatial knowledge graph.
 // Static hosting needs no server rewrites.
 const parseHash = (hash: string): AppRoute => parseAppRoute(hash, import.meta.env.DEV)
 
 const WorldPage = lazy(() => import('./world/WorldPage.tsx'))
-const ExploreBridge = lazy(() => import('./workspace/ExploreBridge.tsx'))
+const SpatialGraphPage = lazy(() => import('./world/SpatialGraphPage.tsx'))
 const Workbench = lazy(() => import('./workspace/Workbench.tsx'))
 const LabPage = lazy(() => import('./lab/LabPage.tsx'))
 const PerfBench = lazy(() => import('./lab/PerfBench.tsx'))
@@ -47,6 +47,9 @@ export default function App() {
   const auth = useAuth((s) => s.state)
   const userId = useAuth((s) => s.user?.id)
   const ready = useRepoStatus((s) => s.ready)
+  const [path, query] = hash.split('?')
+  const exploreOptions = new URLSearchParams(query)
+  const legacyScene = path === '#/world' || exploreOptions.get('view') === 'scene' || exploreOptions.has('record')
   const workspaceRoute = WORKSPACE_SECTIONS.find((section) => section === route)
   useEffect(() => {
     if (ready && auth !== 'signed-out') void initializeWorkspacePersistence(workspaceScopeForAccount(userId, location.search, import.meta.env.DEV))
@@ -55,7 +58,7 @@ export default function App() {
 
   return (
     <Suspense fallback={<Boot />}>
-      {route === 'world' && <ExploreBoundary key={hash}><WorldPage /><ExploreBridge hash={hash} /></ExploreBoundary>}
+      {route === 'world' && <ExploreBoundary key={hash}>{legacyScene ? <WorldPage hash={hash} /> : <SpatialGraphPage hash={hash} />}</ExploreBoundary>}
       {workspaceRoute && <WorkspaceBoundary key={userId ?? 'local'}><Workbench section={workspaceRoute} hash={hash} /></WorkspaceBoundary>}
       {route === 'lab' && <LabPage />}
       {route === 'perf' && <PerfBench />}

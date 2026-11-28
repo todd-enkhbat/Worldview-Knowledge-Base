@@ -141,10 +141,17 @@ function EditorSession({ content, onChange, ariaLabel, variant = 'document', edi
         if (/<(?:img|iframe|video|audio|object|embed|svg)\b/i.test(html)) setNotice('Pasted remote media was omitted. Upload a local file or use a video link.')
         return sanitizeWritingPasteHTML(html)
       },
-      handleDOMEvents: {contextmenu(view,event) {
-        if(view.state.selection.empty || !activeEditor.current) return false
-        event.preventDefault();updateOverlays(activeEditor.current);requestAnimationFrame(()=>conceptButton.current?.focus());return true
-      }},
+      handleDOMEvents: {
+        keydown(view, event) {
+          // Skip ProseMirror's parent-node shortcut when the notebook dialog can handle Escape.
+          return notebook && event.key === 'Escape' && !event.isComposing && view.state.selection.empty &&
+            !slashState.current && !urlInput.current && !!view.dom.closest('dialog[open]')
+        },
+        contextmenu(view,event) {
+          if(view.state.selection.empty || !activeEditor.current) return false
+          event.preventDefault();updateOverlays(activeEditor.current);requestAnimationFrame(()=>conceptButton.current?.focus());return true
+        },
+      },
       handleKeyDown(_view, event) {
         if (conceptButton.current && !event.isComposing) {
           if ((event.metaKey || event.ctrlKey) && event.shiftKey && !event.altKey && event.key.toLowerCase() === 'k') {

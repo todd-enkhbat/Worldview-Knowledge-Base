@@ -4,7 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createMemoryStore } from '../../src/data/memoryStore.ts'
 import { bytesSink, exportArchive, importArchive } from '../../src/data/archive.ts'
 import { closeRepo, completeFirstRun, initRepo, useRepoStatus } from '../../src/data/repo.ts'
-import { addInvestigationQuestion, archiveInvestigation, COLLECTIONS_KV, initializeCollections, openInvestigation, removeInvestigationQuestion, renameInvestigation, saveInvestigation, updateInvestigationContext, useCollections, type CollectionsSnapshot } from '../../src/workspace/collections.ts'
+import { createKnowledgePage } from '../../src/knowledge/artifacts/index.ts'
+import { addInvestigationQuestion, archiveInvestigation, COLLECTIONS_KV, initializeCollections, linkInvestigationProject, openInvestigation, removeInvestigationQuestion, renameInvestigation, saveInvestigation, updateInvestigationContext, useCollections, type CollectionsSnapshot } from '../../src/workspace/collections.ts'
 import { restoreWorkspaceContext, useWorkspace } from '../../src/workspace/state.ts'
 
 beforeEach(async () => {
@@ -20,6 +21,20 @@ async function open(store = createMemoryStore()) {
 }
 
 describe('named investigations', () => {
+  it('links an active project without replacing the saved investigation scope', async () => {
+    const store = await open()
+    useWorkspace.setState({ query: 'Where did the decision change?', sourceIds: ['saved-source'] })
+    const item = await saveInvestigation('Pilot investigation')
+    const project = await createKnowledgePage({ title: 'Pilot scope', kind: 'project' })
+    const topic = await createKnowledgePage({ title: 'A separate topic', kind: 'topic' })
+    await linkInvestigationProject(item.id, project.id)
+    await expect(linkInvestigationProject(item.id, topic.id)).rejects.toThrow(/active project/)
+    const snapshot = (await store.getKv<CollectionsSnapshot>(COLLECTIONS_KV))!
+    expect(snapshot.collections[0]).toMatchObject({ knowledgePageId: project.id, query: item.query, sourceIds: item.sourceIds })
+    await linkInvestigationProject(item.id, null)
+    expect(useCollections.getState().collections[0].knowledgePageId).toBeUndefined()
+  })
+
   it('retains the exact question and source/date/author filters across reload and reopens them', async () => {
     const store = await open()
     useWorkspace.setState({ query: 'What changed in the storage decision?', sourceIds: ['source-a', 'source-b'], role: 'human', sourceKind: 'claude', authoredAfter: '2026-10-01', authoredBefore: '2026-11-22' })

@@ -1,3 +1,4 @@
+import { sceneMotionEnabled } from '../camera/cameraFlight.ts'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Html } from '@react-three/drei'
 import { useFrame, type ThreeEvent } from '@react-three/fiber'
@@ -127,7 +128,7 @@ export function KnowledgeGround() {
   useEffect(() => () => { beams.geometry.dispose(); beams.material.dispose() }, [beams])
 
   useFrame(({ camera, clock, size, gl }, delta) => {
-    if (useApp.getState().view.flow) flowTime.current += Math.min(delta, .1)
+    if (sceneMotionEnabled()) flowTime.current += Math.min(delta, .1)
     const t = flowTime.current
     const table = getPoseTable()
     const attr = beams.geometry.getAttribute('position') as BufferAttribute

@@ -219,7 +219,7 @@ export function runShortcut(id: ShortcutId): void {
 }
 
 /** Installs the global HUD keys on window (bubble phase, like the camera rig). Mount once. */
-export function useGlobalShortcuts(): void {
+export function useGlobalShortcuts(openRecords?: (search?: boolean) => void): void {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented) return
@@ -234,9 +234,10 @@ export function useGlobalShortcuts(): void {
       })
       if (!id) return
       e.preventDefault()
-      runShortcut(id)
+      if (id === 'palette' && openRecords && !isModalOpen(app)) openRecords(true)
+      else runShortcut(id)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [])
+  }, [openRecords])
 }

@@ -1,0 +1,12 @@
+:root {
+  --wv-evergreen: #225f50;
+  --wv-lavender: #68538e;
+  --wv-lapis: #38628a;
+  --wv-clay: #86522e;
+  --wv-night: #232839;
+  --wv-night-ink: #fffaf7;
+  --wv-night-muted: #eadfed;
+  --wv-night-gradient: radial-gradient(ellipse at 98% 4%, #355f65 0%, transparent 69%),
+    radial-gradient(ellipse at 5% 116%, #594364 0%, transparent 72%), var(--wv-night);
+  --wv-press-ease: cubic-bezier(.22, 1, .36, 1);
+}

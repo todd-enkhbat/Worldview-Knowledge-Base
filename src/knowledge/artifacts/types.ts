@@ -17,6 +17,7 @@ export interface PageRevision {
 }
 export interface Claim {
   id: string; pageId: string; currentRevisionId: string | null; fingerprint: string; createdAt: number
+  decision?: true
 }
 export interface ClaimRevision {
   id: string; claimId: string; previousRevisionId: string | null; text: string

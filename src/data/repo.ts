@@ -747,30 +747,50 @@ export function retypeNode(id: string, archetype: Archetype): Promise<NodeRecord
  * nudged to keep σ against the already-placed ones, in id order, so the result does not
  * depend on the input order. Toasts `label` with an Undo that restores every old anchor.
  */
+export function planReanchoring(targets: ReadonlyMap<string, readonly [number, number]>) {
+  const opts = placementOpts(requireSettings())
+  const { nodes, revision } = useWorld.getState()
+  const placed: PlacedAnchor[] = toPlacedAnchors([...nodes.values()].filter((node) => !targets.has(node.id)), opts)
+  const moves: { id: string; title: string; from: NodeRecord['anchorXZ']; to: NodeRecord['anchorXZ'] }[] = []
+  for (const id of [...targets.keys()].sort()) {
+    const prev = findLive(id)
+    const want = targets.get(id)!
+    const y = anchorY(prev, opts)
+    const xz = nudgeAnchor([quantize(want[0]), quantize(want[1])], y, placed, { selfId: id, seed: fnv1a32(id), minRadius: minRadiusFor(prev.archetype) })
+    if (!xz) {
+      placed.push({ id, anchorXZ: prev.anchorXZ, y })
+      continue
+    }
+    placed.push({ id, anchorXZ: xz, y })
+    if (xz[0] !== prev.anchorXZ[0] || xz[1] !== prev.anchorXZ[1]) {
+      moves.push({ id, title: prev.title, from: [...prev.anchorXZ], to: xz })
+    }
+  }
+  return { revision, generation: replacementGeneration, moves }
+}
+
+type ReanchorPlan = ReturnType<typeof planReanchoring>
+
 export function reanchorNodes(targets: ReadonlyMap<string, readonly [number, number]>, label = 'Re-anchored'): Promise<NodeRecord[]> {
+  return saveReanchoring(() => planReanchoring(targets), label)
+}
+
+export function applyReanchorPlan(plan: ReanchorPlan, label: string): Promise<NodeRecord[]> {
+  return saveReanchoring(() => plan, label)
+}
+
+function saveReanchoring(getPlan: () => ReanchorPlan, label: string): Promise<NodeRecord[]> {
+  const expectedStore = repo().store
   return run(async () => {
     requireWriter()
-    const settings = requireSettings()
+    const plan = getPlan()
+    if (expectedStore !== repo().store || plan.generation !== replacementGeneration || plan.revision !== useWorld.getState().revision) {
+      throw new Error('The workspace changed. Preview the layout again before applying it.')
+    }
     const { store, now: clock } = repo()
     const now = clock()
-    const opts = placementOpts(settings)
-    const live = [...useWorld.getState().nodes.values()]
-    const moving = new Set(targets.keys())
-    // Fixed nodes first; movers are placed one by one against everything placed so far.
-    const placed: PlacedAnchor[] = toPlacedAnchors(live.filter((n) => !moving.has(n.id)), opts)
-    const before = new Map<string, [number, number]>()
-    const next: NodeRecord[] = []
-    for (const id of [...moving].sort()) {
-      const prev = findLive(id)
-      const want = targets.get(id)!
-      const y = anchorY(prev, opts)
-      const xz = nudgeAnchor([quantize(want[0]), quantize(want[1])], y, placed, { selfId: id, seed: fnv1a32(id), minRadius: minRadiusFor(prev.archetype) })
-      if (!xz) continue
-      placed.push({ id, anchorXZ: xz, y })
-      if (xz[0] === prev.anchorXZ[0] && xz[1] === prev.anchorXZ[1]) continue
-      before.set(id, [prev.anchorXZ[0], prev.anchorXZ[1]])
-      next.push({ ...prev, anchorXZ: xz, updatedAt: now })
-    }
+    const before = new Map(plan.moves.map(({ id, from }) => [id, from]))
+    const next = plan.moves.map(({ id, to }) => ({ ...findLive(id), anchorXZ: to, updatedAt: now }))
     if (next.length === 0) return []
     await commit(next, () => store.putNodes(next))
     useApp.getState().pushToast({

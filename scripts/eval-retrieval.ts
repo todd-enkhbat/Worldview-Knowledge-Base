@@ -1,11 +1,15 @@
 import { DatabaseSync } from 'node:sqlite'
-import { readFile, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { KnowledgeIndex } from '../server/knowledgeIndex.ts'
+import { SqliteKnowledgeStore } from '../server/knowledgeStore.ts'
 import { rankKnowledge } from '../src/knowledge/retrieval.ts'
 import { eligibleEvidence } from '../src/knowledge/evidencePolicy.ts'
 import { buildEvidencePacket } from '../src/knowledge/contextPacket.ts'
 import { artifactContext } from '../src/knowledge/artifacts/policy.ts'
+import { diffKnowledgeSnapshots } from '../src/knowledge/storage.ts'
 import { emptyArtifacts, type ArtifactSnapshot, type PageKind, type ReviewState } from '../src/knowledge/artifacts/types.ts'
 import type { Authorship, KnowledgeSnapshot, SearchFilters, SearchHit, SourceKind } from '../src/knowledge/types.ts'
 
@@ -92,13 +96,13 @@ function exactCitation(hit: SearchHit, snapshot: KnowledgeSnapshot): boolean {
 }
 
 /** Runs production lexical and packet code only. No model, remote service or upstream installer is invoked. */
-export async function runRetrievalEvaluation(input?: RetrievalEvalFixture) {
+export async function runRetrievalEvaluation(input?: RetrievalEvalFixture, options: { databasePath?: string; fixturePath?: string } = {}) {
   const fixture = input ?? await loadRetrievalEvalFixture()
   const original = buildEvalCorpus(fixture), artifacts = buildEvalArtifacts(fixture, original)
   const engines: EvalEngineResult[] = []
   for (const engine of ['sqlite-fts5', 'portable-lexical'] as const) {
-    const database = engine === 'sqlite-fts5' ? new DatabaseSync(':memory:') : null
-    database?.exec('CREATE TABLE nodes (id TEXT PRIMARY KEY, deleted_at INTEGER)')
+    const database = engine === 'sqlite-fts5' ? new DatabaseSync(options.databasePath ?? ':memory:') : null
+    database?.exec('CREATE TABLE IF NOT EXISTS nodes (id TEXT PRIMARY KEY, deleted_at INTEGER)')
     const index = database ? new KnowledgeIndex(database) : null
     const search = (snapshot: KnowledgeSnapshot, question: EvalQuestion, filters: SearchFilters) => {
       if (!index) return rankKnowledge(snapshot, question.query, filters)
@@ -112,6 +116,12 @@ export async function runRetrievalEvaluation(input?: RetrievalEvalFixture) {
         const cached = question.cachedBeforeMutation ? search(original, question, filters) : []
         const cachedContext = question.cachedBeforeMutation ? artifactContext(artifacts, original, { sourceIds: filters.sourceIds }) : []
         if (question.mutation) { const { sourceId, ...policy } = question.mutation; Object.assign(snapshot.sources.find((source) => source.id === sourceId)!, policy); snapshot.revision++ }
+        if (database && options.databasePath) {
+          const store = new SqliteKnowledgeStore(database)
+          store.replace(original)
+          if (question.mutation && !store.commit(diffKnowledgeSnapshots(original, snapshot), { expectedRevision: original.revision, idempotencyKey: question.id })) throw new Error('Fixture policy change could not be saved.')
+          Object.assign(snapshot, store.read())
+        }
         const hits = search(snapshot, question, filters)
         const candidates = [...new Map([...hits, ...cached].map((hit) => [hit.id, hit])).values()]
         const context = [...new Map([...artifactContext(artifacts, snapshot, { sourceIds: filters.sourceIds }), ...cachedContext].map((entry) => [entry.id, entry])).values()]
@@ -144,12 +154,21 @@ export async function runRetrievalEvaluation(input?: RetrievalEvalFixture) {
     const abstentions = cases.filter((result) => Object.keys(result.relevantSources).length === 0)
     engines.push({ engine, questions: cases.length, rankedQuestions: ranked.length, abstentionQuestions: abstentions.length, correctAbstentions: abstentions.filter((result) => result.retrievedPassageIds.length === 0).length, recallAtK: average('recall'), mrrAtK: average('reciprocalRank'), ndcgAtK: average('ndcg'), invariantChecks: cases.reduce((sum, result) => sum + Object.keys(result.checks).length, 0), invariantFailures: cases.reduce((sum, result) => sum + result.failures.length, 0), cases })
   }
-  return { schemaVersion: 1, fixture: 'tests/fixtures/retrieval-eval.v1.json', description: fixture.description, cutoff: fixture.cutoff, generatedAt: new Date().toISOString(), limitations: ['Synthetic fixtures measure regression behavior on known evidence, not real-user retrieval quality.', 'No semantic model or answer generation is evaluated; answer faithfulness and belief correctness remain unassessed.', 'Source-level rankings deduplicate passages by full source identity. MRR and graded nDCG use cutoff 5. Empty relevance cases are scored as abstention, outside ranking averages.', 'Context delivery means the exact approved text is present in the rendered provider packet; it does not claim that a model attended to or followed it.'], engines }
+  return { schemaVersion: 1, fixture: options.fixturePath ?? 'tests/fixtures/retrieval-eval.v1.json', description: fixture.description, cutoff: fixture.cutoff, generatedAt: new Date().toISOString(), limitations: ['Synthetic fixtures measure regression behavior on known evidence, not real-user retrieval quality.', 'No semantic model or answer generation is evaluated; answer faithfulness and belief correctness remain unassessed.', 'Source-level rankings deduplicate passages by full source identity. MRR and graded nDCG use cutoff 5. Empty relevance cases are scored as abstention, outside ranking averages.', 'Context delivery means the exact approved text is present in the rendered provider packet; it does not claim that a model attended to or followed it.'], engines }
+}
+
+export async function runPersistedRetrievalEvaluation() {
+  const fixturePath = 'tests/fixtures/retrieval-persisted.v1.json'
+  const fixture = JSON.parse(await readFile(new URL(`../${fixturePath}`, import.meta.url), 'utf8')) as RetrievalEvalFixture
+  const folder = await mkdtemp(join(tmpdir(), 'worldview-retrieval-'))
+  try { return await runRetrievalEvaluation(fixture, { databasePath: join(folder, 'workspace.sqlite'), fixturePath }) }
+  finally { await rm(folder, { recursive: true, force: true }) }
 }
 
 if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
-  const report = await runRetrievalEvaluation()
-  const output = process.argv[2] ?? fileURLToPath(new URL('../docs/evaluations/retrieval-eval.v1.json', import.meta.url))
+  const persisted = process.argv.includes('--persisted')
+  const report = persisted ? await runPersistedRetrievalEvaluation() : await runRetrievalEvaluation()
+  const output = process.argv.slice(2).find((arg) => arg !== '--persisted') ?? fileURLToPath(new URL(`../docs/evaluations/${persisted ? 'retrieval-persisted' : 'retrieval-eval'}.v1.json`, import.meta.url))
   await writeFile(output, `${JSON.stringify(report, null, 2)}\n`)
   for (const engine of report.engines) console.log(`${engine.engine}: n=${engine.questions}, source recall@5=${engine.recallAtK.toFixed(4)}, MRR@5=${engine.mrrAtK.toFixed(4)}, nDCG@5=${engine.ndcgAtK.toFixed(4)}, abstentions=${engine.correctAbstentions}/${engine.abstentionQuestions}, invariant failures=${engine.invariantFailures}/${engine.invariantChecks}`)
   console.log(`Detailed report: ${output}`)

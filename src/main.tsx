@@ -9,6 +9,12 @@ import { bootData } from './app/boot.ts'
 
 void bootData()
 
+if ('serviceWorker' in navigator && !('worldviewDesktop' in window)) {
+  void navigator.serviceWorker.register('/share-inbox-worker.js').catch(() => {
+    // Worldview works in browsers that decline background services.
+  })
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />

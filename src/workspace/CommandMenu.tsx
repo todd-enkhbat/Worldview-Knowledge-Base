@@ -48,6 +48,7 @@ type MenuEntry = {
 const commands: MenuEntry[] = [
   { id: 'capture', title: 'Capture a thought', detail: 'Write something down', icon: Plus, keywords: 'new note idea create' },
   { id: 'today', title: 'Today', detail: 'Capture and recent records', icon: Sun, href: '#/today', keywords: 'home recent' },
+  { id: 'todos', title: 'To-do', detail: 'Tasks and lists shared with your reader', icon: CheckSquare, href: '#/todos', keywords: 'tasks checklist todo to-do lists reminders' },
   { id: 'write', title: 'Writing studio', detail: 'Documents, formatting and your own design', icon: PencilSimple, href: '#/write', keywords: 'write editor essay newsletter journal poem rich text' },
   { id: 'search', title: 'Search & ask', detail: 'Find words and passages', icon: MagnifyingGlass, href: '#/search', keywords: 'find evidence question' },
   { id: 'library', title: 'Library', detail: 'Read your original sources', icon: BookOpen, href: '#/library', keywords: 'records notes documents files' },

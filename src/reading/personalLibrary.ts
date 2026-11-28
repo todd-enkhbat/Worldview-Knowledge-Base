@@ -15,7 +15,7 @@ function savedNode(node?: NodeRecord) {
   return node?.libraryOrigin === 'saved' || ['file', 'url', 'obsidian', 'chat'].includes(node?.provenance?.source ?? '')
 }
 
-function hasWriting(doc: WritingDocument) {
+export function hasWriting(doc: WritingDocument) {
   if (doc.title.trim() && doc.title.trim() !== 'Untitled writing') return true
   if (doc.subtitle.trim() || doc.byline.trim() || doc.bookEditionId || doc.basedOnSourceId || doc.sourceId) return true
   const words = plainTextFromWriting(doc.content).trim()

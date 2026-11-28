@@ -36,6 +36,11 @@
 .maintained-claims, .maintained-claim-editor { border-top: 1px solid var(--kb-line); padding-top: 1.5rem; margin-top: 1.5rem; }
 .maintained-claim, .maintained-proposal { padding: 1.25rem 0; border-bottom: 1px solid var(--kb-line); line-height: 1.7; overflow-wrap: anywhere; }
 .maintained-claim > p { margin: .5rem 0; }
+.maintained-timeline { list-style: none; margin: 1rem 0 1.5rem; padding: 0 0 0 .875rem; border-inline-start: 2px solid var(--kb-line); }
+.maintained-timeline > li:first-child { padding-top: 0; }
+.maintained-timeline > li:last-child { border-bottom: 0; padding-bottom: 0; }
+.maintained-decision-state { display: flex; flex-wrap: wrap; align-items: baseline; gap: .25rem .75rem; font-size: .8125rem; color: var(--kb-muted); }
+.maintained-decision-state > strong { color: var(--kb-text); }
 .maintained-dates { display: flex; flex-wrap: wrap; gap: .65rem 1.5rem; font-size: .8125rem; }
 .maintained-dates div { display: flex; flex-direction: column; gap: .1rem; }
 .maintained-dates dt { color: var(--kb-muted); }

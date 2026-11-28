@@ -1,8 +1,8 @@
+import { sceneMotionEnabled } from '../camera/cameraFlight.ts'
 import { Suspense, useEffect, useMemo, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import { useTexture } from '@react-three/drei'
 import { AdditiveBlending, BackSide, BufferAttribute, BufferGeometry, Color, Group, Mesh, ShaderMaterial, SphereGeometry, SRGBColorSpace, type PerspectiveCamera } from 'three'
-import { useApp } from '../../app/store.ts'
 import { LAYER } from '../layers.ts'
 
 // Astronomical art surrounds the data; it is not indexed, selectable, or counted as notes.
@@ -43,7 +43,7 @@ function GalacticSky() {
   }, [texture])
   useEffect(() => () => { geometry.dispose(); material.dispose() }, [geometry, material])
   useFrame(({ camera }, dt) => {
-    time.current = advanceGalaxyTime(time.current, dt, useApp.getState().view.flow)
+    time.current = advanceGalaxyTime(time.current, dt, sceneMotionEnabled())
     material.uniforms.uTime.value = time.current
     const sky = ref.current
     if (!sky) return
@@ -121,7 +121,7 @@ function ParallaxStars() {
   const material = useMemo(() => new ShaderMaterial({ uniforms: { uTime: { value: 0 }, uDpr: { value: 1 }, uPixel: { value: 700 } }, vertexShader: STAR_VERT, fragmentShader: STAR_FRAG, transparent: true, depthWrite: false, blending: AdditiveBlending, toneMapped: false }), [])
   useEffect(() => () => { geometry.dispose(); material.dispose() }, [geometry, material])
   useFrame(({ camera }, dt) => {
-    time.current = advanceGalaxyTime(time.current, dt, useApp.getState().view.flow)
+    time.current = advanceGalaxyTime(time.current, dt, sceneMotionEnabled())
     material.uniforms.uTime.value = time.current
     material.uniforms.uDpr.value = dpr
     material.uniforms.uPixel.value = size.height * dpr / (2 * Math.tan(((camera as PerspectiveCamera).fov ?? 50) * Math.PI / 360))

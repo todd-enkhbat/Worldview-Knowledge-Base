@@ -140,7 +140,7 @@ export function SourcesHub({ hash, importActions }: { hash?: string; importActio
         <ConnectionDisclosure {...common('memory')} title="Agent access" description="Connect ChatGPT, Claude, or Cursor to chosen sources and review proposed edits" icon={<PlugsConnected size={21} />}><AssistantConnections /></ConnectionDisclosure>
       </section>
       <section className="sources-hub-group" aria-labelledby="sources-hub-portable"><h3 id="sources-hub-portable">Import & export</h3>
-        {importActions && <div className="sources-hub-import"><p>Bring in files, notes or chat exports.</p><div className="sources-hub-import-actions">{importActions}</div></div>}
+        {importActions && <div className="sources-hub-import"><p>Import files, ChatGPT and Claude exports, Gemini My Activity JSON, or Codex session JSONL.</p><div className="sources-hub-import-actions">{importActions}</div></div>}
         <ConnectionDisclosure {...common('export')} title="Export your knowledge" description="Take readable notes, source history and maps with you" icon={<ArrowSquareOut size={21} />}><PortabilityControls /></ConnectionDisclosure>
       </section>
       <section className="sources-hub-group" aria-labelledby="sources-hub-optional"><h3 id="sources-hub-optional">Optional connections</h3>

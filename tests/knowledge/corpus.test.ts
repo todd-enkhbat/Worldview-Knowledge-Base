@@ -381,6 +381,31 @@ describe('durable knowledge corpus', () => {
 })
 
 describe('source parsers and passage locations', () => {
+  it('imports repeated Gemini activity with stable identity and separate authorship', () => {
+    const row = { header: 'Gemini Apps', title: 'Prompted What did I decide?', time: '2026-03-21T00:00:00Z', safeHtmlItem: [{ html: '<p>Current plan &amp; dates.</p><script>private detail</script>' }] }
+    const [parsed] = parseKnowledgeText(JSON.stringify([row, row]), 'MyActivity.json')
+    expect(parseKnowledgeText(JSON.stringify(row), 'reimport.json')[0]).toEqual(parsed)
+    expect(parsed.messages).toMatchObject([{ role: 'human', text: 'What did I decide?' }, { role: 'assistant', parentId: 'prompt', text: 'Current plan & dates.', authoredAt: null }])
+    expect(splitPassages(parsed).every((item) => parsed.text.slice(item.start, item.end) === item.text)).toBe(true)
+  })
+
+  it('imports stable Codex rollout messages while avoiding duplicate events and tool output', () => {
+    const rows = [
+      { type: 'session_meta', payload: { id: 'codex-thread' } },
+      { type: 'response_item', payload: { type: 'message', role: 'user', content: [{ text: 'Find the save path' }] } },
+      { type: 'event_msg', payload: { type: 'user_message', message: 'Find the save path' } },
+      { type: 'response_item', payload: { type: 'function_call_output', output: 'Private test tool output' } },
+      { type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ text: 'The save path is local.' }] } },
+    ].map((row) => JSON.stringify(row)).join('\n')
+    const [parsed] = parseKnowledgeText(rows, 'rollout.jsonl')
+    expect(parseKnowledgeText(rows, 'backup.jsonl')[0]).toEqual(parsed)
+    expect(parsed.externalId).toBe('conversation:codex:codex-thread')
+    expect(splitPassages(parsed).map(({ text, role, locator }) => ({ text, role, locator }))).toEqual([
+      { text: 'Find the save path', role: 'human', locator: 'Message 1' },
+      { text: 'The save path is local.', role: 'assistant', locator: 'Message 2' },
+    ])
+  })
+
   it('parses Claude role/time identity and verifies every chunk against the full source', () => {
     const parsed = parseKnowledgeText(JSON.stringify([{ uuid: 'c1', name: 'Claude thread', chat_messages: [{ uuid: 'm1', sender: 'human', text: 'An exact human question.', created_at: '2026-01-01T00:00:00Z' }, { uuid: 'm2', sender: 'assistant', content: [{ type: 'text', text: 'A reply. '.repeat(400) }], created_at: '2026-01-01T00:00:01Z' }] }]), 'claude.json')[0]
     const passages = splitPassages(parsed)

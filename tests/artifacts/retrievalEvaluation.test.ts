@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { loadRetrievalEvalFixture, runRetrievalEvaluation, sourceRankingMetrics } from '../../scripts/eval-retrieval.ts'
+import { loadRetrievalEvalFixture, runPersistedRetrievalEvaluation, runRetrievalEvaluation, sourceRankingMetrics } from '../../scripts/eval-retrieval.ts'
 
 describe('source-grain evidence evaluation', () => {
   it('uses one source rank for duplicate passages and standard graded nDCG', () => {
@@ -24,6 +24,17 @@ describe('source-grain evidence evaluation', () => {
       expect(engine.ndcgAtK).toBeGreaterThanOrEqual(.9)
       expect(engine.cases.find((result) => result.id === '47')?.packet.evidenceOmissions).toBeGreaterThan(0)
       expect(engine.cases.find((result) => result.id === '44')?.packet.contextIds).toContain('orchid-project')
+    }
+  })
+
+  it('retains exact history and rejects cached evidence after a persisted consent change', async () => {
+    const { engines } = await runPersistedRetrievalEvaluation()
+    for (const engine of engines) {
+      expect(engine.invariantFailures, JSON.stringify(engine.cases.filter((result) => result.failures.length))).toBe(0)
+      expect(engine.recallAtK).toBe(1)
+      expect(engine.correctAbstentions).toBe(3)
+      expect(engine.cases.find((result) => result.id === 'historical')?.packet.evidenceIds).toEqual(['plan-jan'])
+      expect(engine.cases.find((result) => result.id === 'revoked')?.packet.evidenceIds).toEqual([])
     }
   })
 })

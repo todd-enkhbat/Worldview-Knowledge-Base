@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "description": "A fictional workspace spanning planning notes, chat, contracts, and minutes. Tests aliases, conflicting evidence, changes through time, policy changes after caching, and unanswered questions.",
+  "cutoff": 5,
+  "sources": [
+    {
+      "id": "brief", "title": "Juniper project brief", "kind": "document",
+      "versions": [
+        {"id": "brief-jan", "passages": [{"id": "plan-jan", "text": "Project Juniper is also called West Hall. Our staging decision was to open the West Hall pilot in April.", "role": "human", "authoredAt": "2026-01-13"}]},
+        {"id": "brief-mar", "passages": [{"id": "plan-mar", "text": "Project Juniper, alias West Hall. Our revised staging decision moved the pilot opening to June. April is superseded.", "role": "human", "authoredAt": "2026-03-19"}]}
+      ]
+    },
+    {
+      "id": "meeting", "title": "Partner meeting minutes", "kind": "document",
+      "versions": [{"id": "meeting-1", "passages": [
+        {"id": "meeting-date", "text": "West Hall partners still expect an April pilot. The partner date conflicts with Juniper’s June opening in the brief.", "role": "third-party", "authoredAt": "2026-03-21"},
+        {"id": "meeting-open", "text": "The project team did not select an underwriter. The approval meeting was postponed.", "role": "human", "authoredAt": "2026-03-21"}
+      ]}]
+    },
+    {
+      "id": "workspace-chat", "title": "Partner launch planning", "kind": "conversation",
+      "versions": [{"id": "chat-1", "passages": [
+        {"id": "chat-draft", "text": "For the Juniper pilot, I proposed a quiet launch and a two-week enrollment window.", "role": "human", "authoredAt": "2026-02-10"},
+        {"id": "chat-inference", "text": "A quiet launch with a two-week enrollment window might mean the team will not promote the pilot. This is a possible interpretation.", "role": "assistant", "authoredAt": "2026-02-10"}
+      ]}]
+    },
+    {
+      "id": "agreement", "title": "Vendor agreement draft", "kind": "document",
+      "versions": [{"id": "agreement-1", "passages": [{"id": "agreement-rate", "text": "The agreement draft proposes a nonpublic procurement ceiling of seven thousand per site.", "role": "third-party", "authoredAt": "2026-03-06"}]}]
+    },
+    {
+      "id": "other-pilot", "title": "East Wing pilot", "kind": "thought",
+      "versions": [{"id": "east-1", "passages": [{"id": "east-date", "text": "The East Wing pilot was scheduled for August. This is the separate archive digitization project.", "role": "human", "authoredAt": "2026-03-03"}]}]
+    }
+  ],
+  "contexts": [
+    {"id": "project-page", "kind": "project", "title": "Juniper launch", "content": "Approved project summary. The updated brief schedules the pilot for June.", "status": "accepted", "sourceIds": ["brief"], "passageIds": ["plan-mar"]},
+    {"id": "vendor-page", "kind": "project", "title": "Vendor obligations", "content": "Negotiating against a proposed procurement ceiling.", "status": "accepted", "sourceIds": ["agreement"], "passageIds": ["agreement-rate"]},
+    {"id": "speculation", "kind": "answer", "title": "Promotion", "content": "Possible plans for a quiet launch.", "status": "proposed", "sourceIds": ["workspace-chat"], "passageIds": ["chat-inference"]}
+  ],
+  "questions": [
+    {"id": "alias", "question": "What is West Hall?", "query": "\"West Hall\"", "relevance": {"brief": 3, "meeting": 1}, "requiredPassageIds": ["plan-mar", "meeting-date"], "forbiddenPassageIds": ["plan-jan", "east-date"]},
+    {"id": "conflict", "question": "What does the brief say and what did partners hear?", "query": "\"April\"", "relevance": {"brief": 3, "meeting": 3}, "requiredPassageIds": ["plan-mar", "meeting-date"], "packet": {"requiredContextIds": ["project-page"]}},
+    {"id": "historical", "question": "What did I decide in January?", "query": "\"staging decision\"", "filters": {"includeHistory": true, "authoredBefore": "2026-01-31"}, "relevance": {"brief": 3}, "requiredPassageIds": ["plan-jan"], "forbiddenPassageIds": ["plan-mar"]},
+    {"id": "latest", "question": "What changed in the staging decision?", "query": "\"staging decision\"", "relevance": {"brief": 3}, "requiredPassageIds": ["plan-mar"], "forbiddenPassageIds": ["plan-jan"]},
+    {"id": "attribution", "question": "What enrollment period did I propose?", "query": "\"two-week enrollment window\"", "filters": {"role": "human"}, "relevance": {"workspace-chat": 3}, "requiredPassageIds": ["chat-draft"], "forbiddenPassageIds": ["chat-inference"], "packet": {"forbiddenContextIds": ["speculation"]}},
+    {"id": "revoked", "question": "Do I still have permission to include the vendor ceiling?", "query": "\"procurement ceiling\"", "relevance": {}, "filters": {"aiOnly": true, "sourceIds": ["agreement"]}, "mutation": {"sourceId": "agreement", "aiAllowed": false}, "cachedBeforeMutation": true, "expectEmpty": true, "forbiddenPacketPassageIds": ["agreement-rate"], "packet": {"forbiddenContextIds": ["vendor-page"]}},
+    {"id": "excluded", "question": "Does an excluded source reappear in search?", "query": "\"procurement ceiling\"", "relevance": {}, "filters": {"aiOnly": false}, "mutation": {"sourceId": "agreement", "excluded": true}, "cachedBeforeMutation": true, "expectEmpty": true, "forbiddenPacketPassageIds": ["agreement-rate"]},
+    {"id": "unanswered", "question": "Who was the selected underwriter?", "query": "\"named underwriter\"", "relevance": {}, "expectEmpty": true}
+  ]
+}

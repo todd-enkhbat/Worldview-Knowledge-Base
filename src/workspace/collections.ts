@@ -1,6 +1,8 @@
 import { create } from 'zustand'
 import { compareAndSwapWorldState, getStore, isRepoReady, subscribeRepo, useRepoStatus } from '../data/repo.ts'
 import type { WorldStore } from '../data/WorldStore.ts'
+import { ARTIFACTS_KV } from '../knowledge/artifacts/types.ts'
+import { decodeArtifacts } from '../knowledge/artifacts/schema.ts'
 import { useWorkspace, validateWorkspaceContext, type WorkspaceContext } from './state.ts'
 
 export const COLLECTIONS_KV = 'collections.v1'
@@ -9,8 +11,10 @@ export interface SavedInvestigation extends InvestigationFilters {
   id: string
   title: string
   questions: string[]
+  createdAt?: number
   updatedAt: number
   deletedAt?: number | null
+  knowledgePageId?: string
 }
 export interface CollectionsSnapshot { schemaVersion: 1; revision: number; collections: SavedInvestigation[] }
 const empty = (): CollectionsSnapshot => ({ schemaVersion: 1, revision: 0, collections: [] })
@@ -31,9 +35,11 @@ function decode(value: unknown): CollectionsSnapshot {
   const ids = new Set<string>()
   for (const item of snapshot.collections) {
     if (!item || typeof item.id !== 'string' || !item.id || ids.has(item.id) || typeof item.title !== 'string' || !item.title.trim() || typeof item.query !== 'string' || !Array.isArray(item.sourceIds) || item.sourceIds.some((id) => typeof id !== 'string') || !Array.isArray(item.questions) || item.questions.some((q) => typeof q !== 'string') || !Number.isFinite(item.updatedAt)) throw new Error('A saved investigation is incomplete. Your existing data was not changed.')
+    if (item.createdAt !== undefined && !Number.isFinite(item.createdAt)) throw new Error('A saved investigation contains an invalid date.')
     ids.add(item.id)
     const clean = validateWorkspaceContext(item)
     if (clean.role !== item.role || clean.sourceKind !== item.sourceKind || clean.authoredAfter !== item.authoredAfter || clean.authoredBefore !== item.authoredBefore) throw new Error('A saved investigation has unsupported filters. Your existing data was not changed.')
+    if (item.knowledgePageId !== undefined && (typeof item.knowledgePageId !== 'string' || !item.knowledgePageId)) throw new Error('A saved investigation contains an invalid project link.')
   }
   return structuredClone(snapshot)
 }
@@ -70,7 +76,7 @@ export async function initializeCollections(): Promise<void> {
   await refreshCollections()
 }
 
-function mutate<T>(change: (snapshot: CollectionsSnapshot) => T): Promise<T> {
+function mutate<T>(change: (snapshot: CollectionsSnapshot, store: WorldStore) => T | Promise<T>): Promise<T> {
   if (!isRepoReady()) return Promise.reject(new Error('Open your workspace before saving an investigation.'))
   const requestedStore = getStore()
   const task = queue.catch(() => {}).then(async () => {
@@ -82,7 +88,8 @@ function mutate<T>(change: (snapshot: CollectionsSnapshot) => T): Promise<T> {
       const snapshot = decode(await requestedStore.getKv(COLLECTIONS_KV))
       if (!matches(requestedStore)) throw new Error('The active workspace changed before the investigation could be saved.')
       const expected = snapshot.revision
-      const result = change(snapshot)
+      const result = await change(snapshot, requestedStore)
+      if (!matches(requestedStore)) throw new Error('The active workspace changed before the investigation could be saved.')
       snapshot.revision++
       await compareAndSwapWorldState(COLLECTIONS_KV, snapshot, expected)
       if (matches(requestedStore)) useCollections.setState({ ...snapshot, loaded: true, error: null })
@@ -105,7 +112,7 @@ const find = (snapshot: CollectionsSnapshot, id: string) => { const result = sna
 export function saveInvestigation(title: string): Promise<SavedInvestigation> {
   const clean = titleOf(title)
   const context = fields(useWorkspace.getState())
-  return mutate((snapshot) => { const item: SavedInvestigation = { id: crypto.randomUUID(), title: clean, ...context, questions: [], updatedAt: Date.now(), deletedAt: null }; snapshot.collections.push(item); return item })
+  return mutate((snapshot) => { const now = Date.now(); const item: SavedInvestigation = { id: crypto.randomUUID(), title: clean, ...context, questions: [], createdAt: now, updatedAt: now, deletedAt: null }; snapshot.collections.push(item); return item })
 }
 export function renameInvestigation(id: string, title: string): Promise<void> {
   const clean = titleOf(title)
@@ -114,6 +121,17 @@ export function renameInvestigation(id: string, title: string): Promise<void> {
 export function updateInvestigationContext(id: string): Promise<void> {
   const context = fields(useWorkspace.getState())
   return mutate((snapshot) => { Object.assign(find(snapshot, id), context, { updatedAt: Date.now() }) })
+}
+export function linkInvestigationProject(id: string, pageId: string | null): Promise<void> {
+  return mutate(async (snapshot, store) => {
+    const item = find(snapshot, id)
+    if (pageId) {
+      const artifacts = decodeArtifacts(await store.getKv(ARTIFACTS_KV))
+      if (!artifacts.pages.some(page => page.id === pageId && page.kind === 'project' && page.archivedAt === null)) throw new Error('Choose an active project from this workspace.')
+      item.knowledgePageId = pageId
+    } else delete item.knowledgePageId
+    item.updatedAt = Date.now()
+  })
 }
 export function archiveInvestigation(id: string, archived = true): Promise<void> {
   return mutate((snapshot) => { const item = find(snapshot, id); item.deletedAt = archived ? Date.now() : null; item.updatedAt = Date.now() })

@@ -8,8 +8,9 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { createMemoryStore } from '../../src/data/memoryStore.ts'
 import { closeRepo, completeFirstRun, initRepo } from '../../src/data/repo.ts'
 import { captureThought, initializeKnowledge, resetKnowledge, setSourcePolicy, useKnowledge } from '../../src/knowledge/index.ts'
-import { initializeArtifacts, resetArtifacts, runArtifactJobs, useArtifacts } from '../../src/knowledge/artifacts/index.ts'
+import { createKnowledgePage, initializeArtifacts, resetArtifacts, runArtifactJobs, useArtifacts } from '../../src/knowledge/artifacts/index.ts'
 import KnowledgePages from '../../src/workspace/KnowledgePages.tsx'
+import { projectDecisionsHref } from '../../src/workspace/routes.ts'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 let host: HTMLDivElement, root: Root
@@ -92,4 +93,19 @@ it('hides accepted derived text and retained history when its source becomes exc
   act(() => button('History & dates').click())
   expect(host.querySelector('.maintained-history-body')).toBeNull()
   expect(host.querySelector('canvas')).toBeNull()
+})
+
+it('opens project decision history directly and records manual wording for review', async () => {
+  const page = await createKnowledgePage({ title: 'Pilot decisions', kind: 'project' })
+  await act(async () => root.render(<KnowledgePages hash={projectDecisionsHref(page.id)} />))
+  expect(button('Decisions').getAttribute('aria-pressed')).toBe('true')
+  act(() => button('Record a decision').click())
+  fill(input('Decision wording'), 'Measure the trial before expanding it.')
+  await act(async () => button('Save proposed decision').click())
+  await until(() => host.textContent?.includes('Proposed decision') === true)
+  await act(async () => button('Accept decision').click())
+  await until(() => useArtifacts.getState().claimRevisions[0]?.status === 'accepted')
+  act(() => button('Decisions').click())
+  expect(host.querySelector('.maintained-timeline')?.textContent).toContain('Measure the trial before expanding it.')
+  expect(host.querySelector('.maintained-decision-state')?.textContent).toContain('Current')
 })

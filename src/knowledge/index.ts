@@ -419,7 +419,10 @@ async function projectSource(snapshot: KnowledgeSnapshot, source: KnowledgeSourc
 async function parsedFile(bytes: Uint8Array, path: string, mime: string): Promise<ParsedSource[]> {
   if (/\.pdf$/i.test(path) || mime === 'application/pdf') {
     const result = await fetch('/api/extract-text', { method: 'POST', headers: { 'content-type': 'application/pdf', 'x-wv-client': CLIENT_ID }, body: new Blob([bytes.slice()], { type: 'application/pdf' }) })
-    if (!result.ok) throw new Error('PDF original saved. Text extraction needs the local app server and PDF extractor; retry when it is available.')
+    if (!result.ok) {
+      const details = await result.json().catch(() => null) as { error?: unknown } | null
+      throw new Error(typeof details?.error === 'string' ? details.error : 'PDF original saved. Retry when the local PDF extractor is available.')
+    }
     const extracted = await result.json() as { text?: unknown; pages?: unknown }
     if (typeof extracted.text !== 'string') throw new Error('PDF extraction returned invalid text. Original retained.')
     const source = parseKnowledgeText(extracted.text, `${path}.txt`, 'text/plain')[0]

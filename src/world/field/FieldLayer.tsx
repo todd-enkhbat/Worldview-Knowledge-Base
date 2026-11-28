@@ -1,3 +1,4 @@
+import { sceneMotionEnabled } from '../camera/cameraFlight.ts'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import {
@@ -609,7 +610,7 @@ export function FieldLayer() {
     const frame = getFieldFrame()
     if (frame.structure !== structure) setStructure(frame.structure)
     const cam = state.camera
-    if (useApp.getState().view.flow !== false) flowTime.current += Math.min(dt, 0.1)
+    if (sceneMotionEnabled()) flowTime.current += Math.min(dt, 0.1)
     common.uTime.value = flowTime.current
     common.uDpr.value = dpr
     common.uPixel.value = (size.height * dpr) / (2 * Math.tan(((cam as { fov?: number }).fov ?? 50) * (Math.PI / 360)))

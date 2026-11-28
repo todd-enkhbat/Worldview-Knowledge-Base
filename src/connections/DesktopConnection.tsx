@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { Desktop, FolderOpen, ArrowSquareOut, DownloadSimple } from '@phosphor-icons/react'
 
 interface DesktopInfo { version: string; workspaceName: string; workspace: string; origin: string; ownsService: boolean; cloudAi: 'off' | 'unknown'; platform: string }
-declare global { interface Window { worldviewDesktop?: { info: () => Promise<DesktopInfo>; chooseWorkspace: () => Promise<{ workspaceName: string; origin: string }>; showWorkspace: () => Promise<{ ok: boolean }>; openFloatingCapture?: () => Promise<boolean>
+declare global { interface Window { worldviewDesktop?: { info: () => Promise<DesktopInfo>; chooseWorkspace: () => Promise<{ workspaceName: string; origin: string }>; showWorkspace: () => Promise<{ ok: boolean }>; openFloatingCapture?: () => Promise<boolean>; pageZoom?: (direction: 'in' | 'out' | 'reset' | 'read') => Promise<number>
   matchContactNames?: (people: {id:string;name:string}[]) => Promise<{ids:string[];ambiguous:number}>
   readPhotoPlaces?: (input?: { offset?: number; requestAccess?: boolean; includeLabels?: boolean; snapshotToken?: string }) => Promise<{ records: NativePhotoRecord[]; snapshotToken: string; nextOffset: number | null; total: number; limited: boolean }>
   photoPlaceThumbnail?: (id: string) => Promise<string | null> } } }

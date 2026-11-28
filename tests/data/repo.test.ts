@@ -7,6 +7,7 @@ import {
   DEFAULT_AMPLITUDE,
   RepoValidationError,
   addAttachment,
+  applyReanchorPlan,
   closeRepo,
   completeFirstRun,
   createNode,
@@ -15,6 +16,7 @@ import {
   link,
   logEvent,
   moveAnchor,
+  planReanchoring,
   purgeExpiredTrash,
   relayoutWorld,
   removeAttachment,
@@ -116,6 +118,24 @@ describe('repo: create', () => {
     await expect(createNode({ archetype: 'idea', title: 'Doomed' })).rejects.toThrow('quota exceeded')
     expect(useWorld.getState().nodes.size).toBe(0)
     expect(useApp.getState().toasts).toEqual([])
+  })
+})
+
+describe('repo: previewed anchor changes', () => {
+  it('rejects a stale preview and saves the exact coordinates from a fresh preview', async () => {
+    const node = await createNode({ archetype: 'idea', title: 'Layout note' })
+    const targets = new Map([[node.id, [100, 120] as const]])
+    const stale = planReanchoring(targets)
+    await updateNode(node.id, { title: 'Renamed layout note' })
+    await expect(applyReanchorPlan(stale, 'Moved')).rejects.toThrow('The workspace changed')
+    expect((await store.getNode(node.id))?.anchorXZ).toEqual(node.anchorXZ)
+    const fresh = planReanchoring(targets)
+    expect(fresh.moves).toHaveLength(1)
+    const moved = await applyReanchorPlan(fresh, 'Moved')
+    expect(moved[0].anchorXZ).toEqual(fresh.moves[0].to)
+    expect((await store.getNode(node.id))?.anchorXZ).toEqual(fresh.moves[0].to)
+    await lastToast().undo()
+    await vi.waitFor(async () => expect((await store.getNode(node.id))?.anchorXZ).toEqual(node.anchorXZ))
   })
 })
 
