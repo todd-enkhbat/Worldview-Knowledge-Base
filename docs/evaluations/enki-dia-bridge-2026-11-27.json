@@ -1,0 +1,42 @@
+{
+  "date": "2026-11-27",
+  "feature": "Enki current Dia page",
+  "installedApp": "/Users/kintekente-mac/Applications/Worldview.app",
+  "backupApp": "/Users/kintekente-mac/Applications/Worldview-before-Enki-Dia-20261127-2129.app",
+  "checks": {
+    "focusedRegressionTests": 138,
+    "focusedRegressionFiles": 15,
+    "typecheck": "passed",
+    "targetedLint": "passed",
+    "build": "passed",
+    "nativeShortcutCompilation": "passed",
+    "installedSignature": "verified",
+    "isolatedPackagedStartup": "passed",
+    "browserQa": {
+      "widths": [
+        320,
+        800
+      ],
+      "keyboardTabs": "passed",
+      "articleSave": "passed with synthetic fixture",
+      "companySave": "passed with synthetic fixture",
+      "applicationRead": "passed with synthetic fixture",
+      "liveDiaRead": {
+        "url": "https://www.toddenkhbat.com/philosophy-physics",
+        "title": "Philosophy / Physics | Entropy & the end of time",
+        "result": "Displayed in installed Enki Page tab with description and Save page action"
+      },
+      "readerPermission": "enabled with user approval",
+      "globalShortcutPermission": "Enabled in System Settings with user approval and Touch ID; Worldview restarted using Quit & Reopen",
+      "physicalShortcut": "The prior hardware-listener path failed in the user test. Dia now detects the sequence inside Reader.",
+      "liveShortcut": {
+        "input": "Three bracketright key events through CUA in the actual Dia webpage",
+        "result": "Installed native Enki opened on Page with the exact current article title, description and Save page action",
+        "url": "https://www.toddenkhbat.com/philosophy-physics",
+        "menuOrToolbarUsedToOpenEnki": false
+      },
+      "diaInputMonitoringDependency": false
+    },
+    "shortcutTransport": "Isolated browser keydown → authenticated local summon → workspace-bound desktop long poll → document-bound Reader request"
+  }
+}

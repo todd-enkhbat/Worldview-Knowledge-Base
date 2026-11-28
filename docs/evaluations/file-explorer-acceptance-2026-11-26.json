@@ -1,0 +1,10 @@
+{
+  "feature": "Nested page explorer and connected workspace tabs",
+  "tests": {"passed": 62, "suites": 6, "typecheck": "passed", "changedFilesLint": "passed", "productionBuild": "passed with existing Tailwind sourcemap warning"},
+  "automatedCoverage": ["25 mixed nested page levels", "cycle prevention and atomic invalid moves", "sibling name collisions", "appearance validation", "image bytes and page metadata survive world export/restore", "concept pages create linked topics and connect filed notes", "create/customize/confirmed-remove UI retains original source bytes", "reading, Substack, archive and folder-bundle regressions"],
+  "browserVerified": ["1440x1000 light desktop", "390x844 mobile without horizontal overflow", "390x844 dark customization dialog", "sidebar folder and file search with ancestor paths", "new writing filed in its concept page", "tab switches between page and writing", "persisted tabs after reload", "custom cover and icon uploads", "keyboard cover repositioning", "page movement retains child note", "linked Topics page shows writing backlink", "installed explorer opens original Benjamin Franklin note", "reader returns to Western Philosophy folder"],
+  "workspaceCountsBeforeAndAfterInstall": {"folders": 15, "filePlacements": 61, "sources": 74},
+  "installedApp": "/Users/kintekente-mac/Applications/Worldview.app",
+  "workspace": "/Users/kintekente-mac/Documents/GitHub/Worldview-Knowledge-Base/data",
+  "notes": "Existing imported hierarchy is reused. No external Obsidian vault file was rewritten. Test pages, uploads and writing were created only in an isolated /tmp workspace. Preset covers are bundled locally with attribution; custom imagery is retained in the world media store. Tabs are device-local navigation state."
+}

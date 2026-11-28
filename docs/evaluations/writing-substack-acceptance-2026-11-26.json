@@ -1,0 +1,32 @@
+{
+  "feature": "Writing Studio public Substack reader",
+  "profile": "https://substack.com/@thetallerpoppy",
+  "publication": "https://thetallerpoppy.substack.com",
+  "verified": {
+    "publicProfileAndPhoto": true,
+    "publishedPost": "Nomos - Draft 1",
+    "livePostTextCharacters": 4151,
+    "searchAndNoResults": true,
+    "inAppReader": true,
+    "keyboardEnterOpensPost": true,
+    "readerHeadingReceivesFocus": true,
+    "profileMenuEscapeClosesAndRestoresFocus": true,
+    "retainsSavedProfileAndListOnRequestFailure": true,
+    "wideViewport": [1280, 900],
+    "narrowViewport": [390, 844],
+    "narrowHorizontalOverflow": false,
+    "installedDesktopUpdate": true,
+    "installedCodeSignatureVerified": true,
+    "liveInstalledApiAndBrowser": true,
+    "typecheck": "passed",
+    "changedFilesLint": "passed",
+    "productionBuild": "passed (existing Tailwind sourcemap warning)",
+    "focusedTests": 4,
+    "backupAndHostRegressionTests": 41
+  },
+  "scope": "Read-only public profile and most recent 20 posts. Full public text is read on demand. No Substack account authentication, private drafts, subscriber access, or publishing.",
+  "localRetention": "Profile and post-list cache in writing.substack.v1, included in portable world exports. Full article bodies use short-lived service memory only.",
+  "workspace": "/Users/kintekente-mac/Documents/GitHub/Worldview-Knowledge-Base/data",
+  "installation": "/Users/kintekente-mac/Applications/Worldview.app",
+  "applicationCodeRollback": "/tmp/worldview-before-substack.tar.gz"
+}

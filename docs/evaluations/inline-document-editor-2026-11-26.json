@@ -1,0 +1,30 @@
+{
+  "date": "2026-11-26",
+  "scope": "Focused inline editing of text sources in Library",
+  "automated": {
+    "tests": 85,
+    "files": 7,
+    "typecheck": "passed",
+    "eslintChangedFiles": "passed",
+    "productionBuild": "passed"
+  },
+  "verifiedBrowser": {
+    "isolatedWorkspace": "/tmp/worldview-fixes-qa",
+    "viewports": [
+      "1440x1000",
+      "390x844"
+    ],
+    "checks": [
+      "imported Markdown note opens directly in editable document",
+      "title and body autosave and survive full page reload",
+      "library row uses the edited title and reopens the same source route",
+      "Original & annotations retains original text and tools",
+      "routine backup reminder absent in open document",
+      "mobile file explorer starts collapsed for selected document",
+      "keyboard Tab moves from title to formatting controls",
+      "no horizontal overflow at either viewport",
+      "compact document bar measured 54px at desktop viewport"
+    ]
+  },
+  "dataBehavior": "First edit creates one linked local working document; imported originals and existing annotations remain unchanged. External Obsidian files are not rewritten. PDF and explicitly cited historical source versions use the original reader."
+}

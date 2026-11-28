@@ -1,0 +1,38 @@
+{
+  "date": "2026-11-26",
+  "scope": [
+    "restore vertical application navigation; keep hierarchy within Library",
+    "publisher-aware edition search and verified Franklin LOA ISBN 9781883011536",
+    "support current Open Library cover redirects",
+    "capture visible LinkedIn profiles without portraits and Instagram/Facebook profiles",
+    "add saved contacts to multiple groups without removing existing groups"
+  ],
+  "automated": {
+    "targetedTests": 103,
+    "testFiles": 10,
+    "typecheck": "passed",
+    "eslintChangedFiles": "passed",
+    "productionBuild": "passed"
+  },
+  "browser": {
+    "isolatedWorkspace": "/tmp/worldview-fixes-qa",
+    "viewports": [
+      "1440x1000",
+      "390x844"
+    ],
+    "confirmed": [
+      "Franklin exact edition selected and retained with ISBN, publisher, work and edition identifiers",
+      "three contact group memberships retained after adding two together",
+      "mobile group picker fits viewport",
+      "vertical app navigation; files explorer confined to Library",
+      "tree ArrowDown changes focused item",
+      "mobile files disclosure reopens when resizing to desktop",
+      "cover endpoint returns a validated 316x500 JPEG after supporting current archive redirects"
+    ]
+  },
+  "limitations": [
+    "Instagram/Facebook profile extraction verified against browser DOM fixtures, not the user\u2019s live private profiles",
+    "Public book catalogs are not exhaustive publisher inventories",
+    "Publisher cover shown may use a different printing\u2019s jacket for the same catalog ISBN"
+  ]
+}

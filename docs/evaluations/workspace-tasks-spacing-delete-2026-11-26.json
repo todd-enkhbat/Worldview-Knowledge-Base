@@ -1,0 +1,43 @@
+{
+  "scope": "To-do discovery, confirmed file and section deletion, shared workspace spacing",
+  "browser": {
+    "origin": "http://127.0.0.1:5175",
+    "data": "temporary QA workspace, separate from personal data",
+    "widths": [
+      390,
+      1440
+    ],
+    "sectionsChecked": 16,
+    "horizontalOverflow": false,
+    "visualChecks": [
+      "To-do desktop and mobile",
+      "Vocabulary mobile and computed toolbar alignment"
+    ],
+    "interactions": [
+      "Task creation with Enter, retained across navigation",
+      "Task deletion cancelled with Escape and focus returned",
+      "File deletion confirmed, removed from Library, Undo offered",
+      "Deleted file visible in Trash and restored",
+      "Section created and deleted through file explorer",
+      "Mobile navigation exposes To-do"
+    ]
+  },
+  "checks": {
+    "typecheck": "passed",
+    "lint": "passed",
+    "productionBuild": "passed",
+    "focusedTests": 34,
+    "designDetector": []
+  },
+  "desktop": {
+    "installed": "/Users/kintekente-mac/Applications/Worldview.app",
+    "previousBuild": "/Users/kintekente-mac/Applications/Worldview-before-spacing-20261126-155053.app",
+    "signature": "verified",
+    "runningAppRestarted": false,
+    "nativeWindowVerified": false
+  },
+  "limitations": [
+    "All-section overflow checks used a temporary workspace; every populated state on every page was not exercised.",
+    "Installed desktop changes require quitting and reopening the app."
+  ]
+}

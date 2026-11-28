@@ -1,0 +1,61 @@
+{
+  "case": "https://aliveprize.com/apply",
+  "liveFindings": {
+    "formProvider": "Tally iframe",
+    "publishedOpportunity": "Alive Prize",
+    "publishedDeadline": "11/25",
+    "deadlineYear": "not stated",
+    "deadlineSource": "https://aliveprize.com/",
+    "questionCount": 11,
+    "description": "The Alive Prize provides $100k"
+  },
+  "changes": [
+    "Automatically read the active application when its helper opens.",
+    "Capture parent-page opportunity and organization alongside embedded fields.",
+    "Find published deadline evidence on the page or its homepage; recognize structured job metadata.",
+    "Match an existing CRM organization by unique name or website.",
+    "Request optional provider access from a visible Reader button to read typed embedded answers.",
+    "Save captured drafts, preserve final answers on confirmation pages, and avoid overwriting a different opportunity.",
+    "Observe submit intent and a visible acknowledgement before recording the applied timestamp.",
+    "Reuse dated historical confirmations; never infer an applied date from capture time.",
+    "Bind submission observations to a saved application, tab, private nonce, pairing token and workspace identity."
+  ],
+  "verification": {
+    "liveBrowserRead": true,
+    "liveContextApiRead": true,
+    "temporarySQLiteSave": {
+      "opportunity": "Alive Prize",
+      "deadline": "11/25",
+      "questions": 11,
+      "submitted": false,
+      "appliedAt": null
+    },
+    "browserWidths": [
+      390,
+      480,
+      960
+    ],
+    "keyboardSave": true,
+    "horizontalOverflow": false,
+    "focusedTests": 96,
+    "typecheck": "passed",
+    "lint": "passed",
+    "productionBuild": "passed",
+    "mechanicalDesignScan": [],
+    "crmOrganizationMatch": "verified unique website match"
+  },
+  "limits": [
+    "No real Alive Prize application was submitted. Confirmation tracking was tested using synthetic DOM events and the actual paired HTTP route.",
+    "Reading typed Tally answers requires the user to grant the optional Tally permission once.",
+    "Reader must be reloaded and Worldview restarted to load the new version.",
+    "Confirmation tracking applies to the saved open form; cross-page redirect confirmations are not followed automatically."
+  ],
+  "readerVersion": "0.10.0",
+  "deployment": {
+    "installed": "/Users/kintekente-mac/Applications/Worldview.app",
+    "previousBuild": "/Users/kintekente-mac/Applications/Worldview-before-application-fix-20261126-163527.app",
+    "signature": "verified",
+    "runningAppRestarted": false,
+    "readerReloadRequired": true
+  }
+}

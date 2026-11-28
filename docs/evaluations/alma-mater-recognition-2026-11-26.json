@@ -1,0 +1,40 @@
+{
+  "problem": "LinkedIn top-card school controls were ignored until a separate Education section was mounted; saved contacts lacked an obvious recapture action.",
+  "changes": [
+    "Capture education controls and school links inside the identified primary profile header.",
+    "Recognize headline employer separators such as Investing @General Catalyst.",
+    "Keep exact school labels in retained source evidence.",
+    "Read span-based Education entries without screen-reader duplicates.",
+    "Expose Update from profile in Reader and native helper.",
+    "Reader version 0.9.1."
+  ],
+  "validation": {
+    "tests": 112,
+    "testFiles": 10,
+    "typecheck": "passed",
+    "lint": "passed",
+    "productionBuild": "passed",
+    "browserViewports": [
+      390,
+      960
+    ],
+    "browserScenarios": [
+      "school shown beside saved-contact identity",
+      "Update from profile activated with Enter",
+      "success feedback",
+      "no horizontal overflow"
+    ],
+    "databaseRegression": "Newly captured top-card education updates an existing contact without replacing its job title; almaMater filter finds it."
+  },
+  "deployment": {
+    "desktopInstalled": "/Users/kintekente-mac/Applications/Worldview.app",
+    "readerLoadedFrom": "extensions/worldview-reader",
+    "readerReloadRequired": true,
+    "runningDesktopRestarted": false
+  },
+  "limits": [
+    "Extraction verified with source-layout regression fixtures, not the live Daisy profile.",
+    "Browser UI verification used mock bridge responses; real persistence was separately verified against SQLite.",
+    "Dia was in active use, so its extension reload was left for the user."
+  ]
+}
